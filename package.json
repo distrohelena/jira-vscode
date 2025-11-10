@@ -38,6 +38,10 @@
       {
         "command": "jira.openIssueDetails",
         "title": "Jira: Open Issue Details"
+      },
+      {
+        "command": "jira.commitFromIssue",
+        "title": "Jira: Commit From Issue"
       }
     ],
     "viewsContainers": {
@@ -46,6 +50,15 @@
           "id": "jira",
           "title": "Jira",
           "icon": "media/jira.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "jira.commitFromIssue",
+          "when": "view == jiraItemsView && viewItem == jiraIssue",
+          "group": "navigation"
         }
       ]
     },

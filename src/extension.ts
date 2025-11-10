@@ -46,6 +46,18 @@ type JiraRelatedIssue = {
 	updated?: string;
 };
 
+type GitExtensionExports = {
+	getAPI(version: number): GitAPI;
+};
+
+type GitAPI = {
+	repositories: GitRepository[];
+};
+
+type GitRepository = {
+	inputBox: vscode.SourceControlInputBox;
+};
+
 type JiraProject = {
 	id: string;
 	key: string;
@@ -147,6 +159,9 @@ export async function activate(context: vscode.ExtensionContext) {
 				const message = deriveErrorMessage(error);
 				await vscode.window.showErrorMessage(`Failed to load issue details: ${message}`);
 			}
+		}),
+		vscode.commands.registerCommand('jira.commitFromIssue', async (node?: JiraTreeItem) => {
+			await commitFromIssue(node);
 		})
 	);
 }
@@ -353,7 +368,9 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 					const item = new JiraTreeItem(
 						'issue',
 						`${issue.key} · ${issue.summary}`,
-						vscode.TreeItemCollapsibleState.None
+						vscode.TreeItemCollapsibleState.None,
+						undefined,
+						issue
 					);
 					item.tooltip = `${issue.summary}\nStatus: ${issue.statusName}\nUpdated: ${new Date(
 						issue.updated
@@ -534,7 +551,8 @@ class JiraTreeItem extends vscode.TreeItem {
 		public nodeType: JiraNodeKind,
 		label: string,
 		collapsibleState: vscode.TreeItemCollapsibleState,
-		command?: vscode.Command
+		command?: vscode.Command,
+		public issue?: JiraIssue
 	) {
 		super(label, collapsibleState);
 		this.command = command;
@@ -551,6 +569,74 @@ function contextualizeIssue(item: JiraTreeItem, issue: JiraIssue) {
 			title: 'Open Issue Details',
 			arguments: [issue.key],
 		};
+	}
+}
+
+async function commitFromIssue(node?: JiraTreeItem) {
+	const issue = node?.issue;
+	if (!issue?.key) {
+		await vscode.window.showInformationMessage('Select a Jira item to prepare a commit message.');
+		return;
+	}
+
+	const commitMessage = `${issue.key}: `;
+	await vscode.commands.executeCommand('workbench.view.scm');
+
+	const gitApplied = await setCommitMessageViaGitApi(commitMessage);
+	if (gitApplied) {
+		await revealScmInput();
+		return;
+	}
+
+	const inputBox = await waitForScmInputBox();
+	if (!inputBox) {
+		await vscode.window.showInformationMessage('No Source Control input box is available.');
+		return;
+	}
+
+	inputBox.value = commitMessage;
+	await revealScmInput();
+}
+
+async function waitForScmInputBox(timeoutMs = 2000): Promise<vscode.SourceControlInputBox | undefined> {
+	const start = Date.now();
+	while (Date.now() - start < timeoutMs) {
+		const inputBox = vscode.scm?.inputBox;
+		if (inputBox) {
+			return inputBox;
+		}
+		await delay(100);
+	}
+	return vscode.scm?.inputBox;
+}
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function revealScmInput(): Promise<void> {
+	await vscode.commands.executeCommand('git.showSCMInput').then(
+		() => {},
+		() => {}
+	);
+}
+
+async function setCommitMessageViaGitApi(message: string): Promise<boolean> {
+	try {
+		const gitExtension = vscode.extensions.getExtension<GitExtensionExports>('vscode.git');
+		if (!gitExtension) {
+			return false;
+		}
+		const gitExports = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
+		const api = gitExports?.getAPI?.(1) as GitAPI | undefined;
+		const repository = api?.repositories?.[0];
+		if (!repository?.inputBox) {
+			return false;
+		}
+		repository.inputBox.value = message;
+		return true;
+	} catch {
+		return false;
 	}
 }
 

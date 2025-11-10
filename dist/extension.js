@@ -115,6 +115,8 @@ async function activate(context) {
             const message = deriveErrorMessage(error);
             await vscode.window.showErrorMessage(`Failed to load issue details: ${message}`);
         }
+    }), vscode.commands.registerCommand('jira.commitFromIssue', async (node) => {
+        await commitFromIssue(node);
     }));
 }
 function deactivate() {
@@ -251,7 +253,7 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
             }
             this.updateBadge(issues.length, issues.length === 1 ? '1 Jira issue' : `${issues.length} Jira issues`);
             nodes.push(...issues.map((issue) => {
-                const item = new JiraTreeItem('issue', `${issue.key} · ${issue.summary}`, vscode.TreeItemCollapsibleState.None);
+                const item = new JiraTreeItem('issue', `${issue.key} · ${issue.summary}`, vscode.TreeItemCollapsibleState.None, undefined, issue);
                 item.tooltip = `${issue.summary}\nStatus: ${issue.statusName}\nUpdated: ${new Date(issue.updated).toLocaleString()}`;
                 contextualizeIssue(item, issue);
                 return item;
@@ -390,9 +392,10 @@ function extractHost(url) {
     }
 }
 class JiraTreeItem extends vscode.TreeItem {
-    constructor(nodeType, label, collapsibleState, command) {
+    constructor(nodeType, label, collapsibleState, command, issue) {
         super(label, collapsibleState);
         this.nodeType = nodeType;
+        this.issue = issue;
         this.command = command;
     }
 }
@@ -406,6 +409,63 @@ function contextualizeIssue(item, issue) {
             title: 'Open Issue Details',
             arguments: [issue.key],
         };
+    }
+}
+async function commitFromIssue(node) {
+    const issue = node?.issue;
+    if (!issue?.key) {
+        await vscode.window.showInformationMessage('Select a Jira item to prepare a commit message.');
+        return;
+    }
+    const commitMessage = `${issue.key}: `;
+    await vscode.commands.executeCommand('workbench.view.scm');
+    const gitApplied = await setCommitMessageViaGitApi(commitMessage);
+    if (gitApplied) {
+        await revealScmInput();
+        return;
+    }
+    const inputBox = await waitForScmInputBox();
+    if (!inputBox) {
+        await vscode.window.showInformationMessage('No Source Control input box is available.');
+        return;
+    }
+    inputBox.value = commitMessage;
+    await revealScmInput();
+}
+async function waitForScmInputBox(timeoutMs = 2000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        const inputBox = vscode.scm?.inputBox;
+        if (inputBox) {
+            return inputBox;
+        }
+        await delay(100);
+    }
+    return vscode.scm?.inputBox;
+}
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+async function revealScmInput() {
+    await vscode.commands.executeCommand('git.showSCMInput').then(() => { }, () => { });
+}
+async function setCommitMessageViaGitApi(message) {
+    try {
+        const gitExtension = vscode.extensions.getExtension('vscode.git');
+        if (!gitExtension) {
+            return false;
+        }
+        const gitExports = gitExtension.isActive ? gitExtension.exports : await gitExtension.activate();
+        const api = gitExports?.getAPI?.(1);
+        const repository = api?.repositories?.[0];
+        if (!repository?.inputBox) {
+            return false;
+        }
+        repository.inputBox.value = message;
+        return true;
+    }
+    catch {
+        return false;
     }
 }
 function showIssueDetailsPanel(issue) {
