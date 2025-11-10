@@ -1,0 +1,86 @@
+{
+  "name": "jira-vscode",
+  "displayName": "Jira VS Code",
+  "description": "Open-source Jira integration for VS Code with reliable authentication for Jira Cloud and custom servers.",
+  "version": "0.0.1",
+  "publisher": "open-source",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:jira.login",
+    "onCommand:jira.focusProject",
+    "onCommand:jira.clearProjectFocus",
+    "onCommand:jira.logout",
+    "onView:jiraProjectsView",
+    "onView:jiraItemsView",
+    "onView:jiraSettingsView"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "jira.login",
+        "title": "Jira: Log In"
+      },
+      {
+        "command": "jira.focusProject",
+        "title": "Jira: Focus Project"
+      },
+      {
+        "command": "jira.clearProjectFocus",
+        "title": "Jira: Clear Project Focus"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "jira",
+          "title": "Jira",
+          "icon": "media/jira.svg"
+        }
+      ]
+    },
+    "views": {
+      "jira": [
+        {
+          "id": "jiraProjectsView",
+          "name": "Projects"
+        },
+        {
+          "id": "jiraItemsView",
+          "name": "Items"
+        },
+        {
+          "id": "jiraSettingsView",
+          "name": "Settings"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Jira",
+      "properties": {
+        "jira.baseUrl": {
+          "type": "string",
+          "default": "https://your-domain.atlassian.net",
+          "description": "Base URL for your Jira instance (e.g., https://your-domain.atlassian.net)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "axios": "^1.6.2"
+  }
+}
