@@ -4,6 +4,8 @@ import axios, { AxiosError } from 'axios';
 const AUTH_STATE_KEY = 'jira.authInfo';
 const SECRET_PREFIX = 'jira-token';
 const SELECTED_PROJECT_KEY = 'jira.selectedProject';
+const ISSUE_DETAIL_FIELDS = ['summary', 'status', 'assignee', 'updated', 'parent', 'subtasks'];
+let extensionUri: vscode.Uri;
 
 type JiraAuthInfo = {
 	baseUrl: string;
@@ -19,8 +21,29 @@ type JiraIssue = {
 	summary: string;
 	statusName: string;
 	assigneeName?: string;
+	assigneeAvatarUrl?: string;
 	url: string;
 	updated: string;
+	parent?: JiraRelatedIssue;
+	children?: JiraRelatedIssue[];
+};
+
+type IssueStatusCategory = 'done' | 'inProgress' | 'open' | 'default';
+
+const STATUS_ICON_FILES: Record<IssueStatusCategory, string> = {
+	done: 'status-done.svg',
+	inProgress: 'status-inprogress.svg',
+	open: 'status-open.svg',
+	default: 'status-default.svg',
+};
+
+type JiraRelatedIssue = {
+	key: string;
+	summary: string;
+	statusName?: string;
+	assigneeName?: string;
+	url: string;
+	updated?: string;
 };
 
 type JiraProject = {
@@ -46,6 +69,7 @@ type JiraProfileResponse = {
 };
 
 export async function activate(context: vscode.ExtensionContext) {
+	extensionUri = context.extensionUri;
 	const authManager = new JiraAuthManager(context);
 	const focusManager = new JiraFocusManager(context, authManager);
 
@@ -95,6 +119,33 @@ export async function activate(context: vscode.ExtensionContext) {
 			const changed = await focusManager.clearProjectFocus();
 			if (changed) {
 				refreshAll();
+			}
+		}),
+		vscode.commands.registerCommand('jira.openIssueDetails', async (issueOrKey?: JiraIssue | string) => {
+			const issueKey = typeof issueOrKey === 'string' ? issueOrKey : issueOrKey?.key;
+			if (!issueKey) {
+				await vscode.window.showInformationMessage('Unable to open issue details.');
+			 return;
+			}
+
+			const authInfo = await authManager.getAuthInfo();
+			if (!authInfo) {
+				await vscode.window.showInformationMessage('Log in to Jira to view issue details.');
+				return;
+			}
+
+			const token = await authManager.getToken();
+			if (!token) {
+				await vscode.window.showInformationMessage('Missing auth token. Please log in again.');
+				return;
+			}
+
+			try {
+				const issue = await fetchIssueDetails(authInfo, token, issueKey);
+				showIssueDetailsPanel(issue);
+			} catch (error) {
+				const message = deriveErrorMessage(error);
+				await vscode.window.showErrorMessage(`Failed to load issue details: ${message}`);
 			}
 		})
 	);
@@ -494,27 +545,384 @@ function contextualizeIssue(item: JiraTreeItem, issue: JiraIssue) {
 	item.contextValue = 'jiraIssue';
 	item.description = issue.assigneeName ? `${issue.statusName} • ${issue.assigneeName}` : issue.statusName;
 	item.iconPath = deriveIssueIcon(issue.statusName);
+	if (issue.key) {
+		item.command = {
+			command: 'jira.openIssueDetails',
+			title: 'Open Issue Details',
+			arguments: [issue.key],
+		};
+	}
+}
+
+function showIssueDetailsPanel(issue: JiraIssue) {
+	const panel = vscode.window.createWebviewPanel(
+		'jiraIssueDetails',
+		`${issue.key} – Jira`,
+		vscode.ViewColumn.Active,
+		{
+			enableScripts: true,
+		}
+	);
+	const statusCategory = determineStatusCategory(issue.statusName);
+	const iconPath = getStatusIconPath(statusCategory);
+	if (iconPath) {
+		panel.iconPath = iconPath;
+	}
+	panel.webview.onDidReceiveMessage((message) => {
+		if (message?.type === 'openIssue' && typeof message.key === 'string') {
+			vscode.commands.executeCommand('jira.openIssueDetails', message.key);
+		}
+	});
+	const statusIconSrc = getStatusIconWebviewSrc(panel.webview, statusCategory);
+	panel.webview.html = renderIssueDetailsHtml(panel.webview, issue, statusIconSrc);
+}
+
+function renderIssueDetailsHtml(webview: vscode.Webview, issue: JiraIssue, statusIconSrc?: string): string {
+	const updatedText = formatIssueUpdated(issue.updated);
+	const assignee = issue.assigneeName ?? 'Unassigned';
+	const escapedUrl = escapeHtml(issue.url);
+	const nonce = generateNonce();
+	const parentSection = renderParentSection(issue);
+	const childrenSection = renderChildrenSection(issue);
+	const cspSource = webview.cspSource;
+	const metadataPanel = renderMetadataPanel(issue, assignee, updatedText);
+	const statusIconMarkup = statusIconSrc
+		? `<img class="status-icon" src="${escapeAttribute(statusIconSrc)}" alt="${escapeHtml(
+				issue.statusName ?? 'Issue status'
+		  )} status icon" />`
+		: '';
+
+	return `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+	<title>${escapeHtml(issue.key)}</title>
+	<style>
+		body {
+			font-family: var(--vscode-font-family);
+			font-size: var(--vscode-font-size);
+			padding: 24px;
+			color: var(--vscode-foreground);
+			background-color: var(--vscode-editor-background);
+			line-height: 1.5;
+			max-width: 1100px;
+			margin: 0 auto;
+		}
+		.issue-header {
+			display: flex;
+			gap: 16px;
+			align-items: flex-start;
+			margin-bottom: 24px;
+		}
+		.status-icon {
+			width: 56px;
+			height: 56px;
+			flex-shrink: 0;
+			margin-top: 4px;
+		}
+		h1 {
+			margin-top: 0;
+			font-size: 2em;
+			margin-bottom: 8px;
+		}
+		p.issue-summary {
+			font-size: 1.1em;
+			margin-top: 0;
+			margin-bottom: 24px;
+		}
+		.section {
+			margin-top: 24px;
+		}
+		.section-title {
+			font-weight: 600;
+			margin-bottom: 4px;
+		}
+		.label {
+			font-weight: 600;
+			margin-right: 8px;
+		}
+		a {
+			color: var(--vscode-textLink-foreground);
+			text-decoration: none;
+		}
+		.issue-layout {
+			display: grid;
+			grid-template-columns: minmax(0, 2.5fr) minmax(280px, 1fr);
+			gap: 32px;
+			align-items: start;
+		}
+		.issue-sidebar {
+			position: relative;
+		}
+		.meta-card {
+			border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
+			border-radius: 6px;
+			padding: 16px;
+			display: flex;
+			flex-direction: column;
+			gap: 18px;
+		}
+		.meta-section {
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+		}
+		.assignee-card {
+			flex-direction: row;
+			gap: 12px;
+			align-items: center;
+		}
+		.assignee-avatar {
+			width: 56px;
+			height: 56px;
+			border-radius: 50%;
+			object-fit: cover;
+			flex-shrink: 0;
+			border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
+			background-color: var(--vscode-sideBar-background);
+		}
+		.assignee-avatar.fallback {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-weight: 600;
+			font-size: 1em;
+		}
+		.issue-link {
+			background: transparent;
+			border: 1px solid var(--vscode-button-border, var(--vscode-foreground));
+			border-radius: 4px;
+			color: var(--vscode-foreground);
+			padding: 4px 8px;
+			cursor: pointer;
+			font-size: 0.95em;
+			margin-top: 4px;
+			text-align: left;
+			width: 100%;
+		}
+		.issue-link:hover {
+			background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.04));
+		}
+		.issue-list {
+			list-style: none;
+			padding-left: 0;
+			margin: 4px 0 0 0;
+		}
+		.issue-list li {
+			margin-top: 6px;
+		}
+		.muted {
+			color: var(--vscode-descriptionForeground);
+		}
+		@media (max-width: 900px) {
+			.issue-layout {
+				grid-template-columns: 1fr;
+			}
+		}
+	</style>
+</head>
+	<body>
+		<div class="issue-layout">
+			<div class="issue-main">
+				<div class="issue-header">
+					${statusIconMarkup}
+					<div>
+						<h1>${escapeHtml(issue.key)}</h1>
+						<p class="issue-summary">${escapeHtml(issue.summary)}</p>
+					</div>
+				</div>
+				${parentSection}
+				${childrenSection}
+				<div class="section">
+					<a href="${escapedUrl}" target="_blank" rel="noreferrer noopener">Open in Jira</a>
+			</div>
+		</div>
+		${metadataPanel}
+	</div>
+	<script nonce="${nonce}">
+		(function () {
+			const vscode = acquireVsCodeApi();
+			document.querySelectorAll('.issue-link').forEach((el) => {
+				el.addEventListener('click', () => {
+					const key = el.getAttribute('data-issue-key');
+					if (key) {
+						vscode.postMessage({ type: 'openIssue', key });
+					}
+				});
+			});
+		})();
+	</script>
+</body>
+</html>`;
+}
+
+function renderParentSection(issue: JiraIssue): string {
+	const parent = issue.parent;
+	const content = parent
+		? renderRelatedIssueButton(parent)
+		: '<div class="muted">No parent issue.</div>';
+	return `<div class="section">
+		<div class="section-title">Parent</div>
+		${content}
+	</div>`;
+}
+
+function renderChildrenSection(issue: JiraIssue): string {
+	const children = issue.children?.filter((child) => !!child) ?? [];
+	if (children.length === 0) {
+		return `<div class="section">
+			<div class="section-title">Subtasks</div>
+			<div class="muted">No subtasks.</div>
+		</div>`;
+	}
+
+	const listItems = children
+		.map((child) => `<li>${renderRelatedIssueButton(child)}</li>`)
+		.join('');
+
+	return `<div class="section">
+		<div class="section-title">Subtasks</div>
+		<ul class="issue-list">${listItems}</ul>
+	</div>`;
+}
+
+function renderRelatedIssueButton(issue: JiraRelatedIssue): string {
+	const summaryText = issue.summary ? ` · ${escapeHtml(issue.summary)}` : '';
+	const statusText = issue.statusName ? ` — ${escapeHtml(issue.statusName)}` : '';
+	return `<button class="issue-link" data-issue-key="${escapeHtml(issue.key)}">
+		${escapeHtml(issue.key)}${summaryText}${statusText}
+	</button>`;
+}
+
+function renderMetadataPanel(issue: JiraIssue, assignee: string, updatedText: string): string {
+	return `<div class="issue-sidebar">
+		<div class="meta-card">
+			<div class="meta-section">
+				<div class="section-title">Status</div>
+				<div>${escapeHtml(issue.statusName)}</div>
+			</div>
+			<div class="meta-section assignee-card">
+				${renderAssigneeAvatar(issue)}
+				<div>
+					<div class="section-title">Assignee</div>
+					<div>${escapeHtml(assignee)}</div>
+				</div>
+			</div>
+			<div class="meta-section">
+				<div class="section-title">Last Updated</div>
+				<div>${escapeHtml(updatedText)}</div>
+			</div>
+		</div>
+	</div>`;
+}
+
+function renderAssigneeAvatar(issue: JiraIssue): string {
+	if (issue.assigneeAvatarUrl) {
+		return `<img class="assignee-avatar" src="${escapeAttribute(issue.assigneeAvatarUrl)}" alt="Assignee avatar" />`;
+	}
+	const initials = getInitials(issue.assigneeName);
+	return `<div class="assignee-avatar fallback">${escapeHtml(initials)}</div>`;
+}
+
+function getInitials(name?: string): string {
+	if (!name) {
+		return '??';
+	}
+	const parts = name
+		.split(/\s+/)
+		.filter(Boolean)
+		.slice(0, 2)
+		.map((part) => part[0]?.toUpperCase() ?? '');
+	const combined = parts.join('');
+	if (combined) {
+		return combined;
+	}
+	const trimmed = name.replace(/\s+/g, '');
+	return trimmed.slice(0, 2).toUpperCase() || '??';
+}
+
+function generateNonce(): string {
+	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+	let result = '';
+	for (let i = 0; i < 32; i++) {
+		result += chars.charAt(Math.floor(Math.random() * chars.length));
+	}
+	return result;
+}
+
+function escapeHtml(value?: string): string {
+	if (!value) {
+		return '';
+	}
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+function escapeAttribute(value?: string): string {
+	return escapeHtml(value);
+}
+
+function formatIssueUpdated(updated: string | undefined): string {
+	if (!updated) {
+		return 'Unknown';
+	}
+	const date = new Date(updated);
+	if (isNaN(date.getTime())) {
+		return updated;
+	}
+	return date.toLocaleString();
+}
+
+function getStatusIconPath(category: IssueStatusCategory): vscode.Uri | undefined {
+	if (!extensionUri) {
+		return undefined;
+	}
+	const fileName = STATUS_ICON_FILES[category] ?? STATUS_ICON_FILES.default;
+	return vscode.Uri.joinPath(extensionUri, 'media', fileName);
+}
+
+function getStatusIconWebviewSrc(webview: vscode.Webview, category: IssueStatusCategory): string | undefined {
+	const iconPath = getStatusIconPath(category);
+	if (!iconPath) {
+		return undefined;
+	}
+	return webview.asWebviewUri(iconPath).toString();
 }
 
 function deriveIssueIcon(statusName?: string): vscode.ThemeIcon {
+	const category = determineStatusCategory(statusName);
+	switch (category) {
+		case 'done':
+			return new vscode.ThemeIcon('pass');
+		case 'inProgress':
+			return new vscode.ThemeIcon('sync');
+		case 'open':
+			return new vscode.ThemeIcon('circle-outline');
+		default:
+			return new vscode.ThemeIcon('issues');
+	}
+}
+
+function determineStatusCategory(statusName?: string): IssueStatusCategory {
 	const status = statusName?.toLowerCase().trim() ?? '';
 	if (!status) {
-		return new vscode.ThemeIcon('issues');
+		return 'default';
 	}
-
 	if (status.includes('done') || status.includes('closed') || status.includes('resolved') || status.includes('complete')) {
-		return new vscode.ThemeIcon('pass');
+		return 'done';
 	}
-
 	if (status.includes('progress') || status.includes('doing') || status.includes('active') || status.includes('working')) {
-		return new vscode.ThemeIcon('sync');
+		return 'inProgress';
 	}
-
 	if (status.includes('todo') || status.includes('to do') || status.includes('open') || status.includes('backlog')) {
-		return new vscode.ThemeIcon('circle-outline');
+		return 'open';
 	}
-
-	return new vscode.ThemeIcon('issues');
+	return 'default';
 }
 
 class JiraAuthManager {
@@ -706,8 +1114,44 @@ async function fetchProjectIssues(
 	return searchJiraIssues(authInfo, token, {
 		jql: `project = ${sanitizedKey} ORDER BY created DESC`,
 		maxResults: 50,
-		fields: ['summary', 'status', 'assignee', 'updated'],
+		fields: ISSUE_DETAIL_FIELDS,
 	});
+}
+
+async function fetchIssueDetails(authInfo: JiraAuthInfo, token: string, issueKey: string): Promise<JiraIssue> {
+	const sanitizedKey = issueKey?.trim();
+	if (!sanitizedKey) {
+		throw new Error('Issue key is required.');
+	}
+
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(sanitizedKey)}`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			const response = await axios.get(endpoint, {
+				params: {
+					fields: ISSUE_DETAIL_FIELDS.join(','),
+				},
+				auth: {
+					username: authInfo.username,
+					password: token,
+				},
+				headers: {
+					Accept: 'application/json',
+					'User-Agent': 'jira-vscode',
+				},
+			});
+
+			return mapIssue(response.data, urlRoot);
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to load issue details.');
 }
 
 type JiraIssueSearchOptions = {
@@ -733,7 +1177,7 @@ async function searchJiraIssues(
 	const searchPayload = {
 		jql: options.jql,
 		maxResults: options.maxResults ?? 50,
-		fields: options.fields ?? ['summary', 'status', 'assignee', 'updated'],
+		fields: options.fields ?? ISSUE_DETAIL_FIELDS,
 	};
 
 	let lastError: unknown;
@@ -792,15 +1236,71 @@ async function searchJiraIssues(
 
 function mapIssues(data: any, urlRoot: string): JiraIssue[] {
 	const issues = data?.issues ?? [];
-	return issues.map((issue: any) => ({
-		id: issue.id,
-		key: issue.key,
-		summary: issue.fields?.summary ?? 'Untitled',
-		statusName: issue.fields?.status?.name ?? 'Unknown',
-		assigneeName: issue.fields?.assignee?.displayName ?? issue.fields?.assignee?.name ?? undefined,
-		url: `${urlRoot}/browse/${issue.key}`,
-		updated: issue.fields?.updated ?? '',
-	}));
+	return issues.map((issue: any) => mapIssue(issue, urlRoot));
+}
+
+function mapIssue(issue: any, urlRoot: string): JiraIssue {
+	const fields = issue?.fields ?? {};
+	const avatarUrls = fields?.assignee?.avatarUrls ?? issue?.assignee?.avatarUrls ?? {};
+	const assigneeAvatarUrl =
+		avatarUrls['128x128'] ??
+		avatarUrls['96x96'] ??
+		avatarUrls['72x72'] ??
+		avatarUrls['48x48'] ??
+		avatarUrls['32x32'] ??
+		avatarUrls['24x24'] ??
+		avatarUrls['16x16'];
+
+	return {
+		id: issue?.id,
+		key: issue?.key,
+		summary: fields?.summary ?? 'Untitled',
+		statusName: fields?.status?.name ?? 'Unknown',
+		assigneeName: fields?.assignee?.displayName ?? fields?.assignee?.name ?? undefined,
+		assigneeAvatarUrl,
+		url: `${urlRoot}/browse/${issue?.key}`,
+		updated: fields?.updated ?? '',
+		parent: mapRelatedIssue(fields?.parent, urlRoot),
+		children: mapRelatedIssues(fields?.subtasks, urlRoot),
+	};
+}
+
+function mapRelatedIssues(rawList: any, urlRoot: string): JiraRelatedIssue[] | undefined {
+	if (!Array.isArray(rawList) || rawList.length === 0) {
+		return undefined;
+	}
+	const mapped = rawList
+		.map((raw: any) => mapRelatedIssue(raw, urlRoot))
+		.filter((related): related is JiraRelatedIssue => !!related);
+	return mapped.length > 0 ? mapped : undefined;
+}
+
+function mapRelatedIssue(raw: any, urlRoot: string): JiraRelatedIssue | undefined {
+	if (!raw) {
+		return undefined;
+	}
+	const key = raw.key ?? raw.id;
+	if (!key) {
+		return undefined;
+	}
+	const fields = raw.fields ?? {};
+	const summary = fields.summary ?? raw.summary ?? key;
+	const statusName = fields.status?.name ?? raw.status?.name ?? undefined;
+	const assigneeName =
+		fields.assignee?.displayName ??
+		fields.assignee?.name ??
+		raw.assignee?.displayName ??
+		raw.assignee?.name ??
+		undefined;
+	const updated = fields.updated ?? raw.updated ?? undefined;
+	return {
+		key,
+		summary,
+		statusName,
+		assigneeName,
+		url: `${urlRoot}/browse/${key}`,
+		updated,
+	};
 }
 
 async function fetchAccessibleProjects(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
