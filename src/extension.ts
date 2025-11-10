@@ -37,6 +37,11 @@ const STATUS_ICON_FILES: Record<IssueStatusCategory, string> = {
 	default: 'status-default.svg',
 };
 
+type IssuePanelOptions = {
+	loading?: boolean;
+	error?: string;
+};
+
 type JiraRelatedIssue = {
 	key: string;
 	summary: string;
@@ -133,33 +138,60 @@ export async function activate(context: vscode.ExtensionContext) {
 				refreshAll();
 			}
 		}),
-		vscode.commands.registerCommand('jira.openIssueDetails', async (issueOrKey?: JiraIssue | string) => {
-			const issueKey = typeof issueOrKey === 'string' ? issueOrKey : issueOrKey?.key;
-			if (!issueKey) {
-				await vscode.window.showInformationMessage('Unable to open issue details.');
-			 return;
-			}
+			vscode.commands.registerCommand('jira.openIssueDetails', async (issueOrKey?: JiraIssue | string) => {
+				const issueKey = typeof issueOrKey === 'string' ? issueOrKey : issueOrKey?.key;
+				if (!issueKey) {
+					await vscode.window.showInformationMessage('Unable to open issue details.');
+					return;
+				}
 
-			const authInfo = await authManager.getAuthInfo();
-			if (!authInfo) {
-				await vscode.window.showInformationMessage('Log in to Jira to view issue details.');
-				return;
-			}
+				const initialIssue = typeof issueOrKey === 'string' ? undefined : issueOrKey;
+				const panel = showIssueDetailsPanel(issueKey, initialIssue, { loading: true });
+				let disposed = false;
+				panel.onDidDispose(() => {
+					disposed = true;
+				});
 
-			const token = await authManager.getToken();
-			if (!token) {
-				await vscode.window.showInformationMessage('Missing auth token. Please log in again.');
-				return;
-			}
+				const authInfo = await authManager.getAuthInfo();
+				const fallbackIssue = initialIssue ?? createPlaceholderIssue(issueKey);
 
-			try {
-				const issue = await fetchIssueDetails(authInfo, token, issueKey);
-				showIssueDetailsPanel(issue);
-			} catch (error) {
-				const message = deriveErrorMessage(error);
-				await vscode.window.showErrorMessage(`Failed to load issue details: ${message}`);
-			}
-		}),
+				if (!authInfo) {
+					if (!disposed) {
+						renderIssuePanelContent(panel, fallbackIssue, {
+							error: 'Log in to Jira to view issue details.',
+						});
+					}
+					await vscode.window.showInformationMessage('Log in to Jira to view issue details.');
+					return;
+				}
+
+				const token = await authManager.getToken();
+				if (!token) {
+					if (!disposed) {
+						renderIssuePanelContent(panel, fallbackIssue, {
+							error: 'Missing auth token. Please log in again.',
+						});
+					}
+					await vscode.window.showInformationMessage('Missing auth token. Please log in again.');
+					return;
+				}
+
+				try {
+					const fullIssue = await fetchIssueDetails(authInfo, token, issueKey);
+					if (disposed) {
+						return;
+					}
+					renderIssuePanelContent(panel, fullIssue);
+				} catch (error) {
+					if (disposed) {
+						return;
+					}
+					const message = deriveErrorMessage(error);
+					renderIssuePanelContent(panel, fallbackIssue, {
+						error: `Failed to load issue details: ${message}`,
+					});
+				}
+			}),
 		vscode.commands.registerCommand('jira.commitFromIssue', async (node?: JiraTreeItem) => {
 			await commitFromIssue(node);
 		})
@@ -170,7 +202,7 @@ export function deactivate() {
 	// nothing to clean up yet
 }
 
-type JiraNodeKind = 'loginPrompt' | 'info' | 'logout' | 'project' | 'issue';
+type JiraNodeKind = 'loginPrompt' | 'info' | 'logout' | 'project' | 'issue' | 'statusGroup';
 
 abstract class JiraTreeDataProvider implements vscode.TreeDataProvider<JiraTreeItem> {
 	private _onDidChangeTreeData: vscode.EventEmitter<JiraTreeItem | undefined | null | void> =
@@ -305,6 +337,13 @@ class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
 }
 
 class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
+	async getChildren(element?: JiraTreeItem): Promise<JiraTreeItem[]> {
+		if (element?.nodeType === 'statusGroup') {
+			return element.children ?? [];
+		}
+		return super.getChildren(element);
+	}
+
 	protected getSectionChildren(authInfo: JiraAuthInfo): Promise<JiraTreeItem[]> {
 		return this.loadItems(authInfo);
 	}
@@ -327,7 +366,10 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			];
 		}
 
-		this.updateDescription(selectedProject.key);
+		const projectLabel = selectedProject.name
+			? `${selectedProject.name} (${selectedProject.key})`
+			: selectedProject.key;
+		this.updateDescription(projectLabel);
 
 		const nodes: JiraTreeItem[] = [];
 
@@ -363,22 +405,27 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				issues.length === 1 ? '1 Jira issue' : `${issues.length} Jira issues`
 			);
 
-			nodes.push(
-				...issues.map((issue) => {
-					const item = new JiraTreeItem(
-						'issue',
-						`${issue.key} · ${issue.summary}`,
-						vscode.TreeItemCollapsibleState.None,
-						undefined,
-						issue
-					);
-					item.tooltip = `${issue.summary}\nStatus: ${issue.statusName}\nUpdated: ${new Date(
-						issue.updated
-					).toLocaleString()}`;
-					contextualizeIssue(item, issue);
-					return item;
-				})
-			);
+			const groupedNodes = groupIssuesByStatus(issues).map((group) => {
+				const childNodes = group.issues.map((issue) => createIssueTreeItem(issue));
+				const label =
+					group.issues.length > 0 ? `${group.statusName} (${group.issues.length})` : group.statusName;
+				const groupItem = new JiraTreeItem(
+					'statusGroup',
+					label,
+					vscode.TreeItemCollapsibleState.Collapsed,
+					undefined,
+					undefined,
+					childNodes
+				);
+				groupItem.iconPath = deriveIssueIcon(group.statusName);
+				groupItem.tooltip =
+					group.issues.length === 1
+						? `1 issue in ${group.statusName}`
+						: `${group.issues.length} issues in ${group.statusName}`;
+				return groupItem;
+			});
+
+			nodes.push(...groupedNodes);
 
 			return nodes;
 		} catch (error) {
@@ -552,11 +599,36 @@ class JiraTreeItem extends vscode.TreeItem {
 		label: string,
 		collapsibleState: vscode.TreeItemCollapsibleState,
 		command?: vscode.Command,
-		public issue?: JiraIssue
+		public issue?: JiraIssue,
+		public children?: JiraTreeItem[]
 	) {
 		super(label, collapsibleState);
 		this.command = command;
 	}
+}
+
+function createIssueTreeItem(issue: JiraIssue): JiraTreeItem {
+	const item = new JiraTreeItem(
+		'issue',
+		`${issue.key} · ${issue.summary}`,
+		vscode.TreeItemCollapsibleState.None,
+		undefined,
+		issue
+	);
+	item.tooltip = `${issue.summary}\nStatus: ${issue.statusName}\nUpdated: ${new Date(issue.updated).toLocaleString()}`;
+	contextualizeIssue(item, issue);
+	return item;
+}
+
+function createPlaceholderIssue(issueKey: string): JiraIssue {
+	return {
+		id: issueKey,
+		key: issueKey,
+		summary: 'Loading issue details…',
+		statusName: 'Loading',
+		url: '',
+		updated: '',
+	};
 }
 
 function contextualizeIssue(item: JiraTreeItem, issue: JiraIssue) {
@@ -567,9 +639,39 @@ function contextualizeIssue(item: JiraTreeItem, issue: JiraIssue) {
 		item.command = {
 			command: 'jira.openIssueDetails',
 			title: 'Open Issue Details',
-			arguments: [issue.key],
+			arguments: [issue],
 		};
 	}
+}
+
+function groupIssuesByStatus(
+	issues: JiraIssue[]
+): Array<{ statusName: string; category: IssueStatusCategory; issues: JiraIssue[] }> {
+	const groups = new Map<
+		string,
+		{
+			statusName: string;
+			category: IssueStatusCategory;
+			issues: JiraIssue[];
+		}
+	>();
+
+	for (const issue of issues) {
+		const statusName = (issue.statusName || 'Unknown').trim() || 'Unknown';
+		const key = statusName.toLowerCase();
+		let group = groups.get(key);
+		if (!group) {
+			group = {
+				statusName,
+				category: determineStatusCategory(statusName),
+				issues: [],
+			};
+			groups.set(key, group);
+		}
+		group.issues.push(issue);
+	}
+
+	return Array.from(groups.values()).sort((a, b) => a.statusName.localeCompare(b.statusName));
 }
 
 async function commitFromIssue(node?: JiraTreeItem) {
@@ -640,36 +742,56 @@ async function setCommitMessageViaGitApi(message: string): Promise<boolean> {
 	}
 }
 
-function showIssueDetailsPanel(issue: JiraIssue) {
+function showIssueDetailsPanel(issueKey: string, issue?: JiraIssue, options?: IssuePanelOptions): vscode.WebviewPanel {
 	const panel = vscode.window.createWebviewPanel(
 		'jiraIssueDetails',
-		`${issue.key} – Jira`,
+		`${issueKey} – Jira`,
 		vscode.ViewColumn.Active,
 		{
 			enableScripts: true,
 		}
 	);
-	const statusCategory = determineStatusCategory(issue.statusName);
-	const iconPath = getStatusIconPath(statusCategory);
-	if (iconPath) {
-		panel.iconPath = iconPath;
-	}
 	panel.webview.onDidReceiveMessage((message) => {
 		if (message?.type === 'openIssue' && typeof message.key === 'string') {
 			vscode.commands.executeCommand('jira.openIssueDetails', message.key);
 		}
 	});
-	const statusIconSrc = getStatusIconWebviewSrc(panel.webview, statusCategory);
-	panel.webview.html = renderIssueDetailsHtml(panel.webview, issue, statusIconSrc);
+	const issueData = issue ?? createPlaceholderIssue(issueKey);
+	renderIssuePanelContent(panel, issueData, options);
+	return panel;
 }
 
-function renderIssueDetailsHtml(webview: vscode.Webview, issue: JiraIssue, statusIconSrc?: string): string {
+function renderIssuePanelContent(panel: vscode.WebviewPanel, issue: JiraIssue, options?: IssuePanelOptions) {
+	const statusCategory = determineStatusCategory(issue.statusName);
+	const iconPath = getStatusIconPath(statusCategory);
+	if (iconPath) {
+		panel.iconPath = iconPath;
+	}
+	const statusIconSrc = getStatusIconWebviewSrc(panel.webview, statusCategory);
+	panel.webview.html = renderIssueDetailsHtml(panel.webview, issue, statusIconSrc, options);
+}
+
+function renderIssueDetailsHtml(
+	webview: vscode.Webview,
+	issue: JiraIssue,
+	statusIconSrc?: string,
+	options?: IssuePanelOptions
+): string {
 	const updatedText = formatIssueUpdated(issue.updated);
 	const assignee = issue.assigneeName ?? 'Unassigned';
-	const escapedUrl = escapeHtml(issue.url);
 	const nonce = generateNonce();
-	const parentSection = renderParentSection(issue);
-	const childrenSection = renderChildrenSection(issue);
+	const isLoading = options?.loading ?? false;
+	const errorMessage = options?.error;
+	const parentSection = errorMessage
+		? ''
+		: isLoading
+		? renderLoadingSection('Parent', 'Loading parent issue…')
+		: renderParentSection(issue);
+	const childrenSection = errorMessage
+		? ''
+		: isLoading
+		? renderLoadingSection('Subtasks', 'Loading subtasks…')
+		: renderChildrenSection(issue);
 	const cspSource = webview.cspSource;
 	const metadataPanel = renderMetadataPanel(issue, assignee, updatedText);
 	const statusIconMarkup = statusIconSrc
@@ -677,6 +799,17 @@ function renderIssueDetailsHtml(webview: vscode.Webview, issue: JiraIssue, statu
 				issue.statusName ?? 'Issue status'
 		  )} status icon" />`
 		: '';
+	const messageBanner = errorMessage
+		? `<div class="section error-banner">${escapeHtml(errorMessage)}</div>`
+		: isLoading
+		? `<div class="section loading-banner">Loading additional details…</div>`
+		: '';
+	const linkSection =
+		issue.url && !errorMessage
+			? `<div class="section">
+		<a href="${escapeHtml(issue.url)}" target="_blank" rel="noreferrer noopener">Open in Jira</a>
+	</div>`
+			: '';
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -795,12 +928,21 @@ function renderIssueDetailsHtml(webview: vscode.Webview, issue: JiraIssue, statu
 			padding-left: 0;
 			margin: 4px 0 0 0;
 		}
-		.issue-list li {
-			margin-top: 6px;
-		}
-		.muted {
-			color: var(--vscode-descriptionForeground);
-		}
+			.issue-list li {
+				margin-top: 6px;
+			}
+			.muted {
+				color: var(--vscode-descriptionForeground);
+			}
+			.loading-banner {
+				color: var(--vscode-descriptionForeground);
+			}
+			.error-banner {
+				background: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent);
+				border: 1px solid color-mix(in srgb, var(--vscode-errorForeground) 40%, transparent);
+				border-radius: 6px;
+				padding: 12px;
+			}
 		@media (max-width: 900px) {
 			.issue-layout {
 				grid-template-columns: 1fr;
@@ -808,21 +950,20 @@ function renderIssueDetailsHtml(webview: vscode.Webview, issue: JiraIssue, statu
 		}
 	</style>
 </head>
-	<body>
-		<div class="issue-layout">
-			<div class="issue-main">
-				<div class="issue-header">
-					${statusIconMarkup}
-					<div>
-						<h1>${escapeHtml(issue.key)}</h1>
-						<p class="issue-summary">${escapeHtml(issue.summary)}</p>
-					</div>
+<body>
+	<div class="issue-layout">
+		<div class="issue-main">
+			<div class="issue-header">
+				${statusIconMarkup}
+				<div>
+					<h1>${escapeHtml(issue.key)}</h1>
+					<p class="issue-summary">${escapeHtml(issue.summary ?? 'Loading issue details…')}</p>
 				</div>
-				${parentSection}
-				${childrenSection}
-				<div class="section">
-					<a href="${escapedUrl}" target="_blank" rel="noreferrer noopener">Open in Jira</a>
 			</div>
+			${messageBanner}
+			${parentSection}
+			${childrenSection}
+			${linkSection}
 		</div>
 		${metadataPanel}
 	</div>
@@ -870,6 +1011,13 @@ function renderChildrenSection(issue: JiraIssue): string {
 	return `<div class="section">
 		<div class="section-title">Subtasks</div>
 		<ul class="issue-list">${listItems}</ul>
+	</div>`;
+}
+
+function renderLoadingSection(title: string, message: string): string {
+	return `<div class="section">
+		<div class="section-title">${escapeHtml(title)}</div>
+		<div class="loading-banner">${escapeHtml(message)}</div>
 	</div>`;
 }
 
