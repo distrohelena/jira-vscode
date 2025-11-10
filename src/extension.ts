@@ -28,6 +28,15 @@ type JiraIssue = {
 	children?: JiraRelatedIssue[];
 };
 
+type JiraRelatedIssue = {
+	key: string;
+	summary: string;
+	statusName?: string;
+	assigneeName?: string;
+	url: string;
+	updated?: string;
+};
+
 type IssueStatusCategory = 'done' | 'inProgress' | 'open' | 'default';
 
 const STATUS_ICON_FILES: Record<IssueStatusCategory, string> = {
@@ -40,15 +49,15 @@ const STATUS_ICON_FILES: Record<IssueStatusCategory, string> = {
 type IssuePanelOptions = {
 	loading?: boolean;
 	error?: string;
+	statusOptions?: IssueStatusOption[];
+	statusPending?: boolean;
+	statusError?: string;
 };
 
-type JiraRelatedIssue = {
-	key: string;
-	summary: string;
-	statusName?: string;
-	assigneeName?: string;
-	url: string;
-	updated?: string;
+type IssueStatusOption = {
+	id: string;
+	name: string;
+	category?: IssueStatusCategory;
 };
 
 type GitExtensionExports = {
@@ -138,58 +147,146 @@ export async function activate(context: vscode.ExtensionContext) {
 				refreshAll();
 			}
 		}),
-			vscode.commands.registerCommand('jira.openIssueDetails', async (issueOrKey?: JiraIssue | string) => {
+		vscode.commands.registerCommand('jira.refreshItemsView', () => {
+			itemsProvider.refresh();
+		}),
+		vscode.commands.registerCommand('jira.refreshProjectsView', () => {
+			projectsProvider.refresh();
+		}),
+		vscode.commands.registerCommand('jira.openIssueDetails', async (issueOrKey?: JiraIssue | string) => {
 				const issueKey = typeof issueOrKey === 'string' ? issueOrKey : issueOrKey?.key;
 				if (!issueKey) {
 					await vscode.window.showInformationMessage('Unable to open issue details.');
 					return;
 				}
+				const resolvedIssueKey: string = issueKey;
 
 				const initialIssue = typeof issueOrKey === 'string' ? undefined : issueOrKey;
-				const panel = showIssueDetailsPanel(issueKey, initialIssue, { loading: true });
+				const panelState: { issue: JiraIssue; transitions?: IssueStatusOption[] } = {
+					issue: initialIssue ?? createPlaceholderIssue(resolvedIssueKey),
+					transitions: undefined,
+				};
+
 				let disposed = false;
+
+				const panel = showIssueDetailsPanel(
+					resolvedIssueKey,
+					panelState.issue,
+					{ loading: true },
+					async (message) => {
+						if (message?.type === 'changeStatus' && typeof message.transitionId === 'string') {
+							await handleStatusChange(message.transitionId);
+						}
+					}
+				);
+
 				panel.onDidDispose(() => {
 					disposed = true;
 				});
 
-				const authInfo = await authManager.getAuthInfo();
-				const fallbackIssue = initialIssue ?? createPlaceholderIssue(issueKey);
+				await loadIssueDetails();
 
-				if (!authInfo) {
-					if (!disposed) {
-						renderIssuePanelContent(panel, fallbackIssue, {
-							error: 'Log in to Jira to view issue details.',
-						});
-					}
-					await vscode.window.showInformationMessage('Log in to Jira to view issue details.');
-					return;
-				}
-
-				const token = await authManager.getToken();
-				if (!token) {
-					if (!disposed) {
-						renderIssuePanelContent(panel, fallbackIssue, {
-							error: 'Missing auth token. Please log in again.',
-						});
-					}
-					await vscode.window.showInformationMessage('Missing auth token. Please log in again.');
-					return;
-				}
-
-				try {
-					const fullIssue = await fetchIssueDetails(authInfo, token, issueKey);
-					if (disposed) {
+				async function loadIssueDetails(): Promise<void> {
+					const authInfo = await authManager.getAuthInfo();
+					if (!authInfo) {
+						if (!disposed) {
+							renderIssuePanelContent(panel, panelState.issue, {
+								error: 'Log in to Jira to view issue details.',
+							});
+						}
+						await vscode.window.showInformationMessage('Log in to Jira to view issue details.');
 						return;
 					}
-					renderIssuePanelContent(panel, fullIssue);
-				} catch (error) {
-					if (disposed) {
+
+					const token = await authManager.getToken();
+					if (!token) {
+						if (!disposed) {
+							renderIssuePanelContent(panel, panelState.issue, {
+								error: 'Missing auth token. Please log in again.',
+							});
+						}
+						await vscode.window.showInformationMessage('Missing auth token. Please log in again.');
 						return;
 					}
-					const message = deriveErrorMessage(error);
-					renderIssuePanelContent(panel, fallbackIssue, {
-						error: `Failed to load issue details: ${message}`,
+
+					try {
+						const issue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
+						let transitions: IssueStatusOption[] | undefined;
+						let transitionsError: string | undefined;
+						try {
+							transitions = await fetchIssueTransitions(authInfo, token, resolvedIssueKey);
+						} catch (transitionError) {
+							transitionsError = deriveErrorMessage(transitionError);
+						}
+
+						if (disposed) {
+							return;
+						}
+
+						panelState.issue = issue;
+						panelState.transitions = transitions;
+						renderIssuePanelContent(panel, issue, {
+							statusOptions: transitions,
+							statusError: transitionsError
+								? `Unable to load available statuses: ${transitionsError}`
+								: undefined,
+						});
+					} catch (error) {
+						const message = deriveErrorMessage(error);
+						if (!disposed) {
+							renderIssuePanelContent(panel, panelState.issue, {
+								error: `Failed to load issue details: ${message}`,
+							});
+						}
+						await vscode.window.showErrorMessage(`Failed to load issue details: ${message}`);
+					}
+				}
+
+				async function handleStatusChange(transitionId: string): Promise<void> {
+					if (disposed || !transitionId) {
+						return;
+					}
+
+					const authInfo = await authManager.getAuthInfo();
+					const token = await authManager.getToken();
+					if (!authInfo || !token) {
+						await vscode.window.showInformationMessage('Log in to Jira to change issue status.');
+						return;
+					}
+
+					renderIssuePanelContent(panel, panelState.issue, {
+						statusOptions: panelState.transitions,
+						statusPending: true,
 					});
+
+					try {
+						await transitionIssueStatus(authInfo, token, resolvedIssueKey, transitionId);
+						const updatedIssue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
+						let transitions: IssueStatusOption[] | undefined;
+						try {
+							transitions = await fetchIssueTransitions(authInfo, token, resolvedIssueKey);
+						} catch {
+							transitions = panelState.transitions;
+						}
+						if (disposed) {
+							return;
+						}
+						panelState.issue = updatedIssue;
+						panelState.transitions = transitions;
+						renderIssuePanelContent(panel, updatedIssue, {
+							statusOptions: transitions,
+						});
+						refreshAll();
+					} catch (error) {
+						const message = deriveErrorMessage(error);
+						if (!disposed) {
+							renderIssuePanelContent(panel, panelState.issue, {
+								statusOptions: panelState.transitions,
+								statusError: `Failed to update status: ${message}`,
+							});
+						}
+						await vscode.window.showErrorMessage(`Failed to update status: ${message}`);
+					}
 				}
 			}),
 		vscode.commands.registerCommand('jira.commitFromIssue', async (node?: JiraTreeItem) => {
@@ -742,7 +839,12 @@ async function setCommitMessageViaGitApi(message: string): Promise<boolean> {
 	}
 }
 
-function showIssueDetailsPanel(issueKey: string, issue?: JiraIssue, options?: IssuePanelOptions): vscode.WebviewPanel {
+function showIssueDetailsPanel(
+	issueKey: string,
+	issue?: JiraIssue,
+	options?: IssuePanelOptions,
+	onMessage?: (message: any, panel: vscode.WebviewPanel) => void
+): vscode.WebviewPanel {
 	const panel = vscode.window.createWebviewPanel(
 		'jiraIssueDetails',
 		`${issueKey} – Jira`,
@@ -754,7 +856,9 @@ function showIssueDetailsPanel(issueKey: string, issue?: JiraIssue, options?: Is
 	panel.webview.onDidReceiveMessage((message) => {
 		if (message?.type === 'openIssue' && typeof message.key === 'string') {
 			vscode.commands.executeCommand('jira.openIssueDetails', message.key);
+			return;
 		}
+		onMessage?.(message, panel);
 	});
 	const issueData = issue ?? createPlaceholderIssue(issueKey);
 	renderIssuePanelContent(panel, issueData, options);
@@ -793,7 +897,7 @@ function renderIssueDetailsHtml(
 		? renderLoadingSection('Subtasks', 'Loading subtasks…')
 		: renderChildrenSection(issue);
 	const cspSource = webview.cspSource;
-	const metadataPanel = renderMetadataPanel(issue, assignee, updatedText);
+	const metadataPanel = renderMetadataPanel(issue, assignee, updatedText, options);
 	const statusIconMarkup = statusIconSrc
 		? `<img class="status-icon" src="${escapeAttribute(statusIconSrc)}" alt="${escapeHtml(
 				issue.statusName ?? 'Issue status'
@@ -887,16 +991,32 @@ function renderIssueDetailsHtml(
 			flex-direction: column;
 			gap: 4px;
 		}
-		.assignee-card {
-			flex-direction: row;
-			gap: 12px;
-			align-items: center;
-		}
-		.assignee-avatar {
-			width: 56px;
-			height: 56px;
-			border-radius: 50%;
-			object-fit: cover;
+			.assignee-card {
+				flex-direction: row;
+				gap: 12px;
+				align-items: center;
+			}
+			.status-select-wrapper {
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+			}
+			.jira-status-select {
+				width: 100%;
+				background: var(--vscode-input-background);
+				color: var(--vscode-input-foreground);
+				border: 1px solid var(--vscode-input-border);
+				border-radius: 4px;
+				padding: 4px 8px;
+			}
+			.jira-status-select:disabled {
+				opacity: 0.7;
+			}
+			.assignee-avatar {
+				width: 56px;
+				height: 56px;
+				border-radius: 50%;
+				object-fit: cover;
 			flex-shrink: 0;
 			border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
 			background-color: var(--vscode-sideBar-background);
@@ -943,10 +1063,14 @@ function renderIssueDetailsHtml(
 				border-radius: 6px;
 				padding: 12px;
 			}
-		@media (max-width: 900px) {
-			.issue-layout {
-				grid-template-columns: 1fr;
+			.status-error {
+				color: var(--vscode-errorForeground);
+				font-size: 0.9em;
 			}
+			@media (max-width: 900px) {
+				.issue-layout {
+					grid-template-columns: 1fr;
+				}
 		}
 	</style>
 </head>
@@ -967,19 +1091,30 @@ function renderIssueDetailsHtml(
 		</div>
 		${metadataPanel}
 	</div>
-	<script nonce="${nonce}">
-		(function () {
-			const vscode = acquireVsCodeApi();
-			document.querySelectorAll('.issue-link').forEach((el) => {
-				el.addEventListener('click', () => {
+		<script nonce="${nonce}">
+			(function () {
+				const vscode = acquireVsCodeApi();
+				document.querySelectorAll('.issue-link').forEach((el) => {
+					el.addEventListener('click', () => {
 					const key = el.getAttribute('data-issue-key');
 					if (key) {
 						vscode.postMessage({ type: 'openIssue', key });
 					}
 				});
-			});
-		})();
-	</script>
+				});
+				document.querySelectorAll('.jira-status-select').forEach((select) => {
+					select.addEventListener('change', () => {
+						const transitionId = select.value;
+						const issueKey = select.getAttribute('data-issue-key');
+						if (!transitionId || !issueKey) {
+							return;
+						}
+						select.setAttribute('disabled', 'true');
+						vscode.postMessage({ type: 'changeStatus', transitionId, issueKey });
+					});
+				});
+			})();
+		</script>
 </body>
 </html>`;
 }
@@ -1029,12 +1164,18 @@ function renderRelatedIssueButton(issue: JiraRelatedIssue): string {
 	</button>`;
 }
 
-function renderMetadataPanel(issue: JiraIssue, assignee: string, updatedText: string): string {
+function renderMetadataPanel(
+	issue: JiraIssue,
+	assignee: string,
+	updatedText: string,
+	options?: IssuePanelOptions
+): string {
+	const statusControl = renderStatusControl(issue, options);
 	return `<div class="issue-sidebar">
 		<div class="meta-card">
 			<div class="meta-section">
 				<div class="section-title">Status</div>
-				<div>${escapeHtml(issue.statusName)}</div>
+				${statusControl}
 			</div>
 			<div class="meta-section assignee-card">
 				${renderAssigneeAvatar(issue)}
@@ -1048,6 +1189,38 @@ function renderMetadataPanel(issue: JiraIssue, assignee: string, updatedText: st
 				<div>${escapeHtml(updatedText)}</div>
 			</div>
 		</div>
+		</div>`;
+}
+
+function renderStatusControl(issue: JiraIssue, options?: IssuePanelOptions): string {
+	const transitions = options?.statusOptions;
+	const pending = options?.statusPending;
+	const statusError = options?.statusError;
+
+	if (!transitions || transitions.length === 0) {
+		const message = statusError
+			? statusError
+			: options?.loading
+			? 'Loading available statuses…'
+			: 'No status transitions available.';
+		return `<div>${escapeHtml(issue.statusName)}</div>
+		<div class="muted">${escapeHtml(message)}</div>`;
+	}
+
+	const selectOptions = transitions
+		.map(
+			(option) =>
+				`<option value="${escapeAttribute(option.id)}">${escapeHtml(option.name)}</option>`
+		)
+		.join('');
+	const disabledAttr = pending ? 'disabled' : '';
+
+	return `<div class="status-select-wrapper">
+		<select class="jira-status-select" data-issue-key="${escapeAttribute(issue.key)}" ${disabledAttr}>
+			<option value="" disabled selected>Current: ${escapeHtml(issue.statusName)}</option>
+			${selectOptions}
+		</select>
+		${statusError ? `<div class="status-error">${escapeHtml(statusError)}</div>` : ''}
 	</div>`;
 }
 
@@ -1388,6 +1561,81 @@ async function fetchIssueDetails(authInfo: JiraAuthInfo, token: string, issueKey
 	throw lastError ?? new Error('Unable to load issue details.');
 }
 
+async function fetchIssueTransitions(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string
+): Promise<IssueStatusOption[]> {
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(issueKey)}/transitions`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			const response = await axios.get(endpoint, {
+				auth: {
+					username: authInfo.username,
+					password: token,
+				},
+				headers: {
+					Accept: 'application/json',
+					'User-Agent': 'jira-vscode',
+				},
+			});
+			const transitions = response.data?.transitions ?? [];
+				return transitions
+					.map((transition: any) => mapTransitionToStatusOption(transition))
+					.filter((option: IssueStatusOption | undefined): option is IssueStatusOption => !!option);
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to load issue transitions.');
+}
+
+async function transitionIssueStatus(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string,
+	transitionId: string
+): Promise<void> {
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(issueKey)}/transitions`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			await axios.post(
+				endpoint,
+				{
+					transition: {
+						id: transitionId,
+					},
+				},
+				{
+					auth: {
+						username: authInfo.username,
+						password: token,
+					},
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+						'User-Agent': 'jira-vscode',
+					},
+				}
+			);
+			return;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to update issue status.');
+}
+
 type JiraIssueSearchOptions = {
 	jql: string;
 	maxResults?: number;
@@ -1534,6 +1782,24 @@ function mapRelatedIssue(raw: any, urlRoot: string): JiraRelatedIssue | undefine
 		assigneeName,
 		url: `${urlRoot}/browse/${key}`,
 		updated,
+	};
+}
+
+function mapTransitionToStatusOption(transition: any): IssueStatusOption | undefined {
+	if (!transition?.id) {
+		return undefined;
+	}
+	const name = transition?.name ?? transition?.to?.name ?? 'Unnamed';
+	const categorySource =
+		transition?.to?.statusCategory?.name ??
+		transition?.to?.statusCategory?.key ??
+		transition?.to?.statusCategory?.id ??
+		transition?.to?.statusCategoryName ??
+		name;
+	return {
+		id: String(transition.id),
+		name,
+		category: determineStatusCategory(categorySource),
 	};
 }
 

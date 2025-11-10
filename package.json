@@ -36,6 +36,14 @@
         "title": "Jira: Clear Project Focus"
       },
       {
+        "command": "jira.refreshItemsView",
+        "title": "🗘 Refresh"
+      },
+      {
+        "command": "jira.refreshProjectsView",
+        "title": "🗘 Refresh Projects"
+      },
+      {
         "command": "jira.openIssueDetails",
         "title": "Jira: Open Issue Details"
       },
@@ -54,6 +62,18 @@
       ]
     },
     "menus": {
+      "view/title": [
+        {
+          "command": "jira.refreshItemsView",
+          "when": "view == jiraItemsView",
+          "group": "navigation"
+        },
+        {
+          "command": "jira.refreshProjectsView",
+          "when": "view == jiraProjectsView",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "jira.commitFromIssue",
