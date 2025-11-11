@@ -26,6 +26,10 @@ This document captures the key decisions and patterns discussed while building t
 - **Ticket Creation:** `+ Ticket` button opens webview form for summary/description/issue type/status.
 - **Git Commit Helper:** Context menu action fills the SCM input (`ISSUE-KEY: `).
 
+## Process Guidelines
+- Never make large or high-impact changes—such as removing dependencies, adding new packages, or altering primary features—without first confirming the approach with the team.
+- Structure new extension functionality following an MVC-style separation (data/model handling, view rendering, controller/command wiring) to keep the codebase consistent.
+
 ## Assignee Search Logic
 - Assignee dropdown fetches data only when the search query changes or user presses Enter in the search box.
 - Frontend posts `loadAssignees` messages with `issueKey` and `query`; backend caches the last query in panel state to avoid redundant calls.

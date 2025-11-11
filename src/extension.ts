@@ -4,6 +4,8 @@ import axios, { AxiosError } from 'axios';
 const AUTH_STATE_KEY = 'jira.authInfo';
 const SECRET_PREFIX = 'jira-token';
 const SELECTED_PROJECT_KEY = 'jira.selectedProject';
+const PROJECTS_VIEW_MODE_KEY = 'jira.projectsViewMode';
+const PROJECTS_VIEW_MODE_CONTEXT = 'jiraProjectsViewMode';
 const ISSUE_DETAIL_FIELDS = ['summary', 'status', 'assignee', 'updated', 'parent', 'subtasks'];
 let extensionUri: vscode.Uri;
 
@@ -115,6 +117,8 @@ type SelectedProjectInfo = {
 	typeKey?: string;
 };
 
+type ProjectsViewMode = 'recent' | 'all';
+
 type JiraProfileResponse = {
 	displayName?: string;
 	name?: string;
@@ -128,7 +132,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const authManager = new JiraAuthManager(context);
 	const focusManager = new JiraFocusManager(context, authManager);
 
-	const projectsProvider = new JiraProjectsTreeDataProvider(authManager, focusManager);
+	const projectsProvider = new JiraProjectsTreeDataProvider(context, authManager, focusManager);
 	const projectsView = vscode.window.createTreeView('jiraProjectsView', {
 		treeDataProvider: projectsProvider,
 	});
@@ -452,6 +456,12 @@ export async function activate(context: vscode.ExtensionContext) {
 			await authManager.login();
 			refreshAll();
 		}),
+		vscode.commands.registerCommand('jira.showAllProjects', async () => {
+			await projectsProvider.showAllProjects();
+		}),
+		vscode.commands.registerCommand('jira.showRecentProjects', async () => {
+			await projectsProvider.showRecentProjects();
+		}),
 		vscode.commands.registerCommand('jira.logout', async () => {
 			await authManager.logout();
 			refreshAll();
@@ -630,6 +640,43 @@ abstract class JiraTreeDataProvider implements vscode.TreeDataProvider<JiraTreeI
 }
 
 class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
+	private viewMode: ProjectsViewMode;
+
+	constructor(
+		private extensionContext: vscode.ExtensionContext,
+		authManager: JiraAuthManager,
+		focusManager: JiraFocusManager
+	) {
+		super(authManager, focusManager);
+		const stored = this.extensionContext.workspaceState.get<ProjectsViewMode>(
+			PROJECTS_VIEW_MODE_KEY
+		);
+		this.viewMode = stored === 'all' ? 'all' : 'recent';
+		void this.updateViewModeContext();
+	}
+
+	async showAllProjects(): Promise<void> {
+		await this.setViewMode('all');
+	}
+
+	async showRecentProjects(): Promise<void> {
+		await this.setViewMode('recent');
+	}
+
+	private async setViewMode(mode: ProjectsViewMode): Promise<void> {
+		if (this.viewMode === mode) {
+			return;
+		}
+		this.viewMode = mode;
+		await this.extensionContext.workspaceState.update(PROJECTS_VIEW_MODE_KEY, mode);
+		await this.updateViewModeContext();
+		this.refresh();
+	}
+
+	private updateViewModeContext(): Thenable<void> {
+		return vscode.commands.executeCommand('setContext', PROJECTS_VIEW_MODE_CONTEXT, this.viewMode);
+	}
+
 	protected getSectionChildren(authInfo: JiraAuthInfo): Promise<JiraTreeItem[]> {
 		return this.loadProjects(authInfo);
 	}
@@ -648,17 +695,34 @@ class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
 			];
 		}
 
+		const showingRecent = this.viewMode === 'recent';
+
 		try {
-			const projects = await fetchAccessibleProjects(authInfo, token);
+			const projects = showingRecent
+				? await fetchRecentProjects(authInfo, token)
+				: await fetchAccessibleProjects(authInfo, token);
+			const noun = showingRecent ? 'recent' : 'accessible';
 			this.updateBadge(
 				projects.length,
-				projects.length === 1 ? '1 accessible project' : `${projects.length} accessible projects`
+				projects.length === 1 ? `1 ${noun} project` : `${projects.length} ${noun} projects`
 			);
-			this.updateDescription(extractHost(authInfo.baseUrl));
+			const host = extractHost(authInfo.baseUrl);
+			const description = host
+				? showingRecent
+					? `${host} • recent`
+					: host
+				: showingRecent
+					? 'recent projects'
+					: undefined;
+			this.updateDescription(description);
 
 			if (projects.length === 0) {
 				return [
-					new JiraTreeItem('info', 'No projects available.', vscode.TreeItemCollapsibleState.None),
+					new JiraTreeItem(
+						'info',
+						showingRecent ? 'No recent projects. Use Show All to see everything.' : 'No projects available.',
+						vscode.TreeItemCollapsibleState.None
+					),
 				];
 			}
 
@@ -2612,6 +2676,51 @@ function mapTransitionToStatusOption(transition: any): IssueStatusOption | undef
 	};
 }
 
+function mapProject(project: any, urlRoot: string): JiraProject {
+	return {
+		id: project?.id,
+		key: project?.key,
+		name: project?.name ?? 'Untitled',
+		typeKey: project?.projectTypeKey,
+		url: project?.key ? `${urlRoot}/browse/${project.key}` : urlRoot,
+	};
+}
+
+async function fetchRecentProjects(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, 'project/recent');
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			const response = await axios.get(endpoint, {
+				params: {
+					maxResults: 20,
+				},
+				auth: {
+					username: authInfo.username,
+					password: token,
+				},
+				headers: {
+					Accept: 'application/json',
+					'User-Agent': 'jira-vscode',
+				},
+			});
+
+			const projects = Array.isArray(response.data)
+				? response.data
+				: Array.isArray(response.data?.values)
+				? response.data.values
+				: [];
+			return projects.map((project: any) => mapProject(project, urlRoot));
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError;
+}
+
 async function fetchAccessibleProjects(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
 	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, 'project/search');
@@ -2636,14 +2745,8 @@ async function fetchAccessibleProjects(authInfo: JiraAuthInfo, token: string): P
 				},
 			});
 
-			const projects = response.data.values ?? [];
-			return projects.map((project: any) => ({
-				id: project.id,
-				key: project.key,
-				name: project.name ?? 'Untitled',
-				typeKey: project.projectTypeKey,
-				url: `${urlRoot}/browse/${project.key}`,
-			}));
+			const projects = Array.isArray(response.data?.values) ? response.data.values : [];
+			return projects.map((project: any) => mapProject(project, urlRoot));
 		} catch (error) {
 			lastError = error;
 		}

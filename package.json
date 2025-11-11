@@ -63,6 +63,16 @@
                 "title": "🗘 Refresh Projects"
             },
             {
+                "command": "jira.showAllProjects",
+                "title": "Show All",
+                "category": "Jira"
+            },
+            {
+                "command": "jira.showRecentProjects",
+                "title": "Show Recent",
+                "category": "Jira"
+            },
+            {
                 "command": "jira.createIssue",
                 "title": "+ Ticket"
             },
@@ -100,6 +110,16 @@
                     "command": "jira.refreshProjectsView",
                     "when": "view == jiraProjectsView",
                     "group": "navigation"
+                },
+                {
+                    "command": "jira.showAllProjects",
+                    "when": "view == jiraProjectsView && jiraProjectsViewMode != 'all'",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "jira.showRecentProjects",
+                    "when": "view == jiraProjectsView && jiraProjectsViewMode == 'all'",
+                    "group": "navigation@2"
                 }
             ],
             "view/item/context": [
