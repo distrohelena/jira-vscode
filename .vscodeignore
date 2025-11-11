@@ -1,0 +1,12 @@
+.vscode/
+.git/
+.gitignore
+coverage/**
+node_modules/**
+src/**
+tsconfig.json
+package-lock.json
+**/*.ts
+**/*.map
+.eslint*
+prettier.config.*

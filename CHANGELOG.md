@@ -2,12 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 1.0.0
 
 - Added Projects, Items, and Settings tree views with focus and authentication commands.
 - Implemented refresh buttons for Projects and Items, plus contextual commit helpers.
-- Introduced issue details webview with status transitions, assignee management, and lazy-loaded, searchable assignee lists.
-- Added ticket creation panel supporting summary, description, issue type, and starting status (with automatic transition post-create).
+- Introduced issue details webview with status transitions, assignee management (lazy-loaded, searchable assignee lists), and status-specific icons.
+- Added ticket creation panel with summary/description/issue type/starting status, including automatic post-create status transition.
+- Swapped all SVG assets for PNGs to satisfy VSCE policies and added bundling via esbuild with `.vscodeignore` refinements.
+- Documented workflows in README and AGENTS, added MIT license file.
 
 ## 0.0.1
 

@@ -41,10 +41,10 @@ type JiraRelatedIssue = {
 type IssueStatusCategory = 'done' | 'inProgress' | 'open' | 'default';
 
 const STATUS_ICON_FILES: Record<IssueStatusCategory, string> = {
-	done: 'status-done.svg',
-	inProgress: 'status-inprogress.svg',
-	open: 'status-open.svg',
-	default: 'status-default.svg',
+	done: 'status-done.png',
+	inProgress: 'status-inprogress.png',
+	open: 'status-open.png',
+	default: 'status-default.png',
 };
 
 const ISSUE_TYPE_OPTIONS = ['Task', 'Bug', 'Story', 'Epic', 'Sub-task'];
@@ -1922,7 +1922,7 @@ function getItemsIconPath(): vscode.Uri | undefined {
 	if (!extensionUri) {
 		return undefined;
 	}
-	return vscode.Uri.joinPath(extensionUri, 'media', 'items.svg');
+	return vscode.Uri.joinPath(extensionUri, 'media', 'items.png');
 }
 
 function deriveIssueIcon(statusName?: string): vscode.ThemeIcon {

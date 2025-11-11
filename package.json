@@ -1,8 +1,8 @@
 {
-    "name": "jira-vscode",
+    "name": "helenofcode-jira-vscode",
     "displayName": "Jira VS Code",
     "description": "Open-source Jira integration for VS Code with reliable authentication for Jira Cloud and custom servers.",
-    "version": "0.0.1",
+    "version": "1.0.1",
     "publisher": "helenofcode",
     "repository": {
         "type": "git",
@@ -13,6 +13,20 @@
     },
     "categories": [
         "Other"
+    ],
+    "galleryBanner": {
+        "color": "#0B44C9",
+        "theme": "dark"
+    },
+    "icon": "media/jira.png",
+    "keywords": [
+        "jira",
+        "issues",
+        "project",
+        "tasks",
+        "atlassian",
+        "devops",
+        "productivity"
     ],
     "activationEvents": [
         "onCommand:jira.login",
@@ -66,7 +80,7 @@
                 {
                     "id": "jira",
                     "title": "Jira",
-                    "icon": "media/jira.svg"
+                    "icon": "media/jira.png"
                 }
             ]
         },
@@ -105,7 +119,7 @@
                 {
                     "id": "jiraItemsView",
                     "name": "Items",
-                    "icon": "media/items.svg"
+                    "icon": "media/items.png"
                 },
                 {
                     "id": "jiraSettingsView",
@@ -125,12 +139,14 @@
         }
     },
     "scripts": {
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./"
+        "bundle": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js",
+        "compile": "npm run bundle",
+        "watch": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js --watch"
     },
     "devDependencies": {
         "@types/node": "^20.11.0",
         "@types/vscode": "^1.85.0",
+        "esbuild": "^0.27.0",
         "typescript": "^5.3.3"
     },
     "dependencies": {

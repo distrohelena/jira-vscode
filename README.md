@@ -13,7 +13,7 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 ## Getting Started
 
 1. **Install dependencies**: `npm install`
-2. **Build**: `npm run compile`
+2. **Build**: `npm run compile` (runs the esbuild bundler and outputs `dist/extension.js`)
 3. **Launch the extension**:
    - Press `F5` in VS Code to start a new Extension Development Host.
    - Open the "Jira" activity bar icon to access the Projects, Items, and Settings views.
@@ -65,6 +65,11 @@ When contributing:
 1. Make sure to run `npm run compile`.
 2. Test flows in the Extension Development Host.
 3. Update the changelog when changes are user-visible.
+
+### Packaging & Bundling
+
+- The extension is bundled with [esbuild](https://esbuild.github.io/) so that runtime dependencies are inlined and the marketplace payload stays small. `npm run compile` handles bundling for both development builds and publishing.
+- Packaging for VS Code (`vsce package`) automatically honors `.vscodeignore`, which excludes TypeScript sources, `node_modules`, and other development artifacts for smaller `.vsix` files. For more guidance, see [aka.ms/vscode-bundle-extension](https://aka.ms/vscode-bundle-extension).
 
 ## License
 
