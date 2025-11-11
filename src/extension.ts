@@ -6,6 +6,9 @@ const SECRET_PREFIX = 'jira-token';
 const SELECTED_PROJECT_KEY = 'jira.selectedProject';
 const PROJECTS_VIEW_MODE_KEY = 'jira.projectsViewMode';
 const PROJECTS_VIEW_MODE_CONTEXT = 'jiraProjectsViewMode';
+const ITEMS_VIEW_MODE_KEY = 'jira.itemsViewMode';
+const ITEMS_VIEW_MODE_CONTEXT = 'jiraItemsViewMode';
+const RECENT_ITEMS_LIMIT = 20;
 const ISSUE_DETAIL_FIELDS = ['summary', 'status', 'assignee', 'updated', 'parent', 'subtasks'];
 let extensionUri: vscode.Uri;
 
@@ -118,6 +121,7 @@ type SelectedProjectInfo = {
 };
 
 type ProjectsViewMode = 'recent' | 'all';
+type ItemsViewMode = 'recent' | 'all';
 
 type JiraProfileResponse = {
 	displayName?: string;
@@ -144,7 +148,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	});
 	settingsProvider.bindView(settingsView);
 
-	const itemsProvider = new JiraItemsTreeDataProvider(authManager, focusManager);
+	const itemsProvider = new JiraItemsTreeDataProvider(context, authManager, focusManager);
 	const itemsView = vscode.window.createTreeView('jiraItemsView', {
 		treeDataProvider: itemsProvider,
 	});
@@ -462,6 +466,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('jira.showRecentProjects', async () => {
 			await projectsProvider.showRecentProjects();
 		}),
+		vscode.commands.registerCommand('jira.showAllItems', async () => {
+			await itemsProvider.showAllItems();
+		}),
+		vscode.commands.registerCommand('jira.showRecentItems', async () => {
+			await itemsProvider.showRecentItems();
+		}),
 		vscode.commands.registerCommand('jira.logout', async () => {
 			await authManager.logout();
 			refreshAll();
@@ -759,6 +769,41 @@ class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
 }
 
 class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
+	private viewMode: ItemsViewMode;
+
+	constructor(
+		private extensionContext: vscode.ExtensionContext,
+		authManager: JiraAuthManager,
+		focusManager: JiraFocusManager
+	) {
+		super(authManager, focusManager);
+		const stored = this.extensionContext.workspaceState.get<ItemsViewMode>(ITEMS_VIEW_MODE_KEY);
+		this.viewMode = stored === 'all' ? 'all' : 'recent';
+		void this.updateViewModeContext();
+	}
+
+	async showAllItems(): Promise<void> {
+		await this.setViewMode('all');
+	}
+
+	async showRecentItems(): Promise<void> {
+		await this.setViewMode('recent');
+	}
+
+	private async setViewMode(mode: ItemsViewMode): Promise<void> {
+		if (this.viewMode === mode) {
+			return;
+		}
+		this.viewMode = mode;
+		await this.extensionContext.workspaceState.update(ITEMS_VIEW_MODE_KEY, mode);
+		await this.updateViewModeContext();
+		this.refresh();
+	}
+
+	private updateViewModeContext(): Thenable<void> {
+		return vscode.commands.executeCommand('setContext', ITEMS_VIEW_MODE_CONTEXT, this.viewMode);
+	}
+
 	async getChildren(element?: JiraTreeItem): Promise<JiraTreeItem[]> {
 		if (element?.nodeType === 'statusGroup') {
 			return element.children ?? [];
@@ -788,46 +833,57 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			];
 		}
 
-		const projectLabel = selectedProject.name
-			? `${selectedProject.name} (${selectedProject.key})`
-			: selectedProject.key;
-		this.updateDescription(projectLabel);
-
-		const nodes: JiraTreeItem[] = [];
-
 		const token = await this.authManager.getToken();
 		if (!token) {
 			this.updateBadge();
-			nodes.push(
+			return [
 				new JiraTreeItem(
 					'info',
 					'Missing auth token. Please log in again.',
 					vscode.TreeItemCollapsibleState.None
-				)
-			);
-			return nodes;
+				),
+			];
 		}
+
+		const projectLabel = selectedProject.name
+			? `${selectedProject.name} (${selectedProject.key})`
+			: selectedProject.key;
+		const showingRecent = this.viewMode === 'recent';
 
 		try {
 			const issues = await fetchProjectIssues(authInfo, token, selectedProject.key);
 			if (issues.length === 0) {
-				this.updateBadge(0, 'No Jira issues in this project');
-				nodes.push(
+				this.updateBadge(0, showingRecent ? 'No recent issues' : 'No Jira issues in this project');
+				this.updateDescription(showingRecent ? `${projectLabel} • latest` : projectLabel);
+				return [
 					new JiraTreeItem(
 						'info',
-						'No issues in this project (first 50 shown).',
+						showingRecent
+							? 'No recent items. Use Show All to list everything.'
+							: 'No issues in this project (latest 50 shown).',
 						vscode.TreeItemCollapsibleState.None
-					)
-				);
-				return nodes;
+					),
+				];
 			}
 
-			this.updateBadge(
-				issues.length,
-				issues.length === 1 ? '1 Jira issue' : `${issues.length} Jira issues`
-			);
+			const sortedIssues = sortIssuesByUpdatedDesc(issues);
+			const visibleIssues = showingRecent ? sortedIssues.slice(0, RECENT_ITEMS_LIMIT) : sortedIssues;
 
-			const groupedNodes = groupIssuesByStatus(issues).map((group) => {
+			if (showingRecent) {
+				this.updateBadge(
+					visibleIssues.length,
+					visibleIssues.length === 1 ? '1 latest issue' : `${visibleIssues.length} latest issues`
+				);
+				this.updateDescription(projectLabel ? `${projectLabel} • latest` : 'Latest project issues');
+			} else {
+				this.updateBadge(
+					visibleIssues.length,
+					visibleIssues.length === 1 ? '1 Jira issue' : `${visibleIssues.length} Jira issues`
+				);
+				this.updateDescription(projectLabel);
+			}
+
+			const groupedNodes = groupIssuesByStatus(visibleIssues).map((group) => {
 				const childNodes = group.issues.map((issue) => createIssueTreeItem(issue));
 				const label =
 					group.issues.length > 0 ? `${group.statusName} (${group.issues.length})` : group.statusName;
@@ -847,20 +903,27 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				return groupItem;
 			});
 
-			nodes.push(...groupedNodes);
+			if (showingRecent && issues.length > visibleIssues.length) {
+				groupedNodes.push(
+					new JiraTreeItem(
+						'info',
+						`Showing latest ${visibleIssues.length} of ${issues.length} issues. Use Show All to see more.`,
+						vscode.TreeItemCollapsibleState.None
+					)
+				);
+			}
 
-			return nodes;
+			return groupedNodes;
 		} catch (error) {
 			const message = deriveErrorMessage(error);
 			this.updateBadge();
-			nodes.push(
+			return [
 				new JiraTreeItem(
 					'info',
 					`Failed to load project issues: ${message}`,
 					vscode.TreeItemCollapsibleState.None
-				)
-			);
-			return nodes;
+				),
+			];
 		}
 	}
 }
@@ -1095,6 +1158,15 @@ function groupIssuesByStatus(
 	}
 
 	return Array.from(groups.values()).sort((a, b) => a.statusName.localeCompare(b.statusName));
+}
+
+function sortIssuesByUpdatedDesc(issues: JiraIssue[]): JiraIssue[] {
+	return [...issues].sort((a, b) => getIssueUpdatedTimestamp(b) - getIssueUpdatedTimestamp(a));
+}
+
+function getIssueUpdatedTimestamp(issue: JiraIssue): number {
+	const value = issue.updated ? Date.parse(issue.updated) : NaN;
+	return Number.isNaN(value) ? 0 : value;
 }
 
 async function commitFromIssue(node?: JiraTreeItem) {
@@ -2221,7 +2293,7 @@ async function fetchProjectIssues(
 		return [];
 	}
 	return searchJiraIssues(authInfo, token, {
-		jql: `project = ${sanitizedKey} ORDER BY created DESC`,
+		jql: `project = ${sanitizedKey} ORDER BY updated DESC`,
 		maxResults: 50,
 		fields: ISSUE_DETAIL_FIELDS,
 	});
