@@ -152,6 +152,10 @@ export async function activate(context: vscode.ExtensionContext) {
 		itemsProvider.refresh();
 	};
 
+	const authChangeDisposable = authManager.onDidChangeAuth(() => {
+		refreshAll();
+	});
+
 	const openIssueDetails = async (issueOrKey?: JiraIssue | string): Promise<void> => {
 		const issueKeyValue = typeof issueOrKey === 'string' ? issueOrKey : issueOrKey?.key;
 		if (!issueKeyValue) {
@@ -439,6 +443,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	};
 
 	context.subscriptions.push(
+		authManager,
+		authChangeDisposable,
 		projectsView,
 		settingsView,
 		itemsView,
@@ -1956,8 +1962,15 @@ function determineStatusCategory(statusName?: string): IssueStatusCategory {
 	return 'default';
 }
 
-class JiraAuthManager {
+class JiraAuthManager implements vscode.Disposable {
+	private authChangeEmitter = new vscode.EventEmitter<void>();
+	readonly onDidChangeAuth: vscode.Event<void> = this.authChangeEmitter.event;
+
 	constructor(private context: vscode.ExtensionContext) {}
+
+	dispose(): void {
+		this.authChangeEmitter.dispose();
+	}
 
 	async getAuthInfo(): Promise<JiraAuthInfo | undefined> {
 		return this.context.globalState.get<JiraAuthInfo>(AUTH_STATE_KEY);
@@ -1965,6 +1978,7 @@ class JiraAuthManager {
 
 	private async saveAuthInfo(info: JiraAuthInfo | undefined) {
 		await this.context.globalState.update(AUTH_STATE_KEY, info);
+		this.authChangeEmitter.fire();
 	}
 
 	async login(): Promise<void> {
