@@ -26,6 +26,7 @@ type JiraIssue = {
 	summary: string;
 	statusName: string;
 	assigneeName?: string;
+	assigneeUsername?: string;
 	assigneeAccountId?: string;
 	assigneeAvatarUrl?: string;
 	url: string;
@@ -852,29 +853,35 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 		try {
 			const issues = await fetchProjectIssues(authInfo, token, selectedProject.key);
-			if (issues.length === 0) {
-				this.updateBadge(0, showingRecent ? 'No recent issues' : 'No Jira issues in this project');
-				this.updateDescription(showingRecent ? `${projectLabel} • latest` : projectLabel);
+			const sortedIssues = sortIssuesByUpdatedDesc(issues);
+			const relevantIssues = showingRecent ? filterIssuesRelatedToUser(sortedIssues, authInfo) : sortedIssues;
+			if (relevantIssues.length === 0) {
+				this.updateBadge(
+					0,
+					showingRecent ? 'No personal issues in this project' : 'No Jira issues in this project'
+				);
+				this.updateDescription(showingRecent ? `${projectLabel} • my latest` : projectLabel);
 				return [
 					new JiraTreeItem(
 						'info',
 						showingRecent
-							? 'No recent items. Use Show All to list everything.'
+							? 'No recent items assigned to you. Use Show All to list every issue.'
 							: 'No issues in this project (latest 50 shown).',
 						vscode.TreeItemCollapsibleState.None
 					),
 				];
 			}
 
-			const sortedIssues = sortIssuesByUpdatedDesc(issues);
-			const visibleIssues = showingRecent ? sortedIssues.slice(0, RECENT_ITEMS_LIMIT) : sortedIssues;
+			const visibleIssues = showingRecent
+				? relevantIssues.slice(0, RECENT_ITEMS_LIMIT)
+				: relevantIssues;
 
 			if (showingRecent) {
 				this.updateBadge(
 					visibleIssues.length,
-					visibleIssues.length === 1 ? '1 latest issue' : `${visibleIssues.length} latest issues`
+					visibleIssues.length === 1 ? '1 of your latest issues' : `${visibleIssues.length} of your latest issues`
 				);
-				this.updateDescription(projectLabel ? `${projectLabel} • latest` : 'Latest project issues');
+				this.updateDescription(projectLabel ? `${projectLabel} • my latest` : 'My latest project issues');
 			} else {
 				this.updateBadge(
 					visibleIssues.length,
@@ -903,11 +910,11 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				return groupItem;
 			});
 
-			if (showingRecent && issues.length > visibleIssues.length) {
+			if (showingRecent && relevantIssues.length > visibleIssues.length) {
 				groupedNodes.push(
 					new JiraTreeItem(
 						'info',
-						`Showing latest ${visibleIssues.length} of ${issues.length} issues. Use Show All to see more.`,
+						`Showing latest ${visibleIssues.length} of ${relevantIssues.length} of your issues. Use Show All to see more.`,
 						vscode.TreeItemCollapsibleState.None
 					)
 				);
@@ -1112,6 +1119,7 @@ function createPlaceholderIssue(issueKey: string): JiraIssue {
 		summary: 'Loading issue details…',
 		statusName: 'Loading',
 		assigneeAccountId: undefined,
+		assigneeUsername: undefined,
 		url: '',
 		updated: '',
 	};
@@ -1167,6 +1175,29 @@ function sortIssuesByUpdatedDesc(issues: JiraIssue[]): JiraIssue[] {
 function getIssueUpdatedTimestamp(issue: JiraIssue): number {
 	const value = issue.updated ? Date.parse(issue.updated) : NaN;
 	return Number.isNaN(value) ? 0 : value;
+}
+
+function filterIssuesRelatedToUser(issues: JiraIssue[], authInfo: JiraAuthInfo): JiraIssue[] {
+	const accountId = authInfo.accountId?.trim();
+	const username = authInfo.username?.trim().toLowerCase();
+	const displayName = authInfo.displayName?.trim().toLowerCase();
+	return issues.filter((issue) => {
+		if (accountId && issue.assigneeAccountId && issue.assigneeAccountId === accountId) {
+			return true;
+		}
+		const assigneeUsername = issue.assigneeUsername?.trim().toLowerCase();
+		if (username && assigneeUsername && assigneeUsername === username) {
+			return true;
+		}
+		const assigneeName = issue.assigneeName?.trim().toLowerCase();
+		if (username && assigneeName && assigneeName === username) {
+			return true;
+		}
+		if (displayName && assigneeName && assigneeName === displayName) {
+			return true;
+		}
+		return false;
+	});
 }
 
 async function commitFromIssue(node?: JiraTreeItem) {
@@ -2683,6 +2714,7 @@ function mapIssue(issue: any, urlRoot: string): JiraIssue {
 		summary: fields?.summary ?? 'Untitled',
 		statusName: fields?.status?.name ?? 'Unknown',
 		assigneeName: fields?.assignee?.displayName ?? fields?.assignee?.name ?? undefined,
+		assigneeUsername: fields?.assignee?.name ?? undefined,
 		assigneeAccountId: fields?.assignee?.accountId ?? undefined,
 		assigneeAvatarUrl,
 		url: `${urlRoot}/browse/${issue?.key}`,
