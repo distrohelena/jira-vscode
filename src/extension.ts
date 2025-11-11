@@ -21,6 +21,7 @@ type JiraIssue = {
 	summary: string;
 	statusName: string;
 	assigneeName?: string;
+	assigneeAccountId?: string;
 	assigneeAvatarUrl?: string;
 	url: string;
 	updated: string;
@@ -55,12 +56,23 @@ type IssuePanelOptions = {
 	statusOptions?: IssueStatusOption[];
 	statusPending?: boolean;
 	statusError?: string;
+	assigneeOptions?: IssueAssignableUser[];
+	assigneePending?: boolean;
+	assigneeError?: string;
+	assigneeQuery?: string;
+	assigneeAutoFocus?: boolean;
 };
 
 type IssueStatusOption = {
 	id: string;
 	name: string;
 	category?: IssueStatusCategory;
+};
+
+type IssueAssignableUser = {
+	accountId: string;
+	displayName: string;
+	avatarUrl?: string;
 };
 
 type CreateIssueFormValues = {
@@ -149,23 +161,39 @@ export async function activate(context: vscode.ExtensionContext) {
 		const resolvedIssueKey: string = issueKeyValue;
 
 		const initialIssue = typeof issueOrKey === 'string' ? undefined : issueOrKey;
-		const panelState: { issue: JiraIssue; transitions?: IssueStatusOption[] } = {
-			issue: initialIssue ?? createPlaceholderIssue(resolvedIssueKey),
-			transitions: undefined,
-		};
+	const panelState: {
+		issue: JiraIssue;
+		transitions?: IssueStatusOption[];
+		assignableUsers?: IssueAssignableUser[];
+		assigneeQuery: string;
+	} = {
+		issue: initialIssue ?? createPlaceholderIssue(resolvedIssueKey),
+		transitions: undefined,
+		assignableUsers: undefined,
+		assigneeQuery: '',
+	};
 
 		let disposed = false;
 
-		const panel = showIssueDetailsPanel(
-			resolvedIssueKey,
-			panelState.issue,
-			{ loading: true },
-			async (message) => {
-				if (message?.type === 'changeStatus' && typeof message.transitionId === 'string') {
-					await handleStatusChange(message.transitionId);
-				}
-			}
-		);
+				const panel = showIssueDetailsPanel(
+					resolvedIssueKey,
+					panelState.issue,
+					{ loading: true },
+		async (message) => {
+						if (message?.type === 'changeStatus' && typeof message.transitionId === 'string') {
+							await handleStatusChange(message.transitionId);
+						} else if (
+							message?.type === 'changeAssignee' &&
+							typeof message.accountId === 'string'
+						) {
+							await handleAssigneeChange(message.accountId);
+				} else if (message?.type === 'loadAssignees') {
+					const queryValue =
+						typeof message.query === 'string' ? message.query : panelState.assigneeQuery ?? '';
+					await handleAssigneeSearch(queryValue, !!message.force);
+						}
+					}
+				);
 
 		panel.onDidDispose(() => {
 			disposed = true;
@@ -179,6 +207,8 @@ export async function activate(context: vscode.ExtensionContext) {
 				if (!disposed) {
 					renderIssuePanelContent(panel, panelState.issue, {
 						error: 'Log in to Jira to view issue details.',
+						assigneeOptions: panelState.assignableUsers,
+						assigneeQuery: panelState.assigneeQuery,
 					});
 				}
 				await vscode.window.showInformationMessage('Log in to Jira to view issue details.');
@@ -190,6 +220,8 @@ export async function activate(context: vscode.ExtensionContext) {
 				if (!disposed) {
 					renderIssuePanelContent(panel, panelState.issue, {
 						error: 'Missing auth token. Please log in again.',
+						assigneeOptions: panelState.assignableUsers,
+						assigneeQuery: panelState.assigneeQuery,
 					});
 				}
 				await vscode.window.showInformationMessage('Missing auth token. Please log in again.');
@@ -205,6 +237,13 @@ export async function activate(context: vscode.ExtensionContext) {
 				} catch (transitionError) {
 					transitionsError = deriveErrorMessage(transitionError);
 				}
+				let assignees: IssueAssignableUser[] | undefined;
+				let assigneeError: string | undefined;
+				try {
+					assignees = await fetchAssignableUsers(authInfo, token, resolvedIssueKey);
+				} catch (assignError) {
+					assigneeError = deriveErrorMessage(assignError);
+				}
 
 				if (disposed) {
 					return;
@@ -212,17 +251,25 @@ export async function activate(context: vscode.ExtensionContext) {
 
 				panelState.issue = issue;
 				panelState.transitions = transitions;
+				panelState.assignableUsers = assignees;
 				renderIssuePanelContent(panel, issue, {
 					statusOptions: transitions,
 					statusError: transitionsError
 						? `Unable to load available statuses: ${transitionsError}`
 						: undefined,
+					assigneeOptions: assignees,
+					assigneeError: assigneeError
+						? `Unable to load assignable users: ${assigneeError}`
+						: undefined,
+					assigneeQuery: panelState.assigneeQuery,
 				});
 			} catch (error) {
 				const message = deriveErrorMessage(error);
 				if (!disposed) {
 					renderIssuePanelContent(panel, panelState.issue, {
 						error: `Failed to load issue details: ${message}`,
+						assigneeOptions: panelState.assignableUsers,
+						assigneeQuery: panelState.assigneeQuery,
 					});
 				}
 				await vscode.window.showErrorMessage(`Failed to load issue details: ${message}`);
@@ -244,6 +291,8 @@ export async function activate(context: vscode.ExtensionContext) {
 			renderIssuePanelContent(panel, panelState.issue, {
 				statusOptions: panelState.transitions,
 				statusPending: true,
+				assigneeOptions: panelState.assignableUsers,
+				assigneeQuery: panelState.assigneeQuery,
 			});
 
 			try {
@@ -262,6 +311,8 @@ export async function activate(context: vscode.ExtensionContext) {
 				panelState.transitions = transitions;
 				renderIssuePanelContent(panel, updatedIssue, {
 					statusOptions: transitions,
+					assigneeOptions: panelState.assignableUsers,
+					assigneeQuery: panelState.assigneeQuery,
 				});
 				refreshAll();
 			} catch (error) {
@@ -270,9 +321,119 @@ export async function activate(context: vscode.ExtensionContext) {
 					renderIssuePanelContent(panel, panelState.issue, {
 						statusOptions: panelState.transitions,
 						statusError: `Failed to update status: ${message}`,
+						assigneeOptions: panelState.assignableUsers,
+						assigneeQuery: panelState.assigneeQuery,
 					});
 				}
 				await vscode.window.showErrorMessage(`Failed to update status: ${message}`);
+			}
+		}
+
+		async function handleAssigneeChange(accountId: string): Promise<void> {
+			if (disposed || !accountId) {
+				return;
+			}
+
+			const authInfo = await authManager.getAuthInfo();
+			const token = await authManager.getToken();
+			if (!authInfo || !token) {
+				await vscode.window.showInformationMessage('Log in to Jira to change the assignee.');
+				return;
+			}
+
+			renderIssuePanelContent(panel, panelState.issue, {
+				statusOptions: panelState.transitions,
+				assigneeOptions: panelState.assignableUsers,
+				assigneePending: true,
+				assigneeQuery: panelState.assigneeQuery,
+			});
+
+			try {
+				await assignIssue(authInfo, token, resolvedIssueKey, accountId);
+				const updatedIssue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				if (disposed) {
+					return;
+				}
+				panelState.issue = updatedIssue;
+				renderIssuePanelContent(panel, updatedIssue, {
+					statusOptions: panelState.transitions,
+					assigneeOptions: panelState.assignableUsers,
+					assigneeQuery: panelState.assigneeQuery,
+				});
+				refreshAll();
+			} catch (error) {
+				const message = deriveErrorMessage(error);
+				if (!disposed) {
+					renderIssuePanelContent(panel, panelState.issue, {
+						statusOptions: panelState.transitions,
+						assigneeOptions: panelState.assignableUsers,
+						assigneeError: `Failed to update assignee: ${message}`,
+						assigneeQuery: panelState.assigneeQuery,
+					});
+				}
+				await vscode.window.showErrorMessage(`Failed to update assignee: ${message}`);
+			}
+		}
+
+		async function handleAssigneeSearch(query?: string, force = false): Promise<void> {
+			if (disposed) {
+				return;
+			}
+
+			const authInfo = await authManager.getAuthInfo();
+			const token = await authManager.getToken();
+			if (!authInfo || !token) {
+				await vscode.window.showInformationMessage('Log in to Jira to view assignable users.');
+				return;
+			}
+
+			const normalizedQuery = query?.trim() ?? '';
+			if (
+				!force &&
+				normalizedQuery === panelState.assigneeQuery &&
+				panelState.assignableUsers &&
+				panelState.assignableUsers.length > 0
+			) {
+				renderIssuePanelContent(panel, panelState.issue, {
+					statusOptions: panelState.transitions,
+					assigneeOptions: panelState.assignableUsers,
+					assigneeQuery: panelState.assigneeQuery,
+				});
+				return;
+			}
+
+			renderIssuePanelContent(panel, panelState.issue, {
+				statusOptions: panelState.transitions,
+				assigneeOptions: panelState.assignableUsers,
+				assigneePending: true,
+				assigneeQuery: normalizedQuery,
+			});
+
+			try {
+				const users = await fetchAssignableUsers(authInfo, token, resolvedIssueKey, normalizedQuery);
+				if (disposed) {
+					return;
+				}
+				panelState.assignableUsers = users;
+				panelState.assigneeQuery = normalizedQuery;
+				renderIssuePanelContent(panel, panelState.issue, {
+					statusOptions: panelState.transitions,
+					assigneeOptions: users,
+					assigneeQuery: normalizedQuery,
+					assigneeAutoFocus: true,
+				});
+			} catch (error) {
+				const message = deriveErrorMessage(error);
+				if (!disposed) {
+					renderIssuePanelContent(panel, panelState.issue, {
+						statusOptions: panelState.transitions,
+						assigneeOptions: panelState.assignableUsers,
+						assigneeError: `Failed to load assignable users: ${message}`,
+						assigneeQuery: normalizedQuery,
+						assigneeAutoFocus: true,
+					});
+				}
+				await vscode.window.showErrorMessage(`Failed to load assignable users: ${message}`);
 			}
 		}
 	};
@@ -373,7 +534,7 @@ export async function activate(context: vscode.ExtensionContext) {
 						successIssue: createdIssue,
 					});
 					itemsProvider.refresh();
-					await vscode.commands.executeCommand('jira.openIssueDetails', createdIssue.key);
+					await openIssueDetails(createdIssue);
 				} catch (error) {
 					const messageText = deriveErrorMessage(error);
 					updatePanel({ submitting: false, error: `Failed to create issue: ${messageText}` });
@@ -817,6 +978,7 @@ function createPlaceholderIssue(issueKey: string): JiraIssue {
 		key: issueKey,
 		summary: 'Loading issue details…',
 		statusName: 'Loading',
+		assigneeAccountId: undefined,
 		url: '',
 		updated: '',
 	};
@@ -1114,6 +1276,28 @@ function renderIssueDetailsHtml(
 				gap: 12px;
 				align-items: center;
 			}
+			.assignee-control-details {
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+			}
+			.assignee-search-row {
+				display: flex;
+				gap: 8px;
+			}
+			.assignee-search-row input {
+				flex: 1;
+			}
+			.jira-assignee-select {
+				background: var(--vscode-input-background);
+				color: var(--vscode-input-foreground);
+				border: 1px solid var(--vscode-input-border);
+				border-radius: 4px;
+				padding: 4px 8px;
+			}
+			.jira-assignee-select:disabled {
+				opacity: 0.7;
+			}
 			.status-select-wrapper {
 				display: flex;
 				flex-direction: column;
@@ -1230,6 +1414,60 @@ function renderIssueDetailsHtml(
 						select.setAttribute('disabled', 'true');
 						vscode.postMessage({ type: 'changeStatus', transitionId, issueKey });
 					});
+				});
+				const requestAssignees = (issueKey, query, force) => {
+					if (!issueKey) {
+						return;
+					}
+					vscode.postMessage({ type: 'loadAssignees', issueKey, query: query ?? '', force: !!force });
+				};
+				document.querySelectorAll('.jira-assignee-select').forEach((select) => {
+					const issueKey = select.getAttribute('data-issue-key');
+					select.addEventListener('focus', () => {
+					const selector = '.jira-assignee-search[data-issue-key="' + issueKey + '"]';
+					const searchInput = document.querySelector(selector);
+					const query = searchInput ? searchInput.value : '';
+					const loaded = select.getAttribute('data-loaded') === 'true';
+					const lastQuery = select.getAttribute('data-query') || '';
+					if (!loaded || lastQuery !== query) {
+						select.setAttribute('data-loaded', 'pending');
+						select.setAttribute('data-query', query);
+						requestAssignees(issueKey, query);
+					}
+					});
+					select.addEventListener('click', () => {
+					const selector = '.jira-assignee-search[data-issue-key="' + issueKey + '"]';
+					const searchInput = document.querySelector(selector);
+					const query = searchInput ? searchInput.value : '';
+					const loaded = select.getAttribute('data-loaded') === 'true';
+					const lastQuery = select.getAttribute('data-query') || '';
+					if (!loaded || lastQuery !== query) {
+						select.setAttribute('data-loaded', 'pending');
+						select.setAttribute('data-query', query);
+						requestAssignees(issueKey, query);
+					}
+					});
+					select.addEventListener('change', () => {
+						const accountId = select.value;
+						if (!accountId || !issueKey) {
+							return;
+						}
+						select.setAttribute('disabled', 'true');
+						vscode.postMessage({ type: 'changeAssignee', accountId, issueKey });
+					});
+				});
+				document.querySelectorAll('.jira-assignee-search').forEach((input) => {
+				const issueKey = input.getAttribute('data-issue-key');
+				const triggerSearch = () => {
+					requestAssignees(issueKey, input.value, true);
+				};
+				input.addEventListener('keydown', (event) => {
+					if (event.key === 'Enter') {
+						event.preventDefault();
+						triggerSearch();
+						input.dataset.loaded = 'true';
+					}
+				});
 				});
 			})();
 		</script>
@@ -1450,18 +1688,16 @@ function renderMetadataPanel(
 	options?: IssuePanelOptions
 ): string {
 	const statusControl = renderStatusControl(issue, options);
+	const assigneeControl = renderAssigneeControl(issue, assignee, options);
 	return `<div class="issue-sidebar">
 		<div class="meta-card">
 			<div class="meta-section">
 				<div class="section-title">Status</div>
 				${statusControl}
 			</div>
-			<div class="meta-section assignee-card">
-				${renderAssigneeAvatar(issue)}
-				<div>
-					<div class="section-title">Assignee</div>
-					<div>${escapeHtml(assignee)}</div>
-				</div>
+			<div class="meta-section">
+				<div class="section-title">Assignee</div>
+				${assigneeControl}
 			</div>
 			<div class="meta-section">
 				<div class="section-title">Last Updated</div>
@@ -1515,6 +1751,74 @@ function renderIssueStatusOptions(selected: string): string {
 		const isSelected = option === selected;
 		return `<option value="${escapeAttribute(option)}" ${isSelected ? 'selected' : ''}>${escapeHtml(option)}</option>`;
 	}).join('');
+}
+
+function renderAssigneeControl(
+	issue: JiraIssue,
+	currentAssigneeLabel: string,
+	options?: IssuePanelOptions
+): string {
+	const assigneeOptions = options?.assigneeOptions;
+	const pending = options?.assigneePending;
+	const assigneeError = options?.assigneeError;
+	const currentAccountId = issue.assigneeAccountId;
+	const queryValue = options?.assigneeQuery ?? '';
+	const searchDisabledAttr = pending ? 'disabled' : '';
+
+	if (!assigneeOptions || assigneeOptions.length === 0) {
+		const message = assigneeError
+			? assigneeError
+			: 'Search to load assignable users.';
+	return `<div class="assignee-card">
+		${renderAssigneeAvatar(issue)}
+		<div class="assignee-control-details">
+			<div class="muted">Current: ${escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
+			<div class="assignee-search-row">
+				<input type="text" class="jira-assignee-search" data-issue-key="${escapeAttribute(
+					issue.key
+				)}" data-query="${escapeAttribute(queryValue)}" value="${escapeAttribute(
+					queryValue
+				)}" placeholder="Search people" ${searchDisabledAttr} />
+			</div>
+			<select class="jira-assignee-select" data-issue-key="${escapeAttribute(
+				issue.key
+			)}" data-loaded="false" data-query="${escapeAttribute(queryValue)}" ${searchDisabledAttr}>
+				<option value="">${escapeHtml(message)}</option>
+			</select>
+		</div>
+	</div>`;
+}
+
+	const selectDisabledAttr = pending ? 'disabled' : '';
+	const selectOptions = assigneeOptions
+		.map((user) => {
+			const isCurrent =
+				(currentAccountId && user.accountId === currentAccountId) ||
+				user.displayName === issue.assigneeName;
+			return `<option value="${escapeAttribute(user.accountId)}" ${
+				isCurrent ? 'selected' : ''
+			}>${escapeHtml(user.displayName)}</option>`;
+		})
+		.join('');
+	const disabledAttr = pending ? 'disabled' : '';
+
+	return `<div class="assignee-card">
+		${renderAssigneeAvatar(issue)}
+		<div class="assignee-control-details">
+			<div class="muted">Current: ${escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
+			<div class="assignee-search-row">
+				<input type="text" class="jira-assignee-search" data-issue-key="${escapeAttribute(
+					issue.key
+				)}" value="${escapeAttribute(queryValue)}" placeholder="Search people" ${searchDisabledAttr} />
+			</div>
+			<select class="jira-assignee-select" data-issue-key="${escapeAttribute(
+				issue.key
+			)}" data-loaded="true" data-query="${escapeAttribute(queryValue)}" ${selectDisabledAttr}>
+				${selectOptions}
+			</select>
+			${assigneeError ? `<div class="status-error">${escapeHtml(assigneeError)}</div>` : ''}
+		</div>
+	</div>`;
 }
 
 function sanitizeCreateIssueValues(
@@ -1956,6 +2260,102 @@ async function transitionIssueStatus(
 	throw lastError ?? new Error('Unable to update issue status.');
 }
 
+async function fetchAssignableUsers(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string,
+	query = '',
+	maxResults = 50
+): Promise<IssueAssignableUser[]> {
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `user/assignable/search`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			const response = await axios.get(endpoint, {
+				params: {
+					issueKey,
+					maxResults,
+					query: query?.trim() || undefined,
+				},
+				auth: {
+					username: authInfo.username,
+					password: token,
+				},
+				headers: {
+					Accept: 'application/json',
+					'User-Agent': 'jira-vscode',
+				},
+			});
+
+			const users: any[] = response.data ?? [];
+			return users
+				.map((user: any): IssueAssignableUser | undefined => {
+					const identifier = user.accountId ?? user.key ?? user.name;
+					if (!identifier) {
+						return undefined;
+					}
+					return {
+						accountId: String(identifier),
+						displayName: user.displayName ?? user.name ?? 'Unnamed',
+						avatarUrl:
+							user.avatarUrls?.['48x48'] ??
+							user.avatarUrls?.['32x32'] ??
+							user.avatarUrls?.['24x24'] ??
+							undefined,
+					};
+				})
+				.filter((user): user is IssueAssignableUser => !!user);
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to load assignable users.');
+}
+
+async function assignIssue(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string,
+	accountId: string
+): Promise<void> {
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(issueKey)}/assignee`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			const body =
+				authInfo.serverLabel === 'cloud'
+					? { accountId }
+					: { name: accountId, accountId };
+			await axios.put(
+				endpoint,
+				body,
+				{
+					auth: {
+						username: authInfo.username,
+						password: token,
+					},
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+						'User-Agent': 'jira-vscode',
+					},
+				}
+			);
+			return;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to update assignee.');
+}
 async function createJiraIssue(
 	authInfo: JiraAuthInfo,
 	token: string,
@@ -2133,6 +2533,7 @@ function mapIssue(issue: any, urlRoot: string): JiraIssue {
 		summary: fields?.summary ?? 'Untitled',
 		statusName: fields?.status?.name ?? 'Unknown',
 		assigneeName: fields?.assignee?.displayName ?? fields?.assignee?.name ?? undefined,
+		assigneeAccountId: fields?.assignee?.accountId ?? undefined,
 		assigneeAvatarUrl,
 		url: `${urlRoot}/browse/${issue?.key}`,
 		updated: fields?.updated ?? '',
