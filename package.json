@@ -29,6 +29,7 @@
         "productivity"
     ],
     "activationEvents": [
+        "onStartupFinished",
         "onCommand:jira.login",
         "onCommand:jira.focusProject",
         "onCommand:jira.clearProjectFocus",
