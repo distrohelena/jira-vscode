@@ -2,10 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 1.0.9
 
 - Added an inline "Search recent items" row (and command palette entry) that filters your recent project items directly inside the Items tree.
 - Changing an issue's assignee now requires confirming via the new OK button next to the assignee dropdown to prevent accidental reassignment.
+- Issue details panel now shows a full description card ahead of related issues, preserving rich Jira formatting.
+- Added complete Jira comment support (view, refresh, add with wiki/plain formats, and delete) directly inside the issue details webview.
 
 ## 1.0.0
 

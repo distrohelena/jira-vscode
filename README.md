@@ -6,7 +6,8 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 
 - **Projects View** – Browse accessible Jira projects, focus a project for work, and refresh data with a single click.
 - **Items View** – Displays the currently focused project's Jira issues grouped by status, with badges, an inline search/filter row for your recent items, and tree view actions that mirror VS Code's source control UX.
-- **Issue Details Panel** – Open any ticket to view metadata, switch assignees, transition workflow status, and launch the issue in the browser.
+- **Issue Details Panel** – Open any ticket to view full metadata (including the rich-text description card), switch assignees, transition workflow status, and launch the issue in the browser.
+- **Inline Comments** – Read the latest Jira comments (with wiki formatting), refresh the thread, add comments in wiki or plain text, and delete your own remarks without leaving VS Code.
 - **Ticket Creation** – Use the `+ Ticket` button to create new issues with summary, description, issue type, and starting status right from VS Code.
 - **Authentication Support** – Works with Jira Cloud as well as custom Jira Server/Data Center deployments, storing tokens securely via VS Code's secret storage.
 
@@ -35,6 +36,8 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 - Inside the panel you can:
   - Update status via the combobox (transitions are fetched from Jira).
   - Search for and assign the issue to other users (results fetch lazily on demand).
+  - Review the formatted description card and refresh/open related issues.
+  - Read, refresh, add, and delete Jira comments—choose between Jira wiki (full formatting) or plain text when posting.
   - Click "Open in Jira" to view the ticket in your browser.
 
 ### Creating Tickets
