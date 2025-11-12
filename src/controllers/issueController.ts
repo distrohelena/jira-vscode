@@ -37,6 +37,7 @@ export type IssueControllerDeps = {
 
 export function createIssueController(deps: IssueControllerDeps) {
 	const { authManager, refreshAll, projectStatusStore, transitionStore, transitionPrefetcher } = deps;
+	const openIssuePanels = new Map<string, vscode.WebviewPanel>();
 
 	const openIssueDetails = async (issueOrKey?: JiraIssue | string): Promise<void> => {
 		const issueKeyValue = typeof issueOrKey === 'string' ? issueOrKey : issueOrKey?.key;
@@ -45,6 +46,12 @@ export function createIssueController(deps: IssueControllerDeps) {
 			return;
 		}
 		const resolvedIssueKey: string = issueKeyValue;
+
+		const existingPanel = openIssuePanels.get(resolvedIssueKey);
+		if (existingPanel) {
+			existingPanel.reveal(vscode.ViewColumn.Active);
+			return;
+		}
 
 		const initialIssue = typeof issueOrKey === 'string' ? undefined : issueOrKey;
 		const issueProjectKey = deriveProjectKeyFromIssueKey(resolvedIssueKey);
@@ -180,8 +187,11 @@ export function createIssueController(deps: IssueControllerDeps) {
 			renderIssuePanelContent(panel, panelState.issue, merged);
 		};
 
+		openIssuePanels.set(resolvedIssueKey, panel);
+
 		panel.onDidDispose(() => {
 			disposed = true;
+			openIssuePanels.delete(resolvedIssueKey);
 		});
 
 		void refreshComments(true);
