@@ -11,6 +11,7 @@ const ITEMS_VIEW_MODE_CONTEXT = 'jiraItemsViewMode';
 const ITEMS_SEARCH_QUERY_KEY = 'jira.itemsSearchQuery';
 const RECENT_ITEMS_LIMIT = 50;
 const RECENT_ITEMS_FETCH_LIMIT = 500;
+const COMMENT_FETCH_LIMIT = 50;
 const ISSUE_DETAIL_FIELDS = ['summary', 'status', 'assignee', 'updated', 'parent', 'subtasks'];
 let extensionUri: vscode.Uri;
 
@@ -47,6 +48,20 @@ type JiraRelatedIssue = {
 	updated?: string;
 };
 
+type JiraIssueComment = {
+	id: string;
+	body?: string;
+	renderedBody?: string;
+	authorName?: string;
+	authorAccountId?: string;
+	authorAvatarUrl?: string;
+	created?: string;
+	updated?: string;
+	isCurrentUser?: boolean;
+};
+
+type JiraCommentFormat = 'plain' | 'wiki';
+
 type IssueStatusCategory = 'done' | 'inProgress' | 'open' | 'default';
 
 const STATUS_ICON_FILES: Record<IssueStatusCategory, string> = {
@@ -70,6 +85,14 @@ type IssuePanelOptions = {
 	assigneeError?: string;
 	assigneeQuery?: string;
 	assigneeAutoFocus?: boolean;
+	comments?: JiraIssueComment[];
+	commentsError?: string;
+	commentsPending?: boolean;
+	commentSubmitPending?: boolean;
+	commentSubmitError?: string;
+	commentDeletingId?: string;
+	commentFormat?: JiraCommentFormat;
+	commentDraft?: string;
 };
 
 type IssueStatusOption = {
@@ -188,64 +211,120 @@ export async function activate(context: vscode.ExtensionContext) {
 		transitions?: IssueStatusOption[];
 		assignableUsers?: IssueAssignableUser[];
 		assigneeQuery: string;
+		comments?: JiraIssueComment[];
+		commentsError?: string;
+		commentsLoading: boolean;
+		commentSubmitPending: boolean;
+		commentSubmitError?: string;
+		commentFormat: JiraCommentFormat;
+		commentDraft: string;
+		commentDeletingId?: string;
 	} = {
 		issue: initialIssue ?? createPlaceholderIssue(resolvedIssueKey),
 		transitions: undefined,
 		assignableUsers: undefined,
 		assigneeQuery: '',
+		comments: undefined,
+		commentsError: undefined,
+		commentsLoading: true,
+		commentSubmitPending: false,
+		commentSubmitError: undefined,
+		commentFormat: 'wiki',
+		commentDraft: '',
+		commentDeletingId: undefined,
 	};
+
+	const buildCommentOptions = (): IssuePanelOptions => ({
+		comments: panelState.comments,
+		commentsError: panelState.commentsError,
+		commentsPending: panelState.commentsLoading,
+		commentSubmitPending: panelState.commentSubmitPending,
+		commentSubmitError: panelState.commentSubmitError,
+		commentDeletingId: panelState.commentDeletingId,
+		commentFormat: panelState.commentFormat,
+		commentDraft: panelState.commentDraft,
+	});
 
 		let disposed = false;
 
-				const panel = showIssueDetailsPanel(
-					resolvedIssueKey,
-					panelState.issue,
-					{ loading: true },
-		async (message) => {
-						if (message?.type === 'changeStatus' && typeof message.transitionId === 'string') {
-							await handleStatusChange(message.transitionId);
-						} else if (
-							message?.type === 'changeAssignee' &&
-							typeof message.accountId === 'string'
-						) {
-							await handleAssigneeChange(message.accountId);
-				} else if (message?.type === 'loadAssignees') {
-					const queryValue =
-						typeof message.query === 'string' ? message.query : panelState.assigneeQuery ?? '';
-					await handleAssigneeSearch(queryValue, !!message.force);
-						}
-					}
-				);
+			const panel = showIssueDetailsPanel(
+				resolvedIssueKey,
+				panelState.issue,
+				{ ...buildCommentOptions(), loading: true },
+	async (message) => {
+					if (message?.type === 'changeStatus' && typeof message.transitionId === 'string') {
+						await handleStatusChange(message.transitionId);
+					} else if (
+						message?.type === 'changeAssignee' &&
+						typeof message.accountId === 'string'
+					) {
+						await handleAssigneeChange(message.accountId);
+			} else if (message?.type === 'loadAssignees') {
+				const queryValue =
+					typeof message.query === 'string' ? message.query : panelState.assigneeQuery ?? '';
+				await handleAssigneeSearch(queryValue, !!message.force);
+			} else if (message?.type === 'addComment' && typeof message.body === 'string') {
+				const format = message.format === 'plain' ? 'plain' : message.format === 'wiki' ? 'wiki' : panelState.commentFormat;
+				await handleAddComment(message.body, format);
+			} else if (message?.type === 'deleteComment' && typeof message.commentId === 'string') {
+				await handleDeleteComment(message.commentId);
+			} else if (message?.type === 'refreshComments') {
+				await refreshComments(true);
+			} else if (message?.type === 'commentDraftChanged' && typeof message.value === 'string') {
+				panelState.commentDraft = message.value;
+				if (panelState.commentSubmitError) {
+					panelState.commentSubmitError = undefined;
+				}
+			} else if (
+				message?.type === 'changeCommentFormat' &&
+				typeof message.format === 'string'
+			) {
+				const nextFormat: JiraCommentFormat = message.format === 'plain' ? 'plain' : 'wiki';
+				if (panelState.commentFormat !== nextFormat) {
+					panelState.commentFormat = nextFormat;
+					renderPanel();
+				}
+			}
+				}
+			);
 
-		panel.onDidDispose(() => {
-			disposed = true;
+	const renderPanel = (options?: IssuePanelOptions) => {
+		renderIssuePanelContent(panel, panelState.issue, {
+			...buildCommentOptions(),
+			...options,
 		});
+	};
 
-		await loadIssueDetails();
+	panel.onDidDispose(() => {
+		disposed = true;
+	});
+
+	void refreshComments(true);
+	await loadIssueDetails();
 
 		async function loadIssueDetails(): Promise<void> {
 			const authInfo = await authManager.getAuthInfo();
-			if (!authInfo) {
-				if (!disposed) {
-					renderIssuePanelContent(panel, panelState.issue, {
-						error: 'Log in to Jira to view issue details.',
-						assigneeOptions: panelState.assignableUsers,
-						assigneeQuery: panelState.assigneeQuery,
-					});
-				}
+		if (!authInfo) {
+			if (!disposed) {
+				renderPanel({
+					error: 'Log in to Jira to view issue details.',
+					assigneeOptions: panelState.assignableUsers,
+					assigneeQuery: panelState.assigneeQuery,
+				});
+			}
 				await vscode.window.showInformationMessage('Log in to Jira to view issue details.');
 				return;
 			}
 
 			const token = await authManager.getToken();
-			if (!token) {
-				if (!disposed) {
-					renderIssuePanelContent(panel, panelState.issue, {
-						error: 'Missing auth token. Please log in again.',
-						assigneeOptions: panelState.assignableUsers,
-						assigneeQuery: panelState.assigneeQuery,
-					});
-				}
+		if (!token) {
+			if (!disposed) {
+				renderPanel({
+					error: 'Missing auth token. Please log in again.',
+					assigneeOptions: panelState.assignableUsers,
+					assigneeQuery: panelState.assigneeQuery,
+				});
+			}
 				await vscode.window.showInformationMessage('Missing auth token. Please log in again.');
 				return;
 			}
@@ -271,29 +350,29 @@ export async function activate(context: vscode.ExtensionContext) {
 					return;
 				}
 
-				panelState.issue = issue;
-				panelState.transitions = transitions;
-				panelState.assignableUsers = assignees;
-				renderIssuePanelContent(panel, issue, {
-					statusOptions: transitions,
-					statusError: transitionsError
-						? `Unable to load available statuses: ${transitionsError}`
-						: undefined,
-					assigneeOptions: assignees,
-					assigneeError: assigneeError
-						? `Unable to load assignable users: ${assigneeError}`
-						: undefined,
+			panelState.issue = issue;
+			panelState.transitions = transitions;
+			panelState.assignableUsers = assignees;
+			renderPanel({
+				statusOptions: transitions,
+				statusError: transitionsError
+					? `Unable to load available statuses: ${transitionsError}`
+					: undefined,
+				assigneeOptions: assignees,
+				assigneeError: assigneeError
+					? `Unable to load assignable users: ${assigneeError}`
+					: undefined,
+				assigneeQuery: panelState.assigneeQuery,
+			});
+			} catch (error) {
+			const message = deriveErrorMessage(error);
+			if (!disposed) {
+				renderPanel({
+					error: `Failed to load issue details: ${message}`,
+					assigneeOptions: panelState.assignableUsers,
 					assigneeQuery: panelState.assigneeQuery,
 				});
-			} catch (error) {
-				const message = deriveErrorMessage(error);
-				if (!disposed) {
-					renderIssuePanelContent(panel, panelState.issue, {
-						error: `Failed to load issue details: ${message}`,
-						assigneeOptions: panelState.assignableUsers,
-						assigneeQuery: panelState.assigneeQuery,
-					});
-				}
+			}
 				await vscode.window.showErrorMessage(`Failed to load issue details: ${message}`);
 			}
 		}
@@ -305,17 +384,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
 			const authInfo = await authManager.getAuthInfo();
 			const token = await authManager.getToken();
-			if (!authInfo || !token) {
-				await vscode.window.showInformationMessage('Log in to Jira to change issue status.');
-				return;
-			}
+		if (!authInfo || !token) {
+			await vscode.window.showInformationMessage('Log in to Jira to change issue status.');
+			return;
+		}
 
-			renderIssuePanelContent(panel, panelState.issue, {
-				statusOptions: panelState.transitions,
-				statusPending: true,
-				assigneeOptions: panelState.assignableUsers,
-				assigneeQuery: panelState.assigneeQuery,
-			});
+		renderPanel({
+			statusOptions: panelState.transitions,
+			statusPending: true,
+			assigneeOptions: panelState.assignableUsers,
+			assigneeQuery: panelState.assigneeQuery,
+		});
 
 			try {
 				await transitionIssueStatus(authInfo, token, resolvedIssueKey, transitionId);
@@ -329,18 +408,18 @@ export async function activate(context: vscode.ExtensionContext) {
 				if (disposed) {
 					return;
 				}
-				panelState.issue = updatedIssue;
-				panelState.transitions = transitions;
-				renderIssuePanelContent(panel, updatedIssue, {
-					statusOptions: transitions,
-					assigneeOptions: panelState.assignableUsers,
-					assigneeQuery: panelState.assigneeQuery,
-				});
+			panelState.issue = updatedIssue;
+			panelState.transitions = transitions;
+			renderPanel({
+				statusOptions: transitions,
+				assigneeOptions: panelState.assignableUsers,
+				assigneeQuery: panelState.assigneeQuery,
+			});
 				refreshAll();
 			} catch (error) {
 				const message = deriveErrorMessage(error);
 				if (!disposed) {
-					renderIssuePanelContent(panel, panelState.issue, {
+					renderPanel({
 						statusOptions: panelState.transitions,
 						statusError: `Failed to update status: ${message}`,
 						assigneeOptions: panelState.assignableUsers,
@@ -363,12 +442,12 @@ export async function activate(context: vscode.ExtensionContext) {
 				return;
 			}
 
-			renderIssuePanelContent(panel, panelState.issue, {
-				statusOptions: panelState.transitions,
-				assigneeOptions: panelState.assignableUsers,
-				assigneePending: true,
-				assigneeQuery: panelState.assigneeQuery,
-			});
+		renderPanel({
+			statusOptions: panelState.transitions,
+			assigneeOptions: panelState.assignableUsers,
+			assigneePending: true,
+			assigneeQuery: panelState.assigneeQuery,
+		});
 
 			try {
 				await assignIssue(authInfo, token, resolvedIssueKey, accountId);
@@ -376,17 +455,17 @@ export async function activate(context: vscode.ExtensionContext) {
 				if (disposed) {
 					return;
 				}
-				panelState.issue = updatedIssue;
-				renderIssuePanelContent(panel, updatedIssue, {
-					statusOptions: panelState.transitions,
-					assigneeOptions: panelState.assignableUsers,
-					assigneeQuery: panelState.assigneeQuery,
-				});
+			panelState.issue = updatedIssue;
+			renderPanel({
+				statusOptions: panelState.transitions,
+				assigneeOptions: panelState.assignableUsers,
+				assigneeQuery: panelState.assigneeQuery,
+			});
 				refreshAll();
 			} catch (error) {
 				const message = deriveErrorMessage(error);
 				if (!disposed) {
-					renderIssuePanelContent(panel, panelState.issue, {
+					renderPanel({
 						statusOptions: panelState.transitions,
 						assigneeOptions: panelState.assignableUsers,
 						assigneeError: `Failed to update assignee: ${message}`,
@@ -410,44 +489,44 @@ export async function activate(context: vscode.ExtensionContext) {
 			}
 
 			const normalizedQuery = query?.trim() ?? '';
-			if (
-				!force &&
-				normalizedQuery === panelState.assigneeQuery &&
-				panelState.assignableUsers &&
-				panelState.assignableUsers.length > 0
-			) {
-				renderIssuePanelContent(panel, panelState.issue, {
-					statusOptions: panelState.transitions,
-					assigneeOptions: panelState.assignableUsers,
-					assigneeQuery: panelState.assigneeQuery,
-				});
-				return;
-			}
-
-			renderIssuePanelContent(panel, panelState.issue, {
+		if (
+			!force &&
+			normalizedQuery === panelState.assigneeQuery &&
+			panelState.assignableUsers &&
+			panelState.assignableUsers.length > 0
+		) {
+			renderPanel({
 				statusOptions: panelState.transitions,
 				assigneeOptions: panelState.assignableUsers,
-				assigneePending: true,
-				assigneeQuery: normalizedQuery,
+				assigneeQuery: panelState.assigneeQuery,
 			});
+			return;
+		}
+
+		renderPanel({
+			statusOptions: panelState.transitions,
+			assigneeOptions: panelState.assignableUsers,
+			assigneePending: true,
+			assigneeQuery: normalizedQuery,
+		});
 
 			try {
 				const users = await fetchAssignableUsers(authInfo, token, resolvedIssueKey, normalizedQuery);
 				if (disposed) {
 					return;
 				}
-				panelState.assignableUsers = users;
-				panelState.assigneeQuery = normalizedQuery;
-				renderIssuePanelContent(panel, panelState.issue, {
-					statusOptions: panelState.transitions,
-					assigneeOptions: users,
-					assigneeQuery: normalizedQuery,
-					assigneeAutoFocus: true,
-				});
+			panelState.assignableUsers = users;
+			panelState.assigneeQuery = normalizedQuery;
+			renderPanel({
+				statusOptions: panelState.transitions,
+				assigneeOptions: users,
+				assigneeQuery: normalizedQuery,
+				assigneeAutoFocus: true,
+			});
 			} catch (error) {
 				const message = deriveErrorMessage(error);
 				if (!disposed) {
-					renderIssuePanelContent(panel, panelState.issue, {
+					renderPanel({
 						statusOptions: panelState.transitions,
 						assigneeOptions: panelState.assignableUsers,
 						assigneeError: `Failed to load assignable users: ${message}`,
@@ -456,8 +535,124 @@ export async function activate(context: vscode.ExtensionContext) {
 					});
 				}
 				await vscode.window.showErrorMessage(`Failed to load assignable users: ${message}`);
-			}
 		}
+	}
+
+	async function refreshComments(forceSpinner = false): Promise<void> {
+		if (disposed) {
+			return;
+		}
+
+		const authInfo = await authManager.getAuthInfo();
+		const token = await authManager.getToken();
+		if (!authInfo || !token) {
+			panelState.comments = undefined;
+			panelState.commentsError = 'Log in to Jira to view comments.';
+			panelState.commentsLoading = false;
+			renderPanel();
+			return;
+		}
+
+		if (forceSpinner) {
+			panelState.commentsLoading = true;
+			renderPanel();
+		}
+
+		try {
+			const comments = await fetchIssueComments(authInfo, token, resolvedIssueKey);
+			if (disposed) {
+				return;
+			}
+			panelState.comments = comments;
+			panelState.commentsError = undefined;
+			panelState.commentsLoading = false;
+			renderPanel();
+		} catch (error) {
+			const message = deriveErrorMessage(error);
+			if (disposed) {
+				return;
+			}
+			panelState.commentsError = `Failed to load comments: ${message}`;
+			panelState.commentsLoading = false;
+			renderPanel();
+		}
+	}
+
+	async function handleAddComment(body: string, format: JiraCommentFormat): Promise<void> {
+		if (disposed) {
+			return;
+		}
+		const trimmedBody = body?.trim() ?? '';
+		if (!trimmedBody) {
+			panelState.commentSubmitError = 'Comment cannot be empty.';
+			renderPanel();
+			return;
+		}
+
+		const authInfo = await authManager.getAuthInfo();
+		const token = await authManager.getToken();
+		if (!authInfo || !token) {
+			await vscode.window.showInformationMessage('Log in to Jira to add a comment.');
+			return;
+		}
+
+		panelState.commentDraft = trimmedBody;
+		panelState.commentFormat = format;
+		panelState.commentSubmitPending = true;
+		panelState.commentSubmitError = undefined;
+		renderPanel();
+
+		try {
+			await addIssueComment(authInfo, token, resolvedIssueKey, trimmedBody, format);
+			panelState.commentDraft = '';
+			panelState.commentSubmitPending = false;
+			panelState.commentSubmitError = undefined;
+			renderPanel();
+			await refreshComments(true);
+		} catch (error) {
+			const message = deriveErrorMessage(error);
+			panelState.commentSubmitPending = false;
+			panelState.commentSubmitError = `Failed to add comment: ${message}`;
+			renderPanel();
+			await vscode.window.showErrorMessage(`Failed to add comment: ${message}`);
+		}
+	}
+
+	async function handleDeleteComment(commentId: string): Promise<void> {
+		if (disposed || !commentId) {
+			return;
+		}
+		const confirmation = await vscode.window.showWarningMessage(
+			'Delete this Jira comment? This action cannot be undone.',
+			{ modal: true },
+			'Delete'
+		);
+		if (confirmation !== 'Delete') {
+			return;
+		}
+
+		const authInfo = await authManager.getAuthInfo();
+		const token = await authManager.getToken();
+		if (!authInfo || !token) {
+			await vscode.window.showInformationMessage('Log in to Jira to delete comments.');
+			return;
+		}
+
+		panelState.commentDeletingId = commentId;
+		renderPanel();
+		try {
+			await deleteIssueComment(authInfo, token, resolvedIssueKey, commentId);
+			panelState.commentDeletingId = undefined;
+			renderPanel();
+			await refreshComments(true);
+		} catch (error) {
+			const message = deriveErrorMessage(error);
+			panelState.commentDeletingId = undefined;
+			panelState.commentsError = `Failed to delete comment: ${message}`;
+			renderPanel();
+			await vscode.window.showErrorMessage(`Failed to delete comment: ${message}`);
+		}
+	}
 	};
 
 	context.subscriptions.push(
@@ -1568,6 +1763,7 @@ function renderIssueDetailsHtml(
 		<a href="${escapeHtml(issue.url)}" target="_blank" rel="noreferrer noopener">Open in Jira</a>
 	</div>`
 			: '';
+	const commentsSection = renderCommentsSection(options);
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -1608,9 +1804,146 @@ function renderIssueDetailsHtml(
 			margin-top: 0;
 			margin-bottom: 24px;
 		}
-		.section {
-			margin-top: 24px;
-		}
+	.section {
+		margin-top: 24px;
+	}
+	.comments-section {
+		border-top: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+		padding-top: 24px;
+		margin-top: 32px;
+	}
+	.comments-header {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 16px;
+		flex-wrap: wrap;
+	}
+	.comment-refresh,
+	.comment-delete,
+	.comment-submit {
+		border-radius: 4px;
+		border: 1px solid var(--vscode-button-secondaryBorder, transparent);
+		background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+		color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+		padding: 6px 12px;
+		cursor: pointer;
+		font-size: 0.9em;
+	}
+	.comment-refresh:disabled,
+	.comment-delete:disabled,
+	.comment-submit:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+	.comment-list {
+		list-style: none;
+		margin: 16px 0 0 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 18px;
+	}
+	.comment-item {
+		display: flex;
+		gap: 12px;
+	}
+	.comment-avatar {
+		width: 36px;
+		height: 36px;
+		border-radius: 50%;
+		object-fit: cover;
+		border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+		background: var(--vscode-sideBar-background);
+	}
+	.comment-avatar.fallback {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-weight: 600;
+	}
+	.comment-content {
+		flex: 1;
+		min-width: 0;
+	}
+	.comment-meta {
+		display: flex;
+		gap: 12px;
+		align-items: center;
+		flex-wrap: wrap;
+	}
+	.comment-author {
+		font-weight: 600;
+	}
+	.comment-author-self {
+		color: var(--vscode-descriptionForeground);
+		font-size: 0.85em;
+	}
+	.comment-date {
+		color: var(--vscode-descriptionForeground);
+		font-size: 0.9em;
+	}
+	.comment-body {
+		margin-top: 8px;
+		padding: 12px;
+		border-radius: 6px;
+		border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+		background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03));
+		overflow-x: auto;
+	}
+	.comment-body :where(p, ul, ol) {
+		margin-top: 0;
+	}
+	.comment-body pre {
+		background: var(--vscode-editor-background);
+		padding: 8px;
+		border-radius: 4px;
+		overflow-x: auto;
+	}
+	.comment-message {
+		margin-top: 16px;
+		padding: 12px;
+		border-radius: 6px;
+		border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+		background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03));
+	}
+	.comment-message.error {
+		border-color: color-mix(in srgb, var(--vscode-errorForeground) 40%, transparent);
+		color: var(--vscode-errorForeground);
+	}
+	.comment-form {
+		margin-top: 24px;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+	.comment-form textarea {
+		min-height: 120px;
+		resize: vertical;
+	}
+	.comment-controls {
+		display: flex;
+		gap: 12px;
+		flex-wrap: wrap;
+		align-items: flex-end;
+	}
+	.comment-select-label {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 0.9em;
+		color: var(--vscode-descriptionForeground);
+	}
+	.comment-error {
+		color: var(--vscode-errorForeground);
+		font-size: 0.9em;
+	}
+	.comment-error.hidden {
+		display: none;
+	}
+	.comment-helper {
+		font-size: 0.9em;
+	}
 		.section-title {
 			font-weight: 600;
 			margin-bottom: 4px;
@@ -1790,6 +2123,7 @@ function renderIssueDetailsHtml(
 			${parentSection}
 			${childrenSection}
 			${linkSection}
+			${commentsSection}
 		</div>
 		${metadataPanel}
 	</div>
@@ -1889,15 +2223,75 @@ function renderIssueDetailsHtml(
 					requestAssignees(issueKey, input.value, true);
 				};
 				input.addEventListener('keydown', (event) => {
-					if (event.key === 'Enter') {
-						event.preventDefault();
-						triggerSearch();
-						input.dataset.loaded = 'true';
+				if (event.key === 'Enter') {
+					event.preventDefault();
+					triggerSearch();
+					input.dataset.loaded = 'true';
+				}
+			});
+			});
+			const commentForm = document.querySelector('.comment-form');
+			if (commentForm) {
+				const textarea = commentForm.querySelector('.comment-input');
+				const formatSelect = commentForm.querySelector('.comment-format-select');
+				const submitButton = commentForm.querySelector('.comment-submit');
+				const errorEl = commentForm.querySelector('.comment-error');
+				const updateSubmitState = () => {
+					if (!submitButton || !textarea) {
+						return;
 					}
+					const pending = commentForm.getAttribute('data-pending') === 'true';
+					const hasText = textarea.value.trim().length > 0;
+					submitButton.disabled = pending || !hasText;
+				};
+				if (textarea) {
+					textarea.addEventListener('input', () => {
+						vscode.postMessage({ type: 'commentDraftChanged', value: textarea.value });
+						updateSubmitState();
+						if (errorEl) {
+							errorEl.classList.add('hidden');
+						}
+					});
+				}
+				if (formatSelect) {
+					formatSelect.addEventListener('change', () => {
+						vscode.postMessage({ type: 'changeCommentFormat', format: formatSelect.value });
+					});
+				}
+				commentForm.addEventListener('submit', (event) => {
+					event.preventDefault();
+					if (!textarea || !formatSelect || !submitButton || submitButton.disabled) {
+						return;
+					}
+					vscode.postMessage({ type: 'addComment', body: textarea.value, format: formatSelect.value });
 				});
+				updateSubmitState();
+			}
+			document.querySelectorAll('.comment-delete').forEach((button) => {
+				button.addEventListener('click', () => {
+					if (button.disabled) {
+						return;
+					}
+					const commentId = button.getAttribute('data-comment-id');
+					if (!commentId) {
+						return;
+					}
+					button.disabled = true;
+					vscode.postMessage({ type: 'deleteComment', commentId });
 				});
-			})();
-		</script>
+			});
+			const refreshButton = document.querySelector('.comment-refresh');
+			if (refreshButton) {
+				refreshButton.addEventListener('click', () => {
+					if (refreshButton.disabled) {
+						return;
+					}
+					refreshButton.disabled = true;
+					vscode.postMessage({ type: 'refreshComments' });
+				});
+			}
+		})();
+	</script>
 </body>
 </html>`;
 }
@@ -2312,6 +2706,102 @@ function renderLoadingSection(title: string, message: string): string {
 	</div>`;
 }
 
+function renderCommentsSection(options?: IssuePanelOptions): string {
+	const comments = options?.comments ?? [];
+	const pending = options?.commentsPending ?? false;
+	const error = options?.commentsError;
+	let listContent: string;
+	if (pending) {
+		listContent = '<div class="comment-message loading">Loading comments…</div>';
+	} else if (error) {
+		listContent = `<div class="comment-message error">${escapeHtml(error)}</div>`;
+	} else if (comments.length === 0) {
+		listContent = '<div class="comment-message muted">No comments yet.</div>';
+	} else {
+		listContent = `<ul class="comment-list">${renderCommentList(comments, options)}</ul>`;
+	}
+	const refreshLabel = pending ? 'Refreshing…' : 'Refresh';
+	const refreshDisabledAttr = pending ? 'disabled' : '';
+	return `<div class="section comments-section">
+		<div class="comments-header">
+			<div>
+				<div class="section-title">Comments</div>
+				<div class="muted">Use Jira wiki formatting to access every supported style.</div>
+			</div>
+			<button type="button" class="comment-refresh" ${refreshDisabledAttr}>${escapeHtml(refreshLabel)}</button>
+		</div>
+		${listContent}
+		${renderCommentForm(options)}
+	</div>`;
+}
+
+function renderCommentList(comments: JiraIssueComment[], options?: IssuePanelOptions): string {
+	return comments.map((comment) => renderCommentItem(comment, options)).join('');
+}
+
+function renderCommentItem(comment: JiraIssueComment, options?: IssuePanelOptions): string {
+	const timestamp = comment.updated ?? comment.created;
+	const timestampText = timestamp ? formatIssueUpdated(timestamp) : undefined;
+	const authorLabel = escapeHtml(comment.authorName ?? 'Unknown user');
+	const isDeleting = options?.commentDeletingId === comment.id;
+	const deleteDisabled = isDeleting || (options?.commentsPending ?? false);
+	const deleteLabel = isDeleting ? 'Deleting…' : 'Delete';
+	const deleteButton = comment.id
+		? `<button type="button" class="comment-delete" data-comment-id="${escapeAttribute(comment.id)}" ${deleteDisabled ? 'disabled' : ''}>${escapeHtml(deleteLabel)}</button>`
+		: '';
+	const currentUserTag = comment.isCurrentUser ? '<span class="comment-author-self">You</span>' : '';
+	const bodyHtml = comment.renderedBody && comment.renderedBody.trim().length > 0
+		? comment.renderedBody
+		: '<p class="muted">No comment body</p>';
+	return `<li class="comment-item">
+		${renderCommentAvatar(comment)}
+		<div class="comment-content">
+			<div class="comment-meta">
+				<span class="comment-author">${authorLabel}</span>
+				${currentUserTag}
+				${timestampText ? `<span class="comment-date">${escapeHtml(timestampText)}</span>` : ''}
+				${deleteButton}
+			</div>
+			<div class="comment-body" data-comment-id="${escapeAttribute(comment.id ?? '')}">${bodyHtml}</div>
+		</div>
+	</li>`;
+}
+
+function renderCommentForm(options?: IssuePanelOptions): string {
+	const pending = options?.commentSubmitPending ?? false;
+	const draftValue = options?.commentDraft ?? '';
+	const format: JiraCommentFormat = options?.commentFormat === 'plain' ? 'plain' : 'wiki';
+	const hasText = draftValue.trim().length > 0;
+	const buttonDisabled = pending || !hasText;
+	const buttonLabel = pending ? 'Adding…' : 'Add comment';
+	const errorMarkup = options?.commentSubmitError
+		? `<div class="comment-error">${escapeHtml(options.commentSubmitError)}</div>`
+		: '<div class="comment-error hidden"></div>';
+	return `<form class="comment-form" data-pending="${pending ? 'true' : 'false'}">
+		<label class="section-title" for="comment-input">Add a comment</label>
+		<textarea id="comment-input" class="comment-input" ${pending ? 'disabled' : ''} placeholder="Share updates or blockers">${escapeHtml(draftValue)}</textarea>
+		<div class="comment-controls">
+			<label class="comment-select-label">
+				Format
+				<select class="comment-format-select" ${pending ? 'disabled' : ''}>
+					<option value="wiki" ${format === 'wiki' ? 'selected' : ''}>Jira wiki (full formatting)</option>
+					<option value="plain" ${format === 'plain' ? 'selected' : ''}>Plain text</option>
+				</select>
+			</label>
+			<button type="submit" class="comment-submit" ${buttonDisabled ? 'disabled' : ''}>${escapeHtml(buttonLabel)}</button>
+		</div>
+		<div class="muted comment-helper">All Jira formatting is supported when using the Jira wiki option.</div>
+		${errorMarkup}
+	</form>`;
+}
+
+function renderCommentAvatar(comment: JiraIssueComment): string {
+	if (comment.authorAvatarUrl) {
+		return `<img class="comment-avatar" src="${escapeAttribute(comment.authorAvatarUrl)}" alt="${escapeAttribute(comment.authorName ?? 'Comment author')} avatar" />`;
+	}
+	return `<div class="comment-avatar fallback">${escapeHtml(getInitials(comment.authorName))}</div>`;
+}
+
 function renderRelatedIssueButton(issue: JiraRelatedIssue): string {
 	const summaryText = issue.summary ? ` · ${escapeHtml(issue.summary)}` : '';
 	const statusText = issue.statusName ? ` — ${escapeHtml(issue.statusName)}` : '';
@@ -2633,6 +3123,16 @@ function escapeHtml(value?: string): string {
 
 function escapeAttribute(value?: string): string {
 	return escapeHtml(value);
+}
+
+function sanitizeRenderedHtml(html?: string): string | undefined {
+	if (!html) {
+		return undefined;
+	}
+	return html
+		.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+		.replace(/\son\w+="[^"]*"/gi, '')
+		.replace(/\son\w+='[^']*'/gi, '');
 }
 
 function formatIssueUpdated(updated: string | undefined): string {
@@ -3172,6 +3672,234 @@ async function assignIssue(
 
 	throw lastError ?? new Error('Unable to update assignee.');
 }
+
+async function fetchIssueComments(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string,
+	maxResults = COMMENT_FETCH_LIMIT
+): Promise<JiraIssueComment[]> {
+	const sanitizedKey = issueKey?.trim();
+	if (!sanitizedKey) {
+		return [];
+	}
+
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(sanitizedKey)}/comment`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			const response = await axios.get(endpoint, {
+				params: {
+					maxResults,
+					expand: 'renderedBody',
+				},
+				auth: {
+					username: authInfo.username,
+					password: token,
+				},
+				headers: {
+					Accept: 'application/json',
+					'User-Agent': 'jira-vscode',
+				},
+			});
+
+			const comments: any[] = Array.isArray(response.data?.comments)
+				? response.data.comments
+				: Array.isArray(response.data)
+				? response.data
+				: [];
+			const mapped = comments
+				.map((comment: any) => mapIssueComment(comment, authInfo))
+				.filter((comment): comment is JiraIssueComment => !!comment);
+			return mapped.sort((a, b) => {
+				const aTime = new Date(a.updated ?? a.created ?? 0).getTime();
+				const bTime = new Date(b.updated ?? b.created ?? 0).getTime();
+				return bTime - aTime;
+			});
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to load comments.');
+}
+
+async function addIssueComment(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string,
+	body: string,
+	format: JiraCommentFormat
+): Promise<JiraIssueComment> {
+	const trimmedBody = body?.trim();
+	if (!trimmedBody) {
+		throw new Error('Comment text is required.');
+	}
+	const sanitizedKey = issueKey?.trim();
+	if (!sanitizedKey) {
+		throw new Error('Issue key is required.');
+	}
+
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(sanitizedKey)}/comment`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		const apiVersion = getApiVersionFromEndpoint(endpoint);
+		const shouldSkip =
+			format === 'wiki' && (apiVersion === '3' || (apiVersion === 'latest' && authInfo.serverLabel === 'cloud'));
+		if (shouldSkip) {
+			continue;
+		}
+		const payload =
+			format === 'wiki'
+				? { body: trimmedBody }
+				: apiVersion === '2'
+				? { body: trimmedBody }
+				: { body: buildAdfDocumentFromPlainText(trimmedBody) };
+
+		try {
+			const response = await axios.post(endpoint, payload, {
+				auth: {
+					username: authInfo.username,
+					password: token,
+				},
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+					'User-Agent': 'jira-vscode',
+				},
+			});
+			return mapIssueComment(response.data, authInfo);
+		} catch (error) {
+			lastError = error;
+			continue;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to add comment.');
+}
+
+async function deleteIssueComment(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string,
+	commentId: string
+): Promise<void> {
+	const trimmedId = commentId?.trim();
+	if (!trimmedId) {
+		throw new Error('Comment ID is required.');
+	}
+	const sanitizedKey = issueKey?.trim();
+	if (!sanitizedKey) {
+		throw new Error('Issue key is required.');
+	}
+
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(sanitizedKey)}/comment/${encodeURIComponent(trimmedId)}`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			await axios.delete(endpoint, {
+				auth: {
+					username: authInfo.username,
+					password: token,
+				},
+				headers: {
+					Accept: 'application/json',
+					'User-Agent': 'jira-vscode',
+				},
+			});
+			return;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to delete comment.');
+}
+
+function mapIssueComment(comment: any, authInfo: JiraAuthInfo): JiraIssueComment | undefined {
+	if (!comment) {
+		return undefined;
+	}
+	const identifier = comment.id ?? comment.commentId;
+	if (!identifier) {
+		return undefined;
+	}
+	const author = comment.author ?? comment.updateAuthor ?? {};
+	const avatar =
+		author.avatarUrls?.['48x48'] ??
+		author.avatarUrls?.['32x32'] ??
+		author.avatarUrls?.['16x16'] ??
+		author.avatarUrl;
+	const rendered =
+		typeof comment.renderedBody === 'string'
+			? comment.renderedBody
+			: typeof comment.body === 'string'
+			? escapeHtml(comment.body).replace(/\r?\n/g, '<br />')
+			: undefined;
+	const sanitized = sanitizeRenderedHtml(rendered);
+	const authorAccountId = author.accountId ?? author.name ?? author.key;
+	const isCurrentUser = Boolean(
+		(authInfo.accountId && author.accountId && authInfo.accountId === author.accountId) ||
+		(!authInfo.accountId && author.name && author.name === authInfo.username)
+	);
+	return {
+		id: String(identifier),
+		body: typeof comment.body === 'string' ? comment.body : undefined,
+		renderedBody: sanitized,
+		authorName: author.displayName ?? author.name ?? 'Unknown',
+		authorAccountId: authorAccountId ? String(authorAccountId) : undefined,
+		authorAvatarUrl: avatar,
+		created: comment.created,
+		updated: comment.updated,
+		isCurrentUser,
+	};
+}
+
+function buildAdfDocumentFromPlainText(text: string): any {
+	const normalized = text.replace(/\r\n/g, '\n');
+	const paragraphs = normalized.split(/\n{2,}/);
+	const content = paragraphs
+		.map((paragraph) => {
+			const lines = paragraph.split('\n');
+			const nodes = lines.flatMap((line, index) => {
+				const parts: any[] = [];
+				if (line.length > 0) {
+					parts.push({ type: 'text', text: line });
+				} else if (index === 0) {
+					parts.push({ type: 'hardBreak' });
+				}
+				if (index < lines.length - 1) {
+					parts.push({ type: 'hardBreak' });
+				}
+				return parts;
+			});
+			return {
+				type: 'paragraph',
+				content: nodes.length > 0 ? nodes : [{ type: 'text', text: '' }],
+			};
+		})
+		.filter((paragraph) => Array.isArray(paragraph.content));
+	return {
+		type: 'doc',
+		version: 1,
+		content: content.length > 0 ? content : [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }],
+	};
+}
+
+function getApiVersionFromEndpoint(endpoint: string): string | undefined {
+	const match = endpoint.match(/\/rest\/api\/([^/]+)\//i);
+	return match?.[1];
+}
+
 async function createJiraIssue(
 	authInfo: JiraAuthInfo,
 	token: string,
