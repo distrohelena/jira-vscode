@@ -60,6 +60,44 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 | `Jira: Commit From Issue` | Prefill the SCM commit box with the selected issue key. |
 | `Jira: Log Out` | Clear credentials and stored secrets. |
 
+## HOWTO: First-Time Setup
+
+If you're new to Jira VS Code, follow these steps to get from zero to productive:
+
+1. **Install and build**
+   - Clone the repo, run `npm install`, then `npm run compile` to generate `dist/extension.js`.
+
+2. **Start the Extension Development Host**
+   - In VS Code, press `F5`. A new window (Extension Development Host) opens with the extension loaded.
+
+3. **Open the Jira view**
+   - In the activity bar, click the Jira logo to reveal the Projects, Items, and Settings views in the side bar.
+
+4. **Authenticate**
+   - In the Settings view or Command Palette (`Ctrl/Cmd+Shift+P`) run `Jira: Log In`.
+   - Choose Jira Cloud or Server, enter your base URL, username/email, and API token/password. The extension stores credentials securely using VS Code's secret storage.
+
+5. **Focus a project**
+   - In the Projects view, click the project you want to work on. The Items view reloads to show that project's issues grouped by status.
+   - You can switch between “Recent” and “All” projects via the context commands at the top of the view if needed.
+
+6. **Explore issues**
+   - Use the Items view to browse issues; the inline “Search recent items” row lets you filter your own tickets quickly.
+   - Select an issue to open the details panel. There you can review the description, related issues, comments, and metadata without leaving VS Code.
+
+7. **Update work**
+   - Change status from the dropdown, reassign tickets, add or delete comments, and click “Open in Jira” for the full web experience if necessary.
+   - Use `Jira: Commit From Issue` (context menu) to prefill your SCM commit message with the issue key.
+
+8. **Create new tickets**
+   - Press the `+ Ticket` button in the Items view toolbar, fill in the form (summary, description, type, status), and submit. The new issue opens automatically in the details panel.
+
+9. **Stay in sync**
+   - Use the refresh icons on Projects or Items (or the matching commands) to reload data.
+   - If you need to log out, run `Jira: Log Out`; the extension clears stored secrets and cached project data.
+
+Following this checklist ensures new users authenticate, focus a project, and start updating or creating Jira issues directly from VS Code within minutes.
+
 ## Development
 
 This extension is written in TypeScript. Key entry points:

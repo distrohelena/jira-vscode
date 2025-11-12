@@ -35,9 +35,14 @@ export type IssueControllerDeps = {
 	refreshAll: () => void;
 };
 
+type OpenPanelEntry = {
+	panel: vscode.WebviewPanel;
+	refresh: () => void;
+};
+
 export function createIssueController(deps: IssueControllerDeps) {
 	const { authManager, refreshAll, projectStatusStore, transitionStore, transitionPrefetcher } = deps;
-	const openIssuePanels = new Map<string, vscode.WebviewPanel>();
+	const openIssuePanels = new Map<string, OpenPanelEntry>();
 
 	const openIssueDetails = async (issueOrKey?: JiraIssue | string): Promise<void> => {
 		const issueKeyValue = typeof issueOrKey === 'string' ? issueOrKey : issueOrKey?.key;
@@ -47,9 +52,10 @@ export function createIssueController(deps: IssueControllerDeps) {
 		}
 		const resolvedIssueKey: string = issueKeyValue;
 
-		const existingPanel = openIssuePanels.get(resolvedIssueKey);
-		if (existingPanel) {
-			existingPanel.reveal(vscode.ViewColumn.Active);
+		const existingEntry = openIssuePanels.get(resolvedIssueKey);
+		if (existingEntry) {
+			existingEntry.panel.reveal(vscode.ViewColumn.Active);
+			existingEntry.refresh();
 			return;
 		}
 
@@ -93,6 +99,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			commentFormat: JiraCommentFormat;
 			commentDraft: string;
 			commentDeletingId?: string;
+			loadingIssue: boolean;
 		} = {
 			issue: initialIssue ?? createPlaceholderIssue(resolvedIssueKey),
 			transitions: cachedTransitions,
@@ -107,6 +114,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			commentFormat: 'wiki',
 			commentDraft: '',
 			commentDeletingId: undefined,
+			loadingIssue: true,
 		};
 
 		const buildCommentOptions = (): IssuePanelOptions => ({
@@ -184,10 +192,22 @@ export function createIssueController(deps: IssueControllerDeps) {
 			if (merged.statusPending === undefined && !panelState.transitions) {
 				merged.statusPending = true;
 			}
+			if (merged.loading === undefined) {
+				merged.loading = panelState.loadingIssue;
+			}
 			renderIssuePanelContent(panel, panelState.issue, merged);
 		};
 
-		openIssuePanels.set(resolvedIssueKey, panel);
+		openIssuePanels.set(resolvedIssueKey, {
+			panel,
+			refresh: () => {
+				if (disposed) {
+					return;
+				}
+				void loadIssueDetails();
+				void refreshComments(false);
+			},
+		});
 
 		panel.onDidDispose(() => {
 			disposed = true;
@@ -198,9 +218,17 @@ export function createIssueController(deps: IssueControllerDeps) {
 		await loadIssueDetails();
 
 		async function loadIssueDetails(): Promise<void> {
+			panelState.loadingIssue = true;
+			renderPanel({
+				loading: true,
+				statusPending: !panelState.transitions,
+				assigneeOptions: panelState.assignableUsers,
+				assigneeQuery: panelState.assigneeQuery,
+			});
 			const authInfo = await authManager.getAuthInfo();
 			if (!authInfo) {
 				if (!disposed) {
+					panelState.loadingIssue = false;
 					renderPanel({
 						error: 'Log in to Jira to view issue details.',
 						assigneeOptions: panelState.assignableUsers,
@@ -214,6 +242,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			const token = await authManager.getToken();
 			if (!token) {
 				if (!disposed) {
+					panelState.loadingIssue = false;
 					renderPanel({
 						error: 'Missing auth token. Please log in again.',
 						assigneeOptions: panelState.assignableUsers,
@@ -254,6 +283,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 						projectStatusStore.getIssueTypeStatuses(issueProjectKeyResolved, issueTypeCriteria) ??
 						projectStatusStore.get(issueProjectKeyResolved);
 				}
+				panelState.loadingIssue = false;
 				renderPanel({
 					statusOptions: panelState.transitions ?? panelState.statusPrefill,
 					statusPending: false,
@@ -265,6 +295,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			} catch (error) {
 				const message = deriveErrorMessage(error);
 				if (!disposed) {
+					panelState.loadingIssue = false;
 					renderPanel({
 						error: `Failed to load issue details: ${message}`,
 						assigneeOptions: panelState.assignableUsers,
@@ -461,10 +492,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 				return;
 			}
 
-			if (forceSpinner) {
-				panelState.commentsLoading = true;
-				renderPanel();
-			}
+			panelState.commentsLoading = true;
+			renderPanel();
 
 			try {
 				const comments = await fetchIssueComments(authInfo, token, resolvedIssueKey);

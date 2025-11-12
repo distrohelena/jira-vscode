@@ -89,21 +89,9 @@ function renderIssueDetailsHtml(
 	const nonce = generateNonce();
 	const isLoading = options?.loading ?? false;
 	const errorMessage = options?.error;
-	const descriptionSection = errorMessage
-		? ''
-		: isLoading
-		? renderLoadingSection('Description', 'Loading description…')
-		: renderDescriptionSection(issue);
-	const parentSection = errorMessage
-		? ''
-		: isLoading
-		? renderLoadingSection('Parent', 'Loading parent issue…')
-		: renderParentSection(issue);
-	const childrenSection = errorMessage
-		? ''
-		: isLoading
-		? renderLoadingSection('Subtasks', 'Loading subtasks…')
-		: renderChildrenSection(issue);
+	const descriptionSection = errorMessage ? '' : renderDescriptionSection(issue);
+	const parentSection = errorMessage ? '' : renderParentSection(issue);
+	const childrenSection = errorMessage ? '' : renderChildrenSection(issue);
 	const cspSource = webview.cspSource;
 	const metadataPanel = renderMetadataPanel(issue, assignee, updatedText, options);
 	const statusIconMarkup = statusIconSrc
@@ -111,11 +99,12 @@ function renderIssueDetailsHtml(
 				issue.statusName ?? 'Issue status'
 		  )} status icon" />`
 		: '';
-	const messageBanner = errorMessage
-		? `<div class="section error-banner">${escapeHtml(errorMessage)}</div>`
-		: isLoading
-		? `<div class="section loading-banner">Loading additional details…</div>`
-		: '';
+	let messageBanner = '';
+	if (errorMessage) {
+		messageBanner = `<div class="section error-banner">${escapeHtml(errorMessage)}</div>`;
+	} else if (isLoading) {
+		messageBanner = `<div class="section loading-banner">Refreshing issue details…</div>`;
+	}
 	const linkSection =
 		issue.url && !errorMessage
 			? `<div class="section">
@@ -1093,13 +1082,6 @@ function renderChildrenSection(issue: JiraIssue): string {
 	</div>`;
 }
 
-function renderLoadingSection(title: string, message: string): string {
-	return `<div class="section">
-		<div class="section-title">${escapeHtml(title)}</div>
-		<div class="loading-banner">${escapeHtml(message)}</div>
-	</div>`;
-}
-
 function renderDescriptionSection(issue: JiraIssue): string {
 	const descriptionHtml = issue.descriptionHtml;
 	const fallbackHtml = issue.description
@@ -1119,16 +1101,21 @@ function renderCommentsSection(options?: IssuePanelOptions): string {
 	const comments = options?.comments ?? [];
 	const pending = options?.commentsPending ?? false;
 	const error = options?.commentsError;
-	let listContent: string;
-	if (pending) {
-		listContent = '<div class="comment-message loading">Loading comments…</div>';
-	} else if (error) {
+
+	let listContent = '';
+	if (error) {
 		listContent = `<div class="comment-message error">${escapeHtml(error)}</div>`;
+	} else if (comments.length === 0 && pending) {
+		listContent = '<div class="comment-message loading">Loading comments…</div>';
 	} else if (comments.length === 0) {
 		listContent = '<div class="comment-message muted">No comments yet.</div>';
 	} else {
-		listContent = `<ul class="comment-list">${renderCommentList(comments, options)}</ul>`;
+		const loadingBanner = pending
+			? '<div class="comment-message loading">Refreshing comments…</div>'
+			: '';
+		listContent = `${loadingBanner}<ul class="comment-list">${renderCommentList(comments, options)}</ul>`;
 	}
+
 	const refreshLabel = pending ? 'Refreshing…' : 'Refresh';
 	const refreshDisabledAttr = pending ? 'disabled' : '';
 	return `<div class="section comments-section">

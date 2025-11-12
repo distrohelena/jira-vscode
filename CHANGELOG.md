@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.11
+
+- Prefetch project statuses per issue type plus transitions for every status so issue detail dropdowns unlock immediately even on first open.
+- Items view now warms the transition cache for the issues it displays, covering startup scenarios where a project is already focused.
+- Opening an issue that is already displayed now simply brings its existing webview panel to the foreground instead of spawning a duplicate.
+- Reopening or refreshing an issue panel now shows explicit loading banners/spinners while reusing the current description/comments, so updates are visible without clearing existing data.
+
 ## 1.0.9
 
 - Added an inline "Search recent items" row (and command palette entry) that filters your recent project items directly inside the Items tree.
