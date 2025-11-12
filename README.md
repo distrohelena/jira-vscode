@@ -31,6 +31,7 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 ### Working with Issues
 - Issues appear grouped by status in the Items view. Selecting an item opens the details panel.
 - Use the first "Search recent items" row in the Items view to filter your recent issues without leaving the tree.
+- Change assignees by selecting a user and confirming with the OK button beside the dropdown in the details panel.
 - Inside the panel you can:
   - Update status via the combobox (transitions are fetched from Jira).
   - Search for and assign the issue to other users (results fetch lazily on demand).

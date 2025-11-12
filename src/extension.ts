@@ -1605,15 +1605,41 @@ function renderIssueDetailsHtml(
 			.assignee-search-row input {
 				flex: 1;
 			}
+			.assignee-select-row {
+				display: flex;
+				gap: 8px;
+				align-items: stretch;
+				width: 100%;
+			}
 			.jira-assignee-select {
+				flex: 1;
+				min-width: 0;
 				background: var(--vscode-input-background);
 				color: var(--vscode-input-foreground);
 				border: 1px solid var(--vscode-input-border);
 				border-radius: 4px;
 				padding: 4px 8px;
+				min-height: 28px;
 			}
 			.jira-assignee-select:disabled {
 				opacity: 0.7;
+			}
+			.jira-assignee-apply {
+				padding: 4px 12px;
+				border-radius: 4px;
+				border: 1px solid var(--vscode-button-secondaryBorder, transparent);
+				background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+				color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+				cursor: pointer;
+				font-size: 0.9em;
+				min-width: 56px;
+				min-height: 28px;
+				align-self: stretch;
+				margin-left: auto;
+			}
+			.jira-assignee-apply:disabled {
+				opacity: 0.6;
+				cursor: not-allowed;
 			}
 			.status-select-wrapper {
 				display: flex;
@@ -1738,38 +1764,65 @@ function renderIssueDetailsHtml(
 					}
 					vscode.postMessage({ type: 'loadAssignees', issueKey, query: query ?? '', force: !!force });
 				};
+				const updateApplyState = (select, button) => {
+					if (!button) {
+						return;
+					}
+					const currentAccountId = (select.getAttribute('data-current-account-id') || '').trim();
+					const value = select.value || '';
+					const hasNewSelection = !!value && value !== currentAccountId;
+					button.disabled = select.disabled || !hasNewSelection;
+				};
+
 				document.querySelectorAll('.jira-assignee-select').forEach((select) => {
 					const issueKey = select.getAttribute('data-issue-key');
-					select.addEventListener('focus', () => {
-					const selector = '.jira-assignee-search[data-issue-key="' + issueKey + '"]';
-					const searchInput = document.querySelector(selector);
-					const query = searchInput ? searchInput.value : '';
-					const loaded = select.getAttribute('data-loaded') === 'true';
-					const lastQuery = select.getAttribute('data-query') || '';
-					if (!loaded || lastQuery !== query) {
-						select.setAttribute('data-loaded', 'pending');
-						select.setAttribute('data-query', query);
-						requestAssignees(issueKey, query);
-					}
-					});
-					select.addEventListener('click', () => {
-					const selector = '.jira-assignee-search[data-issue-key="' + issueKey + '"]';
-					const searchInput = document.querySelector(selector);
-					const query = searchInput ? searchInput.value : '';
-					const loaded = select.getAttribute('data-loaded') === 'true';
-					const lastQuery = select.getAttribute('data-query') || '';
-					if (!loaded || lastQuery !== query) {
-						select.setAttribute('data-loaded', 'pending');
-						select.setAttribute('data-query', query);
-						requestAssignees(issueKey, query);
-					}
-					});
+					const row = select.closest('.assignee-select-row');
+					const applyButton = row ? row.querySelector('.jira-assignee-apply') : null;
+
+					const ensureAssigneesLoaded = () => {
+						if (!issueKey) {
+							return;
+						}
+						const selector = '.jira-assignee-search[data-issue-key="' + issueKey + '"]';
+						const searchInput = document.querySelector(selector);
+						const query = searchInput ? searchInput.value : '';
+						const loaded = select.getAttribute('data-loaded') === 'true';
+						const lastQuery = select.getAttribute('data-query') || '';
+						if (!loaded || lastQuery !== query) {
+							select.setAttribute('data-loaded', 'pending');
+							select.setAttribute('data-query', query);
+							requestAssignees(issueKey, query);
+						}
+					};
+
+					select.addEventListener('focus', ensureAssigneesLoaded);
+					select.addEventListener('click', ensureAssigneesLoaded);
 					select.addEventListener('change', () => {
+						updateApplyState(select, applyButton);
+					});
+					updateApplyState(select, applyButton);
+				});
+
+				document.querySelectorAll('.jira-assignee-apply').forEach((button) => {
+					button.addEventListener('click', () => {
+						if (button.disabled) {
+							return;
+						}
+						const row = button.closest('.assignee-select-row');
+						if (!row) {
+							return;
+						}
+						const select = row.querySelector('.jira-assignee-select');
+						if (!select) {
+							return;
+						}
+						const issueKey = select.getAttribute('data-issue-key');
 						const accountId = select.value;
 						if (!accountId || !issueKey) {
 							return;
 						}
-						select.setAttribute('disabled', 'true');
+						button.disabled = true;
+						select.disabled = true;
 						vscode.postMessage({ type: 'changeAssignee', accountId, issueKey });
 					});
 				});
@@ -2097,11 +2150,18 @@ function renderAssigneeControl(
 					queryValue
 				)}" placeholder="Search people" ${searchDisabledAttr} />
 			</div>
-			<select class="jira-assignee-select" data-issue-key="${escapeAttribute(
-				issue.key
-			)}" data-loaded="false" data-query="${escapeAttribute(queryValue)}" ${searchDisabledAttr}>
-				<option value="">${escapeHtml(message)}</option>
-			</select>
+			<div class="assignee-select-row">
+				<select class="jira-assignee-select" data-issue-key="${escapeAttribute(
+					issue.key
+				)}" data-loaded="false" data-query="${escapeAttribute(queryValue)}" data-current-account-id="${escapeAttribute(
+					currentAccountId ?? ''
+				)}" ${searchDisabledAttr}>
+					<option value="">${escapeHtml(message)}</option>
+				</select>
+				<button class="jira-assignee-apply" data-issue-key="${escapeAttribute(
+					issue.key
+				)}" title="Apply assignee change" disabled>OK</button>
+			</div>
 		</div>
 	</div>`;
 }
@@ -2128,11 +2188,18 @@ function renderAssigneeControl(
 					issue.key
 				)}" value="${escapeAttribute(queryValue)}" placeholder="Search people" ${searchDisabledAttr} />
 			</div>
-			<select class="jira-assignee-select" data-issue-key="${escapeAttribute(
-				issue.key
-			)}" data-loaded="true" data-query="${escapeAttribute(queryValue)}" ${selectDisabledAttr}>
-				${selectOptions}
-			</select>
+			<div class="assignee-select-row">
+				<select class="jira-assignee-select" data-issue-key="${escapeAttribute(
+					issue.key
+				)}" data-loaded="true" data-query="${escapeAttribute(queryValue)}" data-current-account-id="${escapeAttribute(
+					currentAccountId ?? ''
+				)}" ${selectDisabledAttr}>
+					${selectOptions}
+				</select>
+				<button class="jira-assignee-apply" data-issue-key="${escapeAttribute(
+					issue.key
+				)}" title="Apply assignee change" disabled>OK</button>
+			</div>
 			${assigneeError ? `<div class="status-error">${escapeHtml(assigneeError)}</div>` : ''}
 		</div>
 	</div>`;

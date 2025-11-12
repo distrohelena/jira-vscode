@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Added an inline "Search recent items" row (and command palette entry) that filters your recent project items directly inside the Items tree.
+- Changing an issue's assignee now requires confirming via the new OK button next to the assignee dropdown to prevent accidental reassignment.
+
 ## 1.0.0
 
 - Added Projects, Items, and Settings tree views with focus and authentication commands.
