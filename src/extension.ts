@@ -12,7 +12,7 @@ const ITEMS_SEARCH_QUERY_KEY = 'jira.itemsSearchQuery';
 const RECENT_ITEMS_LIMIT = 50;
 const RECENT_ITEMS_FETCH_LIMIT = 500;
 const COMMENT_FETCH_LIMIT = 50;
-const ISSUE_DETAIL_FIELDS = ['summary', 'status', 'assignee', 'updated', 'parent', 'subtasks'];
+const ISSUE_DETAIL_FIELDS = ['summary', 'status', 'assignee', 'updated', 'parent', 'subtasks', 'description'];
 let extensionUri: vscode.Uri;
 
 type JiraAuthInfo = {
@@ -33,6 +33,8 @@ type JiraIssue = {
 	assigneeKey?: string;
 	assigneeAccountId?: string;
 	assigneeAvatarUrl?: string;
+	description?: string;
+	descriptionHtml?: string;
 	url: string;
 	updated: string;
 	parent?: JiraRelatedIssue;
@@ -1497,6 +1499,8 @@ function createPlaceholderIssue(issueKey: string): JiraIssue {
 		assigneeKey: undefined,
 		assigneeAccountId: undefined,
 		assigneeUsername: undefined,
+		description: undefined,
+		descriptionHtml: undefined,
 		url: '',
 		updated: '',
 	};
@@ -1735,6 +1739,11 @@ function renderIssueDetailsHtml(
 	const nonce = generateNonce();
 	const isLoading = options?.loading ?? false;
 	const errorMessage = options?.error;
+	const descriptionSection = errorMessage
+		? ''
+		: isLoading
+		? renderLoadingSection('Description', 'Loading description…')
+		: renderDescriptionSection(issue);
 	const parentSection = errorMessage
 		? ''
 		: isLoading
@@ -1883,22 +1892,30 @@ function renderIssueDetailsHtml(
 		color: var(--vscode-descriptionForeground);
 		font-size: 0.9em;
 	}
-	.comment-body {
-		margin-top: 8px;
+	.rich-text-block {
 		padding: 12px;
 		border-radius: 6px;
 		border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
 		background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03));
 		overflow-x: auto;
 	}
-	.comment-body :where(p, ul, ol) {
+	.rich-text-block :where(p, ul, ol) {
 		margin-top: 0;
 	}
-	.comment-body pre {
+	.rich-text-block pre {
 		background: var(--vscode-editor-background);
 		padding: 8px;
 		border-radius: 4px;
 		overflow-x: auto;
+	}
+	.comment-body,
+	.description-body {
+		margin-top: 8px;
+	}
+	.description-card {
+		border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+		border-radius: 6px;
+		padding: 16px;
 	}
 	.comment-message {
 		margin-top: 16px;
@@ -2120,6 +2137,7 @@ function renderIssueDetailsHtml(
 				</div>
 			</div>
 			${messageBanner}
+			${descriptionSection}
 			${parentSection}
 			${childrenSection}
 			${linkSection}
@@ -2706,6 +2724,21 @@ function renderLoadingSection(title: string, message: string): string {
 	</div>`;
 }
 
+function renderDescriptionSection(issue: JiraIssue): string {
+	const descriptionHtml = issue.descriptionHtml;
+	const fallbackHtml = issue.description
+		? `<p>${escapeHtml(issue.description).replace(/\r?\n/g, '<br />')}</p>`
+		: undefined;
+	const content = descriptionHtml ?? fallbackHtml;
+	const body = content
+		? `<div class="description-body rich-text-block">${content}</div>`
+		: '<div class="muted">No description provided.</div>';
+	return `<div class="section description-card">
+		<div class="section-title">Description</div>
+		${body}
+	</div>`;
+}
+
 function renderCommentsSection(options?: IssuePanelOptions): string {
 	const comments = options?.comments ?? [];
 	const pending = options?.commentsPending ?? false;
@@ -2762,7 +2795,7 @@ function renderCommentItem(comment: JiraIssueComment, options?: IssuePanelOption
 				${timestampText ? `<span class="comment-date">${escapeHtml(timestampText)}</span>` : ''}
 				${deleteButton}
 			</div>
-			<div class="comment-body" data-comment-id="${escapeAttribute(comment.id ?? '')}">${bodyHtml}</div>
+			<div class="comment-body rich-text-block" data-comment-id="${escapeAttribute(comment.id ?? '')}">${bodyHtml}</div>
 		</div>
 	</li>`;
 }
@@ -3462,6 +3495,7 @@ async function fetchIssueDetails(authInfo: JiraAuthInfo, token: string, issueKey
 			const response = await axios.get(endpoint, {
 				params: {
 					fields: ISSUE_DETAIL_FIELDS.join(','),
+					expand: 'renderedFields',
 				},
 				auth: {
 					username: authInfo.username,
@@ -4072,6 +4106,16 @@ function mapIssues(data: any, urlRoot: string): JiraIssue[] {
 function mapIssue(issue: any, urlRoot: string): JiraIssue {
 	const fields = issue?.fields ?? {};
 	const avatarUrls = fields?.assignee?.avatarUrls ?? issue?.assignee?.avatarUrls ?? {};
+	const renderedFields = issue?.renderedFields ?? {};
+	const rawDescription = fields?.description;
+	const renderedDescription = typeof renderedFields?.description === 'string' ? renderedFields.description : undefined;
+	let descriptionHtml: string | undefined;
+	if (renderedDescription) {
+		descriptionHtml = sanitizeRenderedHtml(renderedDescription);
+	} else if (typeof rawDescription === 'string') {
+		descriptionHtml = `<p>${escapeHtml(rawDescription).replace(/\r?\n/g, '<br />')}</p>`;
+	}
+	const descriptionText = typeof rawDescription === 'string' ? rawDescription : undefined;
 	const assigneeAvatarUrl =
 		avatarUrls['128x128'] ??
 		avatarUrls['96x96'] ??
@@ -4091,6 +4135,8 @@ function mapIssue(issue: any, urlRoot: string): JiraIssue {
 		assigneeKey: fields?.assignee?.key ?? undefined,
 		assigneeAccountId: fields?.assignee?.accountId ?? undefined,
 		assigneeAvatarUrl,
+		description: descriptionText,
+		descriptionHtml,
 		url: `${urlRoot}/browse/${issue?.key}`,
 		updated: fields?.updated ?? '',
 		parent: mapRelatedIssue(fields?.parent, urlRoot),
