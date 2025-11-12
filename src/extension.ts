@@ -89,6 +89,8 @@ type CreateIssueFormValues = {
 	description: string;
 	issueType: string;
 	status: string;
+	assigneeAccountId?: string;
+	assigneeDisplayName?: string;
 };
 
 type CreateIssuePanelState = {
@@ -96,6 +98,10 @@ type CreateIssuePanelState = {
 	submitting?: boolean;
 	error?: string;
 	successIssue?: JiraIssue;
+	assigneeOptions?: IssueAssignableUser[];
+	assigneePending?: boolean;
+	assigneeError?: string;
+	assigneeQuery?: string;
 };
 
 type GitExtensionExports = {
@@ -527,6 +533,7 @@ export async function activate(context: vscode.ExtensionContext) {
 					issueType: 'Task',
 					status: ISSUE_STATUS_OPTIONS[0],
 				},
+				assigneeQuery: '',
 			};
 			const panel = showCreateIssuePanel(project, state);
 			let disposed = false;
@@ -545,7 +552,55 @@ export async function activate(context: vscode.ExtensionContext) {
 			renderCreateIssuePanel(panel, project, state);
 
 			panel.webview.onDidReceiveMessage(async (message) => {
-				if (message?.type !== 'createIssue') {
+				if (!message?.type) {
+					return;
+				}
+				if (message.type === 'loadCreateAssignees') {
+					const normalizedQuery =
+						typeof message.query === 'string' ? message.query.trim() : state.assigneeQuery?.trim() ?? '';
+					updatePanel({
+						assigneePending: true,
+						assigneeError: undefined,
+						assigneeQuery: normalizedQuery,
+					});
+					try {
+						const users = await fetchAssignableUsers(
+							authInfo,
+							token,
+							{ projectKey: project.key },
+							normalizedQuery
+						);
+						updatePanel({
+							assigneePending: false,
+							assigneeOptions: users,
+							assigneeQuery: normalizedQuery,
+						});
+					} catch (error) {
+						const messageText = deriveErrorMessage(error);
+						updatePanel({
+							assigneePending: false,
+							assigneeError: `Failed to load assignable users: ${messageText}`,
+							assigneeQuery: normalizedQuery,
+						});
+					}
+					return;
+				}
+				if (message.type === 'selectCreateAssignee') {
+					const accountIdRaw =
+						typeof message.accountId === 'string' ? message.accountId.trim() : undefined;
+					const displayName =
+						typeof message.displayName === 'string' ? message.displayName.trim() : undefined;
+					updatePanel({
+						values: {
+							...state.values,
+							assigneeAccountId: accountIdRaw || undefined,
+							assigneeDisplayName: accountIdRaw ? displayName || accountIdRaw : undefined,
+						},
+						successIssue: undefined,
+					});
+					return;
+				}
+				if (message.type !== 'createIssue') {
 					return;
 				}
 				const values = sanitizeCreateIssueValues(message.values, state.values);
@@ -562,6 +617,8 @@ export async function activate(context: vscode.ExtensionContext) {
 							description: '',
 							issueType: values.issueType,
 							status: values.status,
+							assigneeAccountId: values.assigneeAccountId,
+							assigneeDisplayName: values.assigneeDisplayName,
 						},
 						submitting: false,
 						successIssue: createdIssue,
@@ -1855,15 +1912,17 @@ function renderCreateIssuePanelHtml(
 	const values = state.values;
 	const disabledAttr = state.submitting ? 'disabled' : '';
 	const errorBanner = state.error
-		? `<div class="error-banner">${escapeHtml(state.error)}</div>`
+		? `<div class="section error-banner">${escapeHtml(state.error)}</div>`
 		: '';
 	const successBanner = state.successIssue
-		? `<div class="success-banner">
+		? `<div class="section success-banner">
 			Created ticket <strong>${escapeHtml(state.successIssue.key)}</strong>.
 			${state.successIssue.url ? `<a href="${escapeHtml(state.successIssue.url)}" target="_blank" rel="noreferrer noopener">Open in Jira</a>` : ''}
 		</div>`
 		: '';
 	const projectLabel = project.name ? `${project.name} (${project.key})` : project.key;
+	const assigneeSection = renderCreateAssigneeSection(state);
+	const buttonLabel = state.submitting ? 'Creating…' : 'Create Ticket';
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -1872,134 +1931,344 @@ function renderCreateIssuePanelHtml(
 \t<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
 \t<title>New Jira Ticket</title>
 \t<style>
+\t\t*, *::before, *::after {
+\t\t\tbox-sizing: border-box;
+\t\t}
 \t\tbody {
-\t\tfont-family: var(--vscode-font-family);
-\t\tfont-size: var(--vscode-font-size);
-\t\tcolor: var(--vscode-foreground);
-\t\tbackground-color: var(--vscode-editor-background);
-\t\tpadding: 24px;
-\t\tline-height: 1.5;
-\t}
-\t\th1 {
-\t\tmargin-top: 0;
-\t\tfont-size: 1.6em;
-\t}
-\t\tform {
-\t\tdisplay: flex;
-\t\tflex-direction: column;
-\t\tgap: 16px;
-\t\tmax-width: 520px;
-\t}
-\t\tlabel {
-\t\tfont-weight: 600;
-\t\tdisplay: flex;
-\t\tflex-direction: column;
-\t\tgap: 6px;
-\t}
-\t\tinput[type="text"], textarea, select {
-\t\tbackground: var(--vscode-input-background);
-\t\tcolor: var(--vscode-input-foreground);
-\t\tborder: 1px solid var(--vscode-input-border);
-\t\tborder-radius: 4px;
-\t\tpadding: 6px 8px;
-\t\tfont-size: 1em;
-\t}
+\t\t\tfont-family: var(--vscode-font-family);
+\t\t\tfont-size: var(--vscode-font-size);
+\t\t\tcolor: var(--vscode-foreground);
+\t\t\tbackground-color: var(--vscode-editor-background);
+\t\t\tpadding: 24px;
+\t\t\tline-height: 1.5;
+\t\t}
+\t\t.create-issue-wrapper {
+\t\t\tmax-width: 1100px;
+\t\t\tmargin: 0 auto;
+\t\t}
+\t\t.issue-layout {
+\t\t\tdisplay: grid;
+\t\t\tgrid-template-columns: minmax(0, 2.5fr) minmax(280px, 1fr);
+\t\t\tgap: 32px;
+\t\t\talign-items: flex-start;
+\t\t\twidth: 100%;
+\t\t}
+\t\t.issue-header h1 {
+\t\t\tmargin: 0;
+\t\t\tfont-size: 2em;
+\t\t}
+\t\t.issue-header .issue-summary {
+\t\t\tmargin: 6px 0 0 0;
+\t\t\tcolor: var(--vscode-descriptionForeground);
+\t\t}
+\t\t.issue-main {
+\t\t\tdisplay: flex;
+\t\t\tflex-direction: column;
+\t\t\tgap: 18px;
+\t\t\tmin-width: 0;
+\t\t}
+\t\t.issue-sidebar {
+\t\t\tmin-width: 0;
+\t\t}
+\t\t.form-field label {
+\t\t\tdisplay: flex;
+\t\t\tflex-direction: column;
+\t\t\tgap: 6px;
+\t\t\tfont-weight: 600;
+\t\t}
+\t\tinput[type="text"],
+\t\ttextarea,
+\t\tselect {
+\t\t\tbackground: var(--vscode-input-background);
+\t\t\tcolor: var(--vscode-input-foreground);
+\t\t\tborder: 1px solid var(--vscode-input-border);
+\t\t\tborder-radius: 4px;
+\t\t\tpadding: 8px;
+\t\t\tfont-size: 1em;
+\t\t\twidth: 100%;
+\t\t}
 \t\ttextarea {
-\t\tmin-height: 120px;
-\t\tresize: vertical;
-\t}
-\t\tbutton {
-\t\tbackground: var(--vscode-button-background);
-\t\tcolor: var(--vscode-button-foreground);
-\t\tborder: none;
-\t\tborder-radius: 4px;
-\t\tpadding: 8px 12px;
-\t\tfont-size: 1em;
-\t\tcursor: pointer;
-\t\talign-self: flex-start;
-\t}
-\t\tbutton:disabled {
-\t\topacity: 0.7;
-\t\tcursor: default;
-\t}
-\t\t.section-title {
-\t\tfont-weight: 600;
-\t\tmargin-bottom: 4px;
-\t}
-\t\t.error-banner {
-\t\tmargin-top: 16px;
-\t\tbackground: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent);
-\t\tborder: 1px solid color-mix(in srgb, var(--vscode-errorForeground) 40%, transparent);
-\t\tborder-radius: 6px;
-\t\tpadding: 12px;
-\t}
-\t\t.success-banner {
-\t\tmargin-top: 16px;
-\t\tbackground: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 15%, transparent);
-\t\tborder: 1px solid color-mix(in srgb, var(--vscode-terminal-ansiGreen) 40%, transparent);
-\t\tborder-radius: 6px;
-\t\tpadding: 12px;
-\t}
+\t\t\tmin-height: 160px;
+\t\t\tresize: vertical;
+\t\t}
+\t\tbutton.primary {
+\t\t\tbackground: var(--vscode-button-background);
+\t\t\tcolor: var(--vscode-button-foreground);
+\t\t\tborder: none;
+\t\t\tborder-radius: 4px;
+\t\t\tpadding: 10px 16px;
+\t\t\tfont-size: 1em;
+\t\t\tcursor: pointer;
+\t\t}
+\t\tbutton.primary:disabled {
+\t\t\topacity: 0.7;
+\t\t\tcursor: default;
+\t\t}
+\t\t.form-actions {
+\t\t\tmargin-top: 8px;
+\t\t}
+\t\t.meta-card {
+\t\t\tborder: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
+\t\t\tborder-radius: 6px;
+\t\t\tpadding: 16px;
+\t\t\tdisplay: flex;
+\t\t\tflex-direction: column;
+\t\t\tgap: 18px;
+\t\t}
+\t\t.meta-section {
+\t\t\tdisplay: flex;
+\t\t\tflex-direction: column;
+\t\t\tgap: 6px;
+\t\t}
 \t\t.project-pill {
-\t\tdisplay: inline-flex;
-\t\talign-items: center;
-\t\tgap: 6px;
-\t\tbackground: var(--vscode-badge-background);
-\t\tcolor: var(--vscode-badge-foreground);
-\t\tpadding: 4px 10px;
-\t\tborder-radius: 999px;
-\t\tfont-size: 0.9em;
-\t}
+\t\t\tdisplay: inline-flex;
+\t\t\talign-items: center;
+\t\t\tgap: 6px;
+\t\t\tbackground: var(--vscode-badge-background);
+\t\t\tcolor: var(--vscode-badge-foreground);
+\t\t\tpadding: 4px 10px;
+\t\t\tborder-radius: 999px;
+\t\t\tfont-size: 0.9em;
+\t\t\tfont-weight: 600;
+\t\t}
+\t\t.assignee-card {
+\t\t\tdisplay: flex;
+\t\t\tflex-direction: column;
+\t\t\tgap: 10px;
+\t\t}
+\t\t.assignee-control-details {
+\t\t\tdisplay: flex;
+\t\t\tflex-direction: column;
+\t\t\tgap: 8px;
+\t\t}
+\t\t.assignee-search-row input {
+\t\t\twidth: 100%;
+\t\t}
+\t\t.assignee-select-row {
+\t\t\tdisplay: flex;
+\t\t\tgap: 8px;
+\t\t}
+\t\t.assignee-select-row select {
+\t\t\tflex: 1;
+\t\t\tmin-width: 0;
+\t\t}
+\t\t.assignee-select-row button {
+\t\t\tpadding: 6px 12px;
+\t\t\tborder-radius: 4px;
+\t\t\tborder: 1px solid var(--vscode-button-secondaryBorder, transparent);
+\t\t\tbackground: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+\t\t\tcolor: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+\t\t\tcursor: pointer;
+\t\t\tmin-width: 56px;
+\t\t}
+\t\t.assignee-select-row button:disabled {
+\t\t\topacity: 0.6;
+\t\t\tcursor: not-allowed;
+\t\t}
+\t\t.section-title {
+\t\t\tfont-weight: 600;
+\t\t}
+\t\t.section {
+\t\t\tmargin: 0;
+\t\t}
+\t\t.error-banner {
+\t\t\tbackground: color-mix(in srgb, var(--vscode-errorForeground) 12%, transparent);
+\t\t\tborder: 1px solid color-mix(in srgb, var(--vscode-errorForeground) 40%, transparent);
+\t\t\tborder-radius: 6px;
+\t\t\tpadding: 12px;
+\t\t}
+\t\t.success-banner {
+\t\t\tbackground: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 15%, transparent);
+\t\t\tborder: 1px solid color-mix(in srgb, var(--vscode-terminal-ansiGreen) 40%, transparent);
+\t\t\tborder-radius: 6px;
+\t\t\tpadding: 12px;
+\t\t}
+\t\t.muted {
+\t\t\tcolor: var(--vscode-descriptionForeground);
+\t\t}
+\t\t.assignee-helper {
+\t\t\tfont-size: 0.9em;
+\t\t}
+\t\t.status-error {
+\t\t\tcolor: var(--vscode-errorForeground);
+\t\t\tfont-size: 0.9em;
+\t\t}
+\t\ta {
+\t\t\tcolor: var(--vscode-textLink-foreground);
+\t\t\ttext-decoration: none;
+\t\t}
+\t\t@media (max-width: 900px) {
+\t\t\t.issue-layout {
+\t\t\t\tgrid-template-columns: 1fr;
+\t\t\t}
+\t\t}
 \t</style>
 </head>
 <body>
-\t<h1>New Jira Ticket</h1>
-\t<div class="project-pill">Project: ${escapeHtml(projectLabel)}</div>
-\t${errorBanner}
-\t${successBanner}
-\t<form id="create-issue-form">
-\t\t<label>
-\t\t\tSummary
-\t\t\t<input type="text" name="summary" value="${escapeAttribute(values.summary)}" placeholder="Ticket summary" ${disabledAttr} required />
-\t\t</label>
-\t\t<label>
-\t\t\tDescription
-\t\t\t<textarea name="description" placeholder="What needs to be done?" ${disabledAttr}>${escapeHtml(
-			values.description
-		)}</textarea>
-\t\t</label>
-\t\t<label>
-\t\t\tIssue type
-\t\t\t<select name="issueType" ${disabledAttr}>
-\t\t\t	${renderIssueTypeOptions(values.issueType)}
-\t\t\t</select>
-\t\t</label>
-\t\t<label>
-\t\t\tStarting status
-\t\t\t<select name="status" ${disabledAttr}>
-\t\t\t	${renderIssueStatusOptions(values.status)}
-\t\t\t</select>
-\t\t</label>
-\t\t<button type="submit" ${disabledAttr}>${state.submitting ? 'Creating…' : 'Create Ticket'}</button>
-\t</form>
+\t<div class="create-issue-wrapper">
+\t\t<form id="create-issue-form" class="issue-layout create-issue-layout">
+\t\t\t<div class="issue-main">
+\t\t\t\t<div class="issue-header">
+\t\t\t\t\t<div>
+\t\t\t\t\t\t<h1>New Jira Ticket</h1>
+\t\t\t\t\t\t<p class="issue-summary">Project ${escapeHtml(projectLabel)}</p>
+\t\t\t\t\t</div>
+\t\t\t\t</div>
+\t\t\t\t${errorBanner}
+\t\t\t\t${successBanner}
+\t\t\t\t<div class="form-field">
+\t\t\t\t\t<label>
+\t\t\t\t\t\t<span class="section-title">Summary</span>
+\t\t\t\t\t\t<input type="text" name="summary" value="${escapeAttribute(
+							values.summary
+						)}" placeholder="Ticket summary" ${disabledAttr} required />
+\t\t\t\t\t</label>
+\t\t\t\t</div>
+\t\t\t\t<div class="form-field">
+\t\t\t\t\t<label>
+\t\t\t\t\t\t<span class="section-title">Description</span>
+\t\t\t\t\t\t<textarea name="description" placeholder="What needs to be done?" ${disabledAttr}>${escapeHtml(
+							values.description
+						)}</textarea>
+\t\t\t\t\t</label>
+\t\t\t\t</div>
+\t\t\t\t<div class="form-actions">
+\t\t\t\t\t<button type="submit" class="primary" ${disabledAttr}>${buttonLabel}</button>
+\t\t\t\t</div>
+\t\t\t</div>
+\t\t\t<div class="issue-sidebar">
+\t\t\t\t<div class="meta-card">
+\t\t\t\t\t<div class="meta-section">
+\t\t\t\t\t\t<div class="section-title">Project</div>
+\t\t\t\t\t\t<div class="project-pill">${escapeHtml(projectLabel)}</div>
+\t\t\t\t\t</div>
+\t\t\t\t\t<div class="meta-section">
+\t\t\t\t\t\t<div class="section-title">Issue Type</div>
+\t\t\t\t\t\t<select name="issueType" ${disabledAttr}>
+\t\t\t\t\t\t\t${renderIssueTypeOptions(values.issueType)}
+\t\t\t\t\t\t</select>
+\t\t\t\t\t</div>
+\t\t\t\t\t<div class="meta-section">
+\t\t\t\t\t\t<div class="section-title">Starting Status</div>
+\t\t\t\t\t\t<select name="status" ${disabledAttr}>
+\t\t\t\t\t\t\t${renderIssueStatusOptions(values.status)}
+\t\t\t\t\t\t</select>
+\t\t\t\t\t</div>
+\t\t\t\t\t<div class="meta-section">
+\t\t\t\t\t\t<div class="section-title">Assignee</div>
+\t\t\t\t\t\t${assigneeSection}
+\t\t\t\t\t</div>
+\t\t\t\t\t<input type="hidden" name="assigneeAccountId" value="${escapeAttribute(
+						values.assigneeAccountId ?? ''
+					)}" />
+\t\t\t\t\t<input type="hidden" name="assigneeDisplayName" value="${escapeAttribute(
+						values.assigneeDisplayName ?? ''
+					)}" />
+\t\t\t\t</div>
+\t\t\t</div>
+\t\t</form>
+\t</div>
 \t<script nonce="${nonce}">
 \t\t(function () {
 \t\t\tconst vscode = acquireVsCodeApi();
 \t\t\tconst form = document.getElementById('create-issue-form');
-\t\t\tif (!form) {
-\t\t\t	return;
+\t\t\tconst searchInput = document.querySelector('.jira-create-assignee-search');
+\t\t\tconst select = document.querySelector('.jira-create-assignee-select');
+\t\t\tconst applyButton = document.querySelector('.jira-create-assignee-apply');
+\t\t\tconst accountInput = form ? form.querySelector('input[name="assigneeAccountId"]') : null;
+\t\t\tconst displayInput = form ? form.querySelector('input[name="assigneeDisplayName"]') : null;
+\t\t\tconst asString = (value, fallback = '') => (typeof value === 'string' ? value : fallback);
+
+\t\t\tif (form) {
+\t\t\t\tform.addEventListener('submit', (event) => {
+\t\t\t\t\tevent.preventDefault();
+\t\t\t\t\tconst formData = new FormData(form);
+\t\t\t\t\tconst payload = {
+\t\t\t\t\t\tsummary: asString(formData.get('summary')),
+\t\t\t\t\t\tdescription: asString(formData.get('description')),
+\t\t\t\t\t\tissueType: asString(formData.get('issueType'), 'Task'),
+\t\t\t\t\t\tstatus: asString(formData.get('status'), '${ISSUE_STATUS_OPTIONS[0]}'),
+\t\t\t\t\t\tassigneeAccountId: asString(formData.get('assigneeAccountId')),
+\t\t\t\t\t\tassigneeDisplayName: asString(formData.get('assigneeDisplayName')),
+\t\t\t\t\t};
+\t\t\t\t\tvscode.postMessage({ type: 'createIssue', values: payload });
+\t\t\t\t});
 \t\t\t}
-\t\t\tform.addEventListener('submit', (event) => {
-\t\t\t	event.preventDefault();
-\t\t\t	const formData = new FormData(form);
-\t\t\t	const payload = {
-\t\t\t\t	summary: formData.get('summary') ?? '',
-\t\t\t\t	description: formData.get('description') ?? '',
-\t\t\t\t	issueType: formData.get('issueType') ?? 'Task',
-\t\t\t\t	status: formData.get('status') ?? '${ISSUE_STATUS_OPTIONS[0]}',
-\t\t\t	};
-\t\t\t	vscode.postMessage({ type: 'createIssue', values: payload });
-\t\t\t});
+
+\t\t\tconst requestAssignees = (query) => {
+\t\t\t\tif (!select) {
+\t\t\t\t\treturn;
+\t\t\t\t}
+\t\t\t\tselect.setAttribute('data-loaded', 'pending');
+\t\t\t\tselect.setAttribute('data-query', query ?? '');
+\t\t\t\tvscode.postMessage({ type: 'loadCreateAssignees', query: query ?? '' });
+\t\t\t};
+
+\t\t\tconst updateApplyState = () => {
+\t\t\t\tif (!select || !applyButton) {
+\t\t\t\t\treturn;
+\t\t\t\t}
+\t\t\t\tconst current = (select.getAttribute('data-current-account-id') || '').trim();
+\t\t\t\tconst value = (select.value || '').trim();
+\t\t\t\tconst hasChange = value !== current;
+\t\t\t\tapplyButton.disabled = select.disabled || !hasChange;
+\t\t\t};
+
+\t\t\tif (searchInput) {
+\t\t\t\tsearchInput.addEventListener('keydown', (event) => {
+\t\t\t\t\tif (event.key === 'Enter') {
+\t\t\t\t\t\tevent.preventDefault();
+\t\t\t\t\t\trequestAssignees(searchInput.value || '');
+\t\t\t\t\t}
+\t\t\t\t});
+\t\t\t}
+
+\t\t\tif (select) {
+\t\t\t\tconst ensureLoaded = () => {
+\t\t\t\t\tif (!searchInput) {
+\t\t\t\t\t\treturn;
+\t\t\t\t\t}
+\t\t\t\t\tconst loadState = select.getAttribute('data-loaded');
+\t\t\t\t\tconst pending = loadState === 'pending';
+\t\t\t\t\tconst loaded = loadState === 'true';
+\t\t\t\t\tconst lastQuery = select.getAttribute('data-query') || '';
+\t\t\t\t\tconst currentQuery = searchInput.value || '';
+\t\t\t\t\tif (!pending && (!loaded || lastQuery !== currentQuery)) {
+\t\t\t\t\t\trequestAssignees(currentQuery);
+\t\t\t\t\t}
+\t\t\t\t};
+\t\t\t\tselect.addEventListener('focus', ensureLoaded);
+\t\t\t\tselect.addEventListener('click', ensureLoaded);
+\t\t\t\tselect.addEventListener('change', () => {
+\t\t\t\t\tupdateApplyState();
+\t\t\t\t});
+\t\t\t\tupdateApplyState();
+\t\t\t}
+
+\t\t\tif (applyButton && select) {
+\t\t\t\tapplyButton.addEventListener('click', () => {
+\t\t\t\t\tif (applyButton.disabled) {
+\t\t\t\t\t\treturn;
+\t\t\t\t\t}
+\t\t\t\t\tconst selectedOption = select.options[select.selectedIndex];
+\t\t\t\t\tconst displayName = selectedOption ? (selectedOption.textContent || '').trim() : '';
+\t\t\t\t\tconst accountId = select.value || '';
+\t\t\t\t\tconst resolvedDisplayName = accountId ? displayName : '';
+\t\t\t\t\tif (accountInput) {
+\t\t\t\t\t\taccountInput.value = accountId;
+\t\t\t\t\t}
+\t\t\t\t\tif (displayInput) {
+\t\t\t\t\t\tdisplayInput.value = resolvedDisplayName;
+\t\t\t\t\t}
+\t\t\t\t\tselect.setAttribute('data-current-account-id', accountId);
+\t\t\t\t\tupdateApplyState();
+\t\t\t\t\tvscode.postMessage({
+\t\t\t\t\t\ttype: 'selectCreateAssignee',
+\t\t\t\t\t\taccountId,
+\t\t\t\t\t\tdisplayName: resolvedDisplayName,
+\t\t\t\t\t});
+\t\t\t\t});
+\t\t\t}
 \t\t})();
 \t</script>
 </body>
@@ -2123,6 +2392,84 @@ function renderIssueStatusOptions(selected: string): string {
 	}).join('');
 }
 
+function renderCreateAssigneeSection(state: CreateIssuePanelState): string {
+	const pending = state.assigneePending ?? false;
+	const interactionDisabled = !!state.submitting || pending;
+	const queryValue = state.assigneeQuery ?? '';
+	const hasOptions = !!state.assigneeOptions && state.assigneeOptions.length > 0;
+	const selectLoadState = pending ? 'pending' : hasOptions ? 'true' : 'false';
+	const placeholderText = hasOptions
+		? 'Select an assignee'
+		: pending
+		? 'Loading assignable users…'
+		: state.assigneeError
+		? state.assigneeError
+		: 'Search to load assignable users.';
+	const selectOptions = hasOptions ? renderCreateAssigneeOptions(state) : '';
+	const helperText = pending
+		? 'Loading assignable users…'
+		: 'Type a name, press Enter to search, then choose a person and press OK.';
+	const errorText =
+		!pending && state.assigneeError
+			? `<div class="status-error">${escapeHtml(state.assigneeError)}</div>`
+			: '';
+	const currentLabel = state.values.assigneeDisplayName
+		? `Selected: ${state.values.assigneeDisplayName}`
+		: 'Selected: Unassigned (assign later)';
+	const selectDisabledAttr = interactionDisabled ? 'disabled' : '';
+	const searchDisabledAttr = interactionDisabled ? 'disabled' : '';
+	return `<div class="assignee-card">
+		<div class="assignee-control-details">
+			<div class="muted">${escapeHtml(currentLabel)}</div>
+			<div class="assignee-search-row">
+				<input type="text" class="jira-create-assignee-search" value="${escapeAttribute(
+					queryValue
+				)}" placeholder="Search people" ${searchDisabledAttr} />
+			</div>
+			<div class="assignee-select-row">
+				<select class="jira-create-assignee-select" data-loaded="${escapeAttribute(
+					selectLoadState
+				)}" data-query="${escapeAttribute(queryValue)}" data-current-account-id="${escapeAttribute(
+		state.values.assigneeAccountId ?? ''
+	)}" ${selectDisabledAttr}>
+					<option value="">${escapeHtml(placeholderText)}</option>
+					${selectOptions}
+				</select>
+				<button type="button" class="jira-create-assignee-apply" disabled>OK</button>
+			</div>
+			<div class="muted assignee-helper">${escapeHtml(helperText)}</div>
+			${errorText}
+		</div>
+	</div>`;
+}
+
+function renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
+	const options = state.assigneeOptions ?? [];
+	if (options.length === 0) {
+		return '';
+	}
+	const currentId = state.values.assigneeAccountId?.trim();
+	let hasCurrent = false;
+	const rendered = options
+		.map((user) => {
+			const isSelected = !!currentId && user.accountId === currentId;
+			if (isSelected) {
+				hasCurrent = true;
+			}
+			return `<option value="${escapeAttribute(user.accountId)}" ${
+				isSelected ? 'selected' : ''
+			}>${escapeHtml(user.displayName)}</option>`;
+		})
+		.join('');
+	if (currentId && !hasCurrent) {
+		const fallbackLabel = state.values.assigneeDisplayName ?? `Selected (${currentId})`;
+		return `<option value="${escapeAttribute(currentId)}" selected>${escapeHtml(
+			fallbackLabel
+		)}</option>${rendered}`;
+	}
+	return rendered;
+}
+
 function renderAssigneeControl(
 	issue: JiraIssue,
 	currentAssigneeLabel: string,
@@ -2217,11 +2564,24 @@ function sanitizeCreateIssueValues(
 	const statusRaw = typeof raw?.status === 'string' ? raw.status : fallback.status;
 	const normalizedStatus = statusRaw?.trim() || fallback.status;
 	const status = ISSUE_STATUS_OPTIONS.includes(normalizedStatus) ? normalizedStatus : fallback.status;
+	const assigneeAccountIdRaw =
+		typeof raw?.assigneeAccountId === 'string' ? raw.assigneeAccountId.trim() : undefined;
+	const fallbackAccountId = fallback.assigneeAccountId?.trim();
+	const assigneeAccountId = assigneeAccountIdRaw || fallbackAccountId || undefined;
+	let assigneeDisplayName: string | undefined;
+	if (assigneeAccountId) {
+		const displayNameRaw =
+			typeof raw?.assigneeDisplayName === 'string' ? raw.assigneeDisplayName.trim() : undefined;
+		const fallbackDisplayName = fallback.assigneeDisplayName?.trim();
+		assigneeDisplayName = displayNameRaw || fallbackDisplayName || assigneeAccountId;
+	}
 	return {
 		summary,
 		description,
 		issueType,
 		status,
+		assigneeAccountId,
+		assigneeDisplayName,
 	};
 }
 
@@ -2697,26 +3057,45 @@ async function transitionIssueStatus(
 	throw lastError ?? new Error('Unable to update issue status.');
 }
 
+type AssignableUserScope = {
+	issueKey?: string;
+	projectKey?: string;
+};
+
 async function fetchAssignableUsers(
 	authInfo: JiraAuthInfo,
 	token: string,
-	issueKey: string,
+	scopeOrIssueKey: string | AssignableUserScope,
 	query = '',
 	maxResults = 50
 ): Promise<IssueAssignableUser[]> {
 	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `user/assignable/search`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+	const scope: AssignableUserScope =
+		typeof scopeOrIssueKey === 'string'
+			? { issueKey: scopeOrIssueKey }
+			: scopeOrIssueKey ?? {};
+	if (!scope.issueKey && !scope.projectKey) {
+		throw new Error('Issue key or project key is required to load assignable users.');
+	}
+	const trimmedQuery = query?.trim() ?? '';
+	const params: Record<string, string | number | undefined> = {
+		maxResults,
+		query: trimmedQuery || undefined,
+	};
+	if (scope.issueKey) {
+		params.issueKey = scope.issueKey;
+	}
+	if (scope.projectKey) {
+		params.project = scope.projectKey;
+	}
 
 	let lastError: unknown;
 	for (const endpoint of endpoints) {
 		try {
 			const response = await axios.get(endpoint, {
-				params: {
-					issueKey,
-					maxResults,
-					query: query?.trim() || undefined,
-				},
+				params,
 				auth: {
 					username: authInfo.username,
 					password: token,
@@ -2809,6 +3188,16 @@ async function createJiraIssue(
 			issuetype: { name: values.issueType?.trim() || 'Task' },
 		},
 	};
+	const assigneeIdentifier = values.assigneeAccountId?.trim();
+	if (assigneeIdentifier) {
+		payload.fields = {
+			...payload.fields,
+			assignee:
+				authInfo.serverLabel === 'cloud'
+					? { accountId: assigneeIdentifier }
+					: { name: assigneeIdentifier, accountId: assigneeIdentifier },
+		};
+	}
 
 	let lastError: unknown;
 	for (const endpoint of endpoints) {
