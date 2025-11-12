@@ -5,7 +5,7 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 ## Features
 
 - **Projects View** – Browse accessible Jira projects, focus a project for work, and refresh data with a single click.
-- **Items View** – Displays the currently focused project's Jira issues grouped by status, with badges and tree view actions that mirror VS Code's source control UX.
+- **Items View** – Displays the currently focused project's Jira issues grouped by status, with badges, an inline search/filter row for your recent items, and tree view actions that mirror VS Code's source control UX.
 - **Issue Details Panel** – Open any ticket to view metadata, switch assignees, transition workflow status, and launch the issue in the browser.
 - **Ticket Creation** – Use the `+ Ticket` button to create new issues with summary, description, issue type, and starting status right from VS Code.
 - **Authentication Support** – Works with Jira Cloud as well as custom Jira Server/Data Center deployments, storing tokens securely via VS Code's secret storage.
@@ -30,6 +30,7 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 
 ### Working with Issues
 - Issues appear grouped by status in the Items view. Selecting an item opens the details panel.
+- Use the first "Search recent items" row in the Items view to filter your recent issues without leaving the tree.
 - Inside the panel you can:
   - Update status via the combobox (transitions are fetched from Jira).
   - Search for and assign the issue to other users (results fetch lazily on demand).
@@ -48,6 +49,7 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 | `Jira: Focus Project` | Choose a project to work on. |
 | `Jira: Clear Project Focus` | Reset the focused project. |
 | `Jira: Refresh Items` | Refresh the Items tree. |
+| `Jira: Search Items` | Edit the inline Items search/filter row to narrow your recent issues. |
 | `Jira: Refresh Projects` | Refresh the Projects tree. |
 | `Jira: Create Issue` | Launch the ticket creation panel. |
 | `Jira: Open Issue Details` | Open the webview panel for a specific ticket. |

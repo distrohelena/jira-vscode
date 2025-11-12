@@ -8,7 +8,9 @@ const PROJECTS_VIEW_MODE_KEY = 'jira.projectsViewMode';
 const PROJECTS_VIEW_MODE_CONTEXT = 'jiraProjectsViewMode';
 const ITEMS_VIEW_MODE_KEY = 'jira.itemsViewMode';
 const ITEMS_VIEW_MODE_CONTEXT = 'jiraItemsViewMode';
-const RECENT_ITEMS_LIMIT = 20;
+const ITEMS_SEARCH_QUERY_KEY = 'jira.itemsSearchQuery';
+const RECENT_ITEMS_LIMIT = 50;
+const RECENT_ITEMS_FETCH_LIMIT = 500;
 const ISSUE_DETAIL_FIELDS = ['summary', 'status', 'assignee', 'updated', 'parent', 'subtasks'];
 let extensionUri: vscode.Uri;
 
@@ -27,6 +29,7 @@ type JiraIssue = {
 	statusName: string;
 	assigneeName?: string;
 	assigneeUsername?: string;
+	assigneeKey?: string;
 	assigneeAccountId?: string;
 	assigneeAvatarUrl?: string;
 	url: string;
@@ -473,6 +476,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('jira.showRecentItems', async () => {
 			await itemsProvider.showRecentItems();
 		}),
+		vscode.commands.registerCommand('jira.searchItems', async () => {
+			await itemsProvider.openRecentItemsSearch();
+		}),
 		vscode.commands.registerCommand('jira.logout', async () => {
 			await authManager.logout();
 			refreshAll();
@@ -581,7 +587,7 @@ export function deactivate() {
 	// nothing to clean up yet
 }
 
-type JiraNodeKind = 'loginPrompt' | 'info' | 'logout' | 'project' | 'issue' | 'statusGroup';
+type JiraNodeKind = 'loginPrompt' | 'info' | 'logout' | 'project' | 'issue' | 'statusGroup' | 'search';
 
 abstract class JiraTreeDataProvider implements vscode.TreeDataProvider<JiraTreeItem> {
 	private _onDidChangeTreeData: vscode.EventEmitter<JiraTreeItem | undefined | null | void> =
@@ -771,6 +777,7 @@ class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
 
 class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private viewMode: ItemsViewMode;
+	private searchQuery: string;
 
 	constructor(
 		private extensionContext: vscode.ExtensionContext,
@@ -780,6 +787,8 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		super(authManager, focusManager);
 		const stored = this.extensionContext.workspaceState.get<ItemsViewMode>(ITEMS_VIEW_MODE_KEY);
 		this.viewMode = stored === 'all' ? 'all' : 'recent';
+		const storedSearch = this.extensionContext.workspaceState.get<string>(ITEMS_SEARCH_QUERY_KEY) ?? '';
+		this.searchQuery = storedSearch.trim();
 		void this.updateViewModeContext();
 	}
 
@@ -789,6 +798,56 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 	async showRecentItems(): Promise<void> {
 		await this.setViewMode('recent');
+	}
+
+	async openRecentItemsSearch(): Promise<void> {
+		const selectedProject = this.focusManager.getSelectedProject();
+		if (!selectedProject) {
+			await vscode.window.showInformationMessage('Select a project before searching items.');
+			return;
+		}
+
+		if (this.viewMode !== 'recent') {
+			const switchLabel = 'Switch to Recent';
+			const choice = await vscode.window.showInformationMessage(
+				'Search is available for your recent items. Switch the Items view to Recent?',
+				switchLabel,
+				'Cancel'
+			);
+			if (choice === switchLabel) {
+				await this.setViewMode('recent');
+			} else {
+				return;
+			}
+		}
+
+		const projectLabel = selectedProject.name
+			? `${selectedProject.name} (${selectedProject.key})`
+			: selectedProject.key;
+
+		const input = await vscode.window.showInputBox({
+			title: projectLabel ? `Filter Recent Items (${projectLabel})` : 'Filter Recent Items',
+			placeHolder: 'Type to filter by issue key, summary, status, or assignee',
+			prompt: 'Leave empty to clear the filter.',
+			value: this.searchQuery,
+			ignoreFocusOut: true,
+		});
+
+		if (input === undefined) {
+			return;
+		}
+
+		await this.setSearchQuery(input);
+	}
+
+	private async setSearchQuery(rawQuery: string): Promise<void> {
+		const normalized = rawQuery.trim();
+		if (normalized === this.searchQuery) {
+			return;
+		}
+		this.searchQuery = normalized;
+		await this.extensionContext.workspaceState.update(ITEMS_SEARCH_QUERY_KEY, normalized);
+		this.refresh();
 	}
 
 	private async setViewMode(mode: ItemsViewMode): Promise<void> {
@@ -850,47 +909,72 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			? `${selectedProject.name} (${selectedProject.key})`
 			: selectedProject.key;
 		const showingRecent = this.viewMode === 'recent';
+		const searchNode = showingRecent ? this.createSearchTreeItem(projectLabel) : undefined;
+		const prependSearchNode = (items: JiraTreeItem[]): JiraTreeItem[] =>
+			searchNode ? [searchNode, ...items] : items;
 
 		try {
-			const issues = await fetchProjectIssues(authInfo, token, selectedProject.key);
+			const issues = await fetchProjectIssues(authInfo, token, selectedProject.key, {
+				onlyAssignedToCurrentUser: showingRecent,
+			});
 			const sortedIssues = sortIssuesByUpdatedDesc(issues);
 			const relevantIssues = showingRecent ? filterIssuesRelatedToUser(sortedIssues, authInfo) : sortedIssues;
 			if (relevantIssues.length === 0) {
-				this.updateBadge(
-					0,
-					showingRecent ? 'No personal issues in this project' : 'No Jira issues in this project'
+				const baseDescription = showingRecent ? `${projectLabel} • my latest` : projectLabel;
+				const tooltip = showingRecent
+					? this.searchQuery
+						? 'No matching recent issues'
+						: 'No personal issues in this project'
+					: 'No Jira issues in this project';
+				this.updateBadge(0, tooltip);
+				this.updateDescription(
+					showingRecent && this.searchQuery ? `${baseDescription} • filtered` : baseDescription
 				);
-				this.updateDescription(showingRecent ? `${projectLabel} • my latest` : projectLabel);
-				return [
-					new JiraTreeItem(
-						'info',
-						showingRecent
+				const emptyMessage =
+					showingRecent && this.searchQuery
+						? `No recent items match "${this.searchQuery}". Clear or edit the search to see more.`
+						: showingRecent
 							? 'No recent items assigned to you. Use Show All to list every issue.'
-							: 'No issues in this project (latest 50 shown).',
-						vscode.TreeItemCollapsibleState.None
-					),
-				];
+							: 'No issues in this project (latest 50 shown).';
+				return prependSearchNode([
+					new JiraTreeItem('info', emptyMessage, vscode.TreeItemCollapsibleState.None),
+				]);
 			}
 
-			const visibleIssues = showingRecent
-				? relevantIssues.slice(0, RECENT_ITEMS_LIMIT)
-				: relevantIssues;
+			const limitedIssues = showingRecent ? relevantIssues.slice(0, RECENT_ITEMS_LIMIT) : relevantIssues;
+			const displayedIssues = showingRecent ? this.applySearchFilter(limitedIssues) : limitedIssues;
 
 			if (showingRecent) {
-				this.updateBadge(
-					visibleIssues.length,
-					visibleIssues.length === 1 ? '1 of your latest issues' : `${visibleIssues.length} of your latest issues`
-				);
-				this.updateDescription(projectLabel ? `${projectLabel} • my latest` : 'My latest project issues');
+				const baseDescription = `${projectLabel} • my latest`;
+				if (this.searchQuery) {
+					this.updateBadge(
+						displayedIssues.length,
+						displayedIssues.length === 1 ? '1 matching issue' : `${displayedIssues.length} matching issues`
+					);
+					this.updateDescription(`${baseDescription} • filtered`);
+				} else {
+					this.updateBadge(
+						limitedIssues.length,
+						limitedIssues.length === 1 ? '1 of your latest issues' : `${limitedIssues.length} of your latest issues`
+					);
+					this.updateDescription(baseDescription);
+				}
 			} else {
 				this.updateBadge(
-					visibleIssues.length,
-					visibleIssues.length === 1 ? '1 Jira issue' : `${visibleIssues.length} Jira issues`
+					displayedIssues.length,
+					displayedIssues.length === 1 ? '1 Jira issue' : `${displayedIssues.length} Jira issues`
 				);
 				this.updateDescription(projectLabel);
 			}
 
-			const groupedNodes = groupIssuesByStatus(visibleIssues).map((group) => {
+			if (displayedIssues.length === 0) {
+				const noMatchMessage = `No recent items match "${this.searchQuery}". Clear or edit the search to see more.`;
+				return prependSearchNode([
+					new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None),
+				]);
+			}
+
+			const groupedNodes = groupIssuesByStatus(displayedIssues).map((group) => {
 				const childNodes = group.issues.map((issue) => createIssueTreeItem(issue));
 				const label =
 					group.issues.length > 0 ? `${group.statusName} (${group.issues.length})` : group.statusName;
@@ -910,28 +994,68 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				return groupItem;
 			});
 
-			if (showingRecent && relevantIssues.length > visibleIssues.length) {
+			if (showingRecent && relevantIssues.length > limitedIssues.length) {
+				const infoText = this.searchQuery
+					? `Showing matches from the latest ${limitedIssues.length} of ${relevantIssues.length} of your issues. Use Show All to see more.`
+					: `Showing latest ${limitedIssues.length} of ${relevantIssues.length} of your issues. Use Show All to see more.`;
 				groupedNodes.push(
 					new JiraTreeItem(
 						'info',
-						`Showing latest ${visibleIssues.length} of ${relevantIssues.length} of your issues. Use Show All to see more.`,
+						infoText,
 						vscode.TreeItemCollapsibleState.None
 					)
 				);
 			}
 
-			return groupedNodes;
+			return prependSearchNode(groupedNodes);
 		} catch (error) {
 			const message = deriveErrorMessage(error);
 			this.updateBadge();
-			return [
+			return prependSearchNode([
 				new JiraTreeItem(
 					'info',
 					`Failed to load project issues: ${message}`,
 					vscode.TreeItemCollapsibleState.None
 				),
-			];
+			]);
 		}
+	}
+
+	private createSearchTreeItem(projectLabel?: string): JiraTreeItem {
+		const hasQuery = this.searchQuery.length > 0;
+		const item = new JiraTreeItem(
+			'search',
+			'Search recent items',
+			vscode.TreeItemCollapsibleState.None,
+			{
+				command: 'jira.searchItems',
+				title: 'Search Items',
+			}
+		);
+		item.iconPath = new vscode.ThemeIcon('search');
+		item.description = hasQuery ? this.searchQuery : 'Type to filter';
+		item.tooltip = hasQuery
+			? `Filtering recent items${projectLabel ? ` in ${projectLabel}` : ''} by "${this.searchQuery}". Click to update or clear.`
+			: `Click to filter your recent items${projectLabel ? ` in ${projectLabel}` : ''}.`;
+		item.contextValue = 'jiraItemsSearch';
+		return item;
+	}
+
+	private applySearchFilter(issues: JiraIssue[]): JiraIssue[] {
+		const query = this.searchQuery.toLowerCase();
+		if (!query) {
+			return issues;
+		}
+		return issues.filter((issue) => {
+			const values = [
+				issue.key,
+				issue.summary,
+				issue.statusName,
+				issue.assigneeName,
+				issue.assigneeUsername,
+			];
+			return values.some((value) => value?.toLowerCase().includes(query));
+		});
 	}
 }
 
@@ -1118,6 +1242,7 @@ function createPlaceholderIssue(issueKey: string): JiraIssue {
 		key: issueKey,
 		summary: 'Loading issue details…',
 		statusName: 'Loading',
+		assigneeKey: undefined,
 		assigneeAccountId: undefined,
 		assigneeUsername: undefined,
 		url: '',
@@ -1179,23 +1304,42 @@ function getIssueUpdatedTimestamp(issue: JiraIssue): number {
 
 function filterIssuesRelatedToUser(issues: JiraIssue[], authInfo: JiraAuthInfo): JiraIssue[] {
 	const accountId = authInfo.accountId?.trim();
-	const username = authInfo.username?.trim().toLowerCase();
+	const username = authInfo.username?.trim();
+	const usernameLower = username?.toLowerCase();
+	const usernameWithoutDomain =
+		usernameLower && usernameLower.includes('@') ? usernameLower.slice(0, usernameLower.indexOf('@')) : undefined;
 	const displayName = authInfo.displayName?.trim().toLowerCase();
+
 	return issues.filter((issue) => {
 		if (accountId && issue.assigneeAccountId && issue.assigneeAccountId === accountId) {
 			return true;
 		}
+
+		const assigneeKey = issue.assigneeKey?.trim().toLowerCase();
+		if (assigneeKey) {
+			if (usernameLower && assigneeKey === usernameLower) {
+				return true;
+			}
+			if (usernameWithoutDomain && assigneeKey === usernameWithoutDomain) {
+				return true;
+			}
+		}
+
 		const assigneeUsername = issue.assigneeUsername?.trim().toLowerCase();
-		if (username && assigneeUsername && assigneeUsername === username) {
-			return true;
+		if (assigneeUsername) {
+			if (usernameLower && assigneeUsername === usernameLower) {
+				return true;
+			}
+			if (usernameWithoutDomain && assigneeUsername === usernameWithoutDomain) {
+				return true;
+			}
 		}
+
 		const assigneeName = issue.assigneeName?.trim().toLowerCase();
-		if (username && assigneeName && assigneeName === username) {
+		if (!accountId && !usernameLower && displayName && assigneeName && assigneeName === displayName) {
 			return true;
 		}
-		if (displayName && assigneeName && assigneeName === displayName) {
-			return true;
-		}
+
 		return false;
 	});
 }
@@ -2314,18 +2458,63 @@ function buildSecretKey(accountKey: string): string {
 	return `${SECRET_PREFIX}:${accountKey}`;
 }
 
+type FetchProjectIssuesOptions = {
+	onlyAssignedToCurrentUser?: boolean;
+};
+
+function escapeJqlValue(value: string): string {
+	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function buildAssigneeFilterClause(authInfo: JiraAuthInfo): string | undefined {
+	const entries: string[] = [];
+	const username = authInfo.username?.trim();
+	if (authInfo.serverLabel === 'cloud') {
+		if (authInfo.accountId) {
+			entries.push(`accountId("${escapeJqlValue(authInfo.accountId)}")`);
+		}
+	} else if (username) {
+		entries.push(`"${escapeJqlValue(username)}"`);
+		const usernameWithoutDomain = username.includes('@')
+			? username.slice(0, username.indexOf('@')).trim()
+			: undefined;
+		if (usernameWithoutDomain && usernameWithoutDomain.length > 0) {
+			entries.push(`"${escapeJqlValue(usernameWithoutDomain)}"`);
+		}
+	}
+
+	if (entries.length === 0) {
+		return 'assignee = currentUser()';
+	}
+
+	const uniqueEntries = Array.from(new Set(['currentUser()', ...entries]));
+	return `assignee in (${uniqueEntries.join(', ')})`;
+}
+
 async function fetchProjectIssues(
 	authInfo: JiraAuthInfo,
 	token: string,
-	projectKey: string
+	projectKey: string,
+	options?: FetchProjectIssuesOptions
 ): Promise<JiraIssue[]> {
 	const sanitizedKey = projectKey?.trim();
 	if (!sanitizedKey) {
 		return [];
 	}
+
+	const jqlParts = [`project = ${sanitizedKey}`];
+	if (options?.onlyAssignedToCurrentUser) {
+		const assigneeClause = buildAssigneeFilterClause(authInfo);
+		if (assigneeClause) {
+			jqlParts.push(assigneeClause);
+		}
+	}
+	const jql = `${jqlParts.join(' AND ')} ORDER BY updated DESC`;
+	const maxResults = options?.onlyAssignedToCurrentUser ? RECENT_ITEMS_FETCH_LIMIT : 50;
+
 	return searchJiraIssues(authInfo, token, {
-		jql: `project = ${sanitizedKey} ORDER BY updated DESC`,
-		maxResults: 50,
+		jql,
+		maxResults,
 		fields: ISSUE_DETAIL_FIELDS,
 	});
 }
@@ -2715,6 +2904,7 @@ function mapIssue(issue: any, urlRoot: string): JiraIssue {
 		statusName: fields?.status?.name ?? 'Unknown',
 		assigneeName: fields?.assignee?.displayName ?? fields?.assignee?.name ?? undefined,
 		assigneeUsername: fields?.assignee?.name ?? undefined,
+		assigneeKey: fields?.assignee?.key ?? undefined,
 		assigneeAccountId: fields?.assignee?.accountId ?? undefined,
 		assigneeAvatarUrl,
 		url: `${urlRoot}/browse/${issue?.key}`,
