@@ -150,6 +150,7 @@ export type SelectedProjectInfo = {
 
 export type ProjectsViewMode = 'recent' | 'all';
 export type ItemsViewMode = 'recent' | 'all';
+export type ItemsGroupMode = 'none' | 'status' | 'type';
 
 export type JiraProfileResponse = {
 	displayName?: string;
@@ -166,6 +167,7 @@ export type JiraNodeKind =
 	| 'project'
 	| 'issue'
 	| 'statusGroup'
+	| 'typeGroup'
 	| 'search';
 
 export type FetchProjectIssuesOptions = {

@@ -94,6 +94,21 @@
                 "title": "+ Ticket"
             },
             {
+                "command": "jira.groupItemsByNone",
+                "title": "Group Items: None",
+                "category": "Jira"
+            },
+            {
+                "command": "jira.groupItemsByStatus",
+                "title": "Group Items: Status",
+                "category": "Jira"
+            },
+            {
+                "command": "jira.groupItemsByType",
+                "title": "Group Items: Type",
+                "category": "Jira"
+            },
+            {
                 "command": "jira.openIssueDetails",
                 "title": "Jira: Open Issue Details"
             },
@@ -111,6 +126,12 @@
                 }
             ]
         },
+        "submenus": [
+            {
+                "id": "jiraItemsGroupBy",
+                "label": "Group By"
+            }
+        ],
         "menus": {
             "view/title": [
                 {
@@ -159,6 +180,36 @@
                     "command": "jira.commitFromIssue",
                     "when": "view == jiraItemsView && viewItem == jiraIssue",
                     "group": "navigation"
+                },
+                {
+                    "submenu": "jiraItemsGroupBy",
+                    "when": "view == jiraItemsView",
+                    "group": "navigation@9"
+                },
+                {
+                    "submenu": "jiraItemsGroupBy",
+                    "when": "view == jiraItemsView && viewItem == view",
+                    "group": "navigation@9"
+                }
+            ],
+            "jiraItemsGroupBy": [
+                {
+                    "command": "jira.groupItemsByNone",
+                    "when": "view == jiraItemsView",
+                    "toggled": "jiraItemsGroupMode == 'none'",
+                    "group": "1_none"
+                },
+                {
+                    "command": "jira.groupItemsByStatus",
+                    "when": "view == jiraItemsView",
+                    "toggled": "jiraItemsGroupMode == 'status'",
+                    "group": "2_status"
+                },
+                {
+                    "command": "jira.groupItemsByType",
+                    "when": "view == jiraItemsView",
+                    "toggled": "jiraItemsGroupMode == 'type'",
+                    "group": "3_type"
                 }
             ]
         },

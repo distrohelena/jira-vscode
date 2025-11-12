@@ -114,6 +114,15 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('jira.showRecentItems', async () => {
 			await itemsProvider.showRecentItems();
 		}),
+		vscode.commands.registerCommand('jira.groupItemsByNone', async () => {
+			await itemsProvider.setGroupMode('none');
+		}),
+		vscode.commands.registerCommand('jira.groupItemsByStatus', async () => {
+			await itemsProvider.setGroupMode('status');
+		}),
+		vscode.commands.registerCommand('jira.groupItemsByType', async () => {
+			await itemsProvider.setGroupMode('type');
+		}),
 		vscode.commands.registerCommand('jira.searchItems', async () => {
 			await itemsProvider.openRecentItemsSearch();
 		}),

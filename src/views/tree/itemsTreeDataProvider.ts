@@ -4,6 +4,8 @@ import { JiraAuthManager } from '../../model/authManager';
 import { JiraFocusManager } from '../../model/focusManager';
 import { ProjectTransitionPrefetcher } from '../../model/projectTransitionPrefetcher';
 import {
+	ITEMS_GROUP_MODE_CONTEXT,
+	ITEMS_GROUP_MODE_KEY,
 	ITEMS_SEARCH_QUERY_KEY,
 	ITEMS_VIEW_MODE_CONTEXT,
 	ITEMS_VIEW_MODE_KEY,
@@ -16,7 +18,7 @@ import {
 	groupIssuesByStatus,
 	sortIssuesByUpdatedDesc,
 } from '../../model/issueModel';
-import { JiraAuthInfo, JiraIssue, ItemsViewMode } from '../../model/types';
+import { JiraAuthInfo, JiraIssue, ItemsGroupMode, ItemsViewMode } from '../../model/types';
 import { deriveErrorMessage } from '../../shared/errors';
 import { JiraTreeDataProvider } from './baseTreeDataProvider';
 import { JiraTreeItem, createIssueTreeItem, deriveIssueIcon } from './treeItems';
@@ -24,6 +26,7 @@ import { JiraTreeItem, createIssueTreeItem, deriveIssueIcon } from './treeItems'
 export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private viewMode: ItemsViewMode;
 	private searchQuery: string;
+	private groupMode: ItemsGroupMode;
 
 	constructor(
 		private readonly extensionContext: vscode.ExtensionContext,
@@ -34,9 +37,12 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		super(authManager, focusManager);
 		const stored = this.extensionContext.workspaceState.get<ItemsViewMode>(ITEMS_VIEW_MODE_KEY);
 		this.viewMode = stored === 'all' ? 'all' : 'recent';
+		const storedGroup = this.extensionContext.workspaceState.get<ItemsGroupMode>(ITEMS_GROUP_MODE_KEY);
+		this.groupMode = storedGroup === 'none' || storedGroup === 'type' ? storedGroup : 'status';
 		const storedSearch = this.extensionContext.workspaceState.get<string>(ITEMS_SEARCH_QUERY_KEY) ?? '';
 		this.searchQuery = storedSearch.trim();
 		void this.updateViewModeContext();
+		void this.updateGroupModeContext();
 	}
 
 	async showAllItems(): Promise<void> {
@@ -45,6 +51,16 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 	async showRecentItems(): Promise<void> {
 		await this.setViewMode('recent');
+	}
+
+	async setGroupMode(mode: ItemsGroupMode): Promise<void> {
+		if (this.groupMode === mode) {
+			return;
+		}
+		this.groupMode = mode;
+		await this.extensionContext.workspaceState.update(ITEMS_GROUP_MODE_KEY, mode);
+		await this.updateGroupModeContext();
+		this.refresh();
 	}
 
 	async openRecentItemsSearch(): Promise<void> {
@@ -112,6 +128,10 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return vscode.commands.executeCommand('setContext', ITEMS_VIEW_MODE_CONTEXT, this.viewMode);
 	}
 
+	private updateGroupModeContext(): Thenable<void> {
+		return vscode.commands.executeCommand('setContext', ITEMS_GROUP_MODE_CONTEXT, this.groupMode);
+	}
+
 	private async loadItems(authInfo: JiraAuthInfo): Promise<JiraTreeItem[]> {
 		const token = await this.authManager.getToken();
 		if (!token) {
@@ -167,9 +187,9 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 						: showingRecent
 						? 'No recent items assigned to you. Use Show All to list every issue.'
 						: 'No issues in this project (latest 50 shown).';
-				return prependSearchNode([
-					new JiraTreeItem('info', emptyMessage, vscode.TreeItemCollapsibleState.None),
-				]);
+		return prependSearchNode([
+			new JiraTreeItem('info', emptyMessage, vscode.TreeItemCollapsibleState.None),
+		]);
 			}
 
 			const limitedIssues = showingRecent ? relevantIssues.slice(0, RECENT_ITEMS_LIMIT) : relevantIssues;
@@ -189,55 +209,104 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 			if (displayedIssues.length === 0) {
 				const noMatchMessage = `No recent items match "${this.searchQuery}". Clear or edit the search to see more.`;
-				return prependSearchNode([
-					new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None),
-				]);
+		return prependSearchNode([
+			new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None),
+		]);
 			}
 
-			const groupedNodes = groupIssuesByStatus(displayedIssues).map((group) => {
-				const childNodes = group.issues.map((issue) => createIssueTreeItem(issue));
-				const label =
-					group.issues.length > 0 ? `${group.statusName} (${group.issues.length})` : group.statusName;
-				const groupItem = new JiraTreeItem(
-					'statusGroup',
-					label,
-					vscode.TreeItemCollapsibleState.Collapsed,
-					undefined,
-					undefined,
-					childNodes
-				);
-				groupItem.iconPath = deriveIssueIcon(group.statusName);
-				groupItem.tooltip =
-					group.issues.length === 1
-						? `1 issue in ${group.statusName}`
-						: `${group.issues.length} issues in ${group.statusName}`;
-				return groupItem;
-			});
+		const issueNodes = this.buildIssueNodes(displayedIssues);
 
 			if (showingRecent && relevantIssues.length > limitedIssues.length) {
 				const infoText = this.searchQuery
 					? `Showing matches from the latest ${limitedIssues.length} of ${relevantIssues.length} of your issues. Use Show All to see more.`
 					: `Showing latest ${limitedIssues.length} of ${relevantIssues.length} of your issues. Use Show All to see more.`;
-				groupedNodes.push(
-					new JiraTreeItem('info', infoText, vscode.TreeItemCollapsibleState.None)
-				);
+				issueNodes.push(new JiraTreeItem('info', infoText, vscode.TreeItemCollapsibleState.None));
 			}
 
-			return prependSearchNode(groupedNodes);
+		return prependSearchNode(issueNodes);
 		} catch (error) {
 			const message = deriveErrorMessage(error);
 			this.updateBadge();
-			return prependSearchNode([
-				new JiraTreeItem(
-					'info',
-					`Failed to load project issues: ${message}`,
-					vscode.TreeItemCollapsibleState.None
-				),
-			]);
+		return prependSearchNode([
+			new JiraTreeItem(
+				'info',
+				`Failed to load project issues: ${message}`,
+				vscode.TreeItemCollapsibleState.None
+			),
+		]);
 		}
 	}
 
-	private createSearchTreeItem(projectLabel?: string): JiraTreeItem {
+	private buildIssueNodes(issues: JiraIssue[]): JiraTreeItem[] {
+		switch (this.groupMode) {
+			case 'none':
+				return issues.map((issue) => createIssueTreeItem(issue));
+			case 'type':
+				return this.buildTypeGroupNodes(issues);
+			case 'status':
+			default:
+				return this.buildStatusGroupNodes(issues);
+		}
+	}
+
+	private buildStatusGroupNodes(issues: JiraIssue[]): JiraTreeItem[] {
+		return groupIssuesByStatus(issues).map((group) => {
+			const childNodes = group.issues.map((issue) => createIssueTreeItem(issue));
+			const label = group.issues.length > 0 ? `${group.statusName} (${group.issues.length})` : group.statusName;
+			const groupItem = new JiraTreeItem(
+				'statusGroup',
+				label,
+				vscode.TreeItemCollapsibleState.Collapsed,
+				undefined,
+				undefined,
+				childNodes
+			);
+			groupItem.iconPath = deriveIssueIcon(group.statusName);
+			groupItem.tooltip =
+				group.issues.length === 1
+					? `1 issue in ${group.statusName}`
+					: `${group.issues.length} issues in ${group.statusName}`;
+			return groupItem;
+		});
+	}
+
+	private buildTypeGroupNodes(issues: JiraIssue[]): JiraTreeItem[] {
+		return this.groupIssuesByType(issues).map((group) => {
+			const childNodes = group.issues.map((issue) => createIssueTreeItem(issue));
+			const label = group.issues.length > 0 ? `${group.typeName} (${group.issues.length})` : group.typeName;
+			const groupItem = new JiraTreeItem(
+				'typeGroup',
+				label,
+				vscode.TreeItemCollapsibleState.Collapsed,
+				undefined,
+				undefined,
+				childNodes
+			);
+			groupItem.iconPath = new vscode.ThemeIcon('symbol-class');
+			groupItem.tooltip =
+				group.issues.length === 1
+					? `1 issue in ${group.typeName}`
+					: `${group.issues.length} issues in ${group.typeName}`;
+			return groupItem;
+		});
+	}
+
+	private groupIssuesByType(issues: JiraIssue[]): Array<{ typeName: string; issues: JiraIssue[] }> {
+		const groups = new Map<string, { typeName: string; issues: JiraIssue[] }>();
+		for (const issue of issues) {
+			const typeName = issue.issueTypeName?.trim() || 'Other';
+			const key = typeName.toLowerCase();
+			let entry = groups.get(key);
+			if (!entry) {
+				entry = { typeName, issues: [] };
+				groups.set(key, entry);
+			}
+			entry.issues.push(issue);
+		}
+		return Array.from(groups.values()).sort((a, b) => a.typeName.localeCompare(b.typeName));
+	}
+
+private createSearchTreeItem(projectLabel?: string): JiraTreeItem {
 		const hasQuery = this.searchQuery.length > 0;
 		const item = new JiraTreeItem(
 			'search',

@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Items view now warms the transition cache for the issues it displays, covering startup scenarios where a project is already focused.
 - Opening an issue that is already displayed now simply brings its existing webview panel to the foreground instead of spawning a duplicate.
 - Reopening or refreshing an issue panel now shows explicit loading banners/spinners while reusing the current description/comments, so updates are visible without clearing existing data.
+- Added a “Group By” context menu (None / Status / Type) to the Items view so you can flatten the list or regroup issues without leaving the tree.
 
 ## 1.0.9
 
