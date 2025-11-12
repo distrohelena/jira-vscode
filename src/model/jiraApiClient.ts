@@ -21,6 +21,8 @@ import {
 	JiraRelatedIssue,
 	JiraServerLabel,
 	JiraCommentFormat,
+	ProjectStatusesResponse,
+	ProjectIssueTypeStatuses,
 } from './types';
 import { determineStatusCategory } from './issueModel';
 
@@ -182,6 +184,70 @@ export async function fetchIssueTransitions(
 	}
 
 	throw lastError ?? new Error('Unable to load issue transitions.');
+}
+
+export async function fetchProjectStatuses(
+	authInfo: JiraAuthInfo,
+	token: string,
+	projectKey: string
+): Promise<ProjectStatusesResponse> {
+	const sanitizedKey = projectKey?.trim();
+	if (!sanitizedKey) {
+		return {
+			allStatuses: [],
+			issueTypeStatuses: [],
+		};
+	}
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `project/${encodeURIComponent(sanitizedKey)}/statuses`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			const response = await axios.get(endpoint, {
+				auth: {
+					username: authInfo.username,
+					password: token,
+				},
+				headers: {
+					Accept: 'application/json',
+					'User-Agent': 'jira-vscode',
+				},
+			});
+			const projectIssueTypes = Array.isArray(response.data) ? response.data : [];
+			const statusesById = new Map<string, IssueStatusOption>();
+			const issueTypeStatuses: ProjectIssueTypeStatuses[] = [];
+			for (const issueType of projectIssueTypes) {
+				const statuses = Array.isArray(issueType?.statuses) ? issueType.statuses : [];
+				const mappedStatuses = statuses
+					.map((status: any) => mapProjectStatusToOption(status))
+					.filter((option: IssueStatusOption | undefined): option is IssueStatusOption => !!option);
+				const issueTypeId = issueType?.id ? String(issueType.id) : undefined;
+				const nameRaw = typeof issueType?.name === 'string' ? issueType.name.trim() : undefined;
+				const issueTypeName = nameRaw && nameRaw.length > 0 ? nameRaw : undefined;
+				issueTypeStatuses.push({
+					issueTypeId,
+					issueTypeName,
+					statuses: mappedStatuses,
+				});
+				for (const mapped of mappedStatuses) {
+					const cacheKey = mapped.id ?? mapped.name;
+					if (cacheKey && !statusesById.has(cacheKey)) {
+						statusesById.set(cacheKey, mapped);
+					}
+				}
+			}
+			return {
+				allStatuses: Array.from(statusesById.values()),
+				issueTypeStatuses,
+			};
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to load project statuses.');
 }
 
 export async function transitionIssueStatus(
@@ -759,11 +825,17 @@ function mapIssue(issue: any, urlRoot: string): JiraIssue {
 		avatarUrls['24x24'] ??
 		avatarUrls['16x16'];
 
+	const issueType = fields?.issuetype ?? {};
+	const issueTypeId = issueType?.id ? String(issueType.id) : undefined;
+	const issueTypeName = issueType?.name ?? undefined;
+
 	return {
 		id: issue?.id,
 		key: issue?.key,
 		summary: fields?.summary ?? 'Untitled',
 		statusName: fields?.status?.name ?? 'Unknown',
+		issueTypeId,
+		issueTypeName,
 		assigneeName: fields?.assignee?.displayName ?? fields?.assignee?.name ?? undefined,
 		assigneeUsername: fields?.assignee?.name ?? undefined,
 		assigneeKey: fields?.assignee?.key ?? undefined,
@@ -829,6 +901,27 @@ function mapTransitionToStatusOption(transition: any): IssueStatusOption | undef
 		name;
 	return {
 		id: String(transition.id),
+		name,
+		category: determineStatusCategory(categorySource),
+	};
+}
+
+function mapProjectStatusToOption(status: any): IssueStatusOption | undefined {
+	if (!status) {
+		return undefined;
+	}
+	const idSource = status.id ?? status.self ?? status.name;
+	const name = status.name ?? String(idSource ?? '').trim();
+	if (!idSource || !name) {
+		return undefined;
+	}
+	const categorySource =
+		status.statusCategory?.name ??
+		status.statusCategory?.key ??
+		status.statusCategory?.id ??
+		name;
+	return {
+		id: String(idSource),
 		name,
 		category: determineStatusCategory(categorySource),
 	};

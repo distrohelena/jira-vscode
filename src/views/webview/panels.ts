@@ -685,6 +685,11 @@ function renderCreateIssuePanelHtml(
 	const projectLabel = project.name ? `${project.name} (${project.key})` : project.key;
 	const assigneeSection = renderCreateAssigneeSection(state);
 	const buttonLabel = state.submitting ? 'Creating…' : 'Create Ticket';
+	const statusNames = deriveStatusOptionNames(state.statusOptions);
+	const defaultStatus = statusNames[0] ?? ISSUE_STATUS_OPTIONS[0];
+	const defaultStatusAttr = escapeAttribute(defaultStatus);
+	const statusPending = state.statusPending ?? false;
+	const statusError = state.statusError;
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -851,6 +856,10 @@ function renderCreateIssuePanelHtml(
 \t\t.assignee-helper {
 \t\t\tfont-size: 0.9em;
 \t\t}
+\t\t.status-helper {
+\t\t\tfont-size: 0.9em;
+\t\t\tmargin-top: 4px;
+\t\t}
 \t\t.status-error {
 \t\t\tcolor: var(--vscode-errorForeground);
 \t\t\tfont-size: 0.9em;
@@ -913,8 +922,10 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\t<div class="meta-section">
 \t\t\t\t\t\t<div class="section-title">Starting Status</div>
 \t\t\t\t\t\t<select name="status" ${disabledAttr}>
-\t\t\t\t\t\t\t${renderIssueStatusOptions(values.status)}
+\t\t\t\t\t\t\t${renderIssueStatusOptions(values.status, state.statusOptions)}
 \t\t\t\t\t\t</select>
+\t\t\t\t\t\t${statusPending ? '<div class="muted status-helper">Loading project statuses…</div>' : ''}
+\t\t\t\t\t\t${statusError ? `<div class="status-error">${escapeHtml(statusError)}</div>` : ''}
 \t\t\t\t\t</div>
 \t\t\t\t\t<div class="meta-section">
 \t\t\t\t\t\t<div class="section-title">Assignee</div>
@@ -947,7 +958,7 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\t\tsummary: '',
 \t\t\t\t\t\tdescription: '',
 \t\t\t\t\t\tissueType: 'Task',
-\t\t\t\t\t\tstatus: '${ISSUE_STATUS_OPTIONS[0]}',
+\t\t\t\t\t\tstatus: '${defaultStatusAttr}',
 \t\t\t\t\t\tassigneeAccountId: '',
 \t\t\t\t\t\tassigneeDisplayName: '',
 \t\t\t\t\t};
@@ -957,7 +968,7 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\tsummary: asString(formData.get('summary')),
 \t\t\t\t\tdescription: asString(formData.get('description')),
 \t\t\t\t\tissueType: asString(formData.get('issueType'), 'Task'),
-\t\t\t\t\tstatus: asString(formData.get('status'), '${ISSUE_STATUS_OPTIONS[0]}'),
+\t\t\t\t\tstatus: asString(formData.get('status'), '${defaultStatusAttr}'),
 \t\t\t\t\tassigneeAccountId: asString(formData.get('assigneeAccountId')),
 \t\t\t\t\tassigneeDisplayName: asString(formData.get('assigneeDisplayName')),
 \t\t\t\t};
@@ -1273,11 +1284,14 @@ function renderIssueTypeOptions(selected: string): string {
 	}).join('');
 }
 
-function renderIssueStatusOptions(selected: string): string {
-	return ISSUE_STATUS_OPTIONS.map((option) => {
-		const isSelected = option === selected;
-		return `<option value="${escapeAttribute(option)}" ${isSelected ? 'selected' : ''}>${escapeHtml(option)}</option>`;
-	}).join('');
+function renderIssueStatusOptions(selected: string, options?: IssueStatusOption[]): string {
+	const names = deriveStatusOptionNames(options);
+	return names
+		.map((option) => {
+			const isSelected = option === selected;
+			return `<option value="${escapeAttribute(option)}" ${isSelected ? 'selected' : ''}>${escapeHtml(option)}</option>`;
+		})
+		.join('');
 }
 
 function renderCreateAssigneeSection(state: CreateIssuePanelState): string {
@@ -1356,6 +1370,26 @@ function renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
 		)}</option>${rendered}`;
 	}
 	return rendered;
+}
+
+function deriveStatusOptionNames(options?: IssueStatusOption[]): string[] {
+	if (!options || options.length === 0) {
+		return ISSUE_STATUS_OPTIONS;
+	}
+	const seen = new Set<string>();
+	const names: string[] = [];
+	for (const option of options) {
+		const name = option?.name?.trim();
+		if (!name) {
+			continue;
+		}
+		const key = name.toLowerCase();
+		if (!seen.has(key)) {
+			seen.add(key);
+			names.push(name);
+		}
+	}
+	return names.length > 0 ? names : ISSUE_STATUS_OPTIONS;
 }
 
 function renderAssigneeControl(

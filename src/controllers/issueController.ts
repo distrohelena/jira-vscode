@@ -18,18 +18,25 @@ import {
 	JiraCommentFormat,
 	JiraIssue,
 	JiraIssueComment,
+	JiraAuthInfo,
 } from '../model/types';
+import { ProjectStatusStore } from '../model/projectStatusStore';
+import { IssueTransitionStore } from '../model/issueTransitionStore';
+import { ProjectTransitionPrefetcher } from '../model/projectTransitionPrefetcher';
 import { createPlaceholderIssue } from '../model/issueModel';
 import { deriveErrorMessage } from '../shared/errors';
 import { renderIssuePanelContent, showIssueDetailsPanel } from '../views/webview/panels';
 
 export type IssueControllerDeps = {
 	authManager: JiraAuthManager;
+	projectStatusStore: ProjectStatusStore;
+	transitionStore: IssueTransitionStore;
+	transitionPrefetcher: ProjectTransitionPrefetcher;
 	refreshAll: () => void;
 };
 
 export function createIssueController(deps: IssueControllerDeps) {
-	const { authManager, refreshAll } = deps;
+	const { authManager, refreshAll, projectStatusStore, transitionStore, transitionPrefetcher } = deps;
 
 	const openIssueDetails = async (issueOrKey?: JiraIssue | string): Promise<void> => {
 		const issueKeyValue = typeof issueOrKey === 'string' ? issueOrKey : issueOrKey?.key;
@@ -40,9 +47,35 @@ export function createIssueController(deps: IssueControllerDeps) {
 		const resolvedIssueKey: string = issueKeyValue;
 
 		const initialIssue = typeof issueOrKey === 'string' ? undefined : issueOrKey;
+		const issueProjectKey = deriveProjectKeyFromIssueKey(resolvedIssueKey);
+		const initialIssueType = initialIssue
+			? {
+					issueTypeId: initialIssue.issueTypeId,
+					issueTypeName: initialIssue.issueTypeName,
+			  }
+			: undefined;
+		const cachedTransitions =
+			initialIssue && issueProjectKey
+				? transitionStore.get({
+						projectKey: issueProjectKey,
+						issueTypeId: initialIssue.issueTypeId ?? initialIssue.issueTypeName,
+						statusName: initialIssue.statusName,
+				  })
+				: undefined;
+		const cachedStatuses =
+			issueProjectKey
+				? projectStatusStore.getIssueTypeStatuses(issueProjectKey, initialIssueType) ??
+					projectStatusStore.get(issueProjectKey)
+				: undefined;
+		if (issueProjectKey) {
+			void projectStatusStore.ensure(issueProjectKey);
+			void projectStatusStore.ensureAllIssueTypeStatuses(issueProjectKey);
+			transitionPrefetcher.prefetch(issueProjectKey);
+		}
 		const panelState: {
 			issue: JiraIssue;
 			transitions?: IssueStatusOption[];
+			statusPrefill?: IssueStatusOption[];
 			assignableUsers?: IssueAssignableUser[];
 			assigneeQuery: string;
 			comments?: JiraIssueComment[];
@@ -55,7 +88,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 			commentDeletingId?: string;
 		} = {
 			issue: initialIssue ?? createPlaceholderIssue(resolvedIssueKey),
-			transitions: undefined,
+			transitions: cachedTransitions,
+			statusPrefill: cachedStatuses,
 			assignableUsers: undefined,
 			assigneeQuery: '',
 			comments: undefined,
@@ -81,10 +115,20 @@ export function createIssueController(deps: IssueControllerDeps) {
 
 		let disposed = false;
 
+		const initialStatusOptions = panelState.transitions ?? panelState.statusPrefill;
+		const initialOptions: IssuePanelOptions = {
+			...buildCommentOptions(),
+			loading: true,
+		};
+		if (initialStatusOptions && initialStatusOptions.length > 0) {
+			initialOptions.statusOptions = initialStatusOptions;
+			initialOptions.statusPending = !panelState.transitions;
+		}
+
 		const panel = showIssueDetailsPanel(
 			resolvedIssueKey,
 			panelState.issue,
-			{ ...buildCommentOptions(), loading: true },
+			initialOptions,
 			async (message) => {
 				if (message?.type === 'changeStatus' && typeof message.transitionId === 'string') {
 					await handleStatusChange(message.transitionId);
@@ -122,10 +166,18 @@ export function createIssueController(deps: IssueControllerDeps) {
 		);
 
 		const renderPanel = (options?: IssuePanelOptions) => {
-			renderIssuePanelContent(panel, panelState.issue, {
+			const fallbackStatusOptions = panelState.transitions ?? panelState.statusPrefill;
+			const merged: IssuePanelOptions = {
 				...buildCommentOptions(),
 				...options,
-			});
+			};
+			if (merged.statusOptions === undefined && fallbackStatusOptions) {
+				merged.statusOptions = fallbackStatusOptions;
+			}
+			if (merged.statusPending === undefined && !panelState.transitions) {
+				merged.statusPending = true;
+			}
+			renderIssuePanelContent(panel, panelState.issue, merged);
 		};
 
 		panel.onDidDispose(() => {
@@ -164,33 +216,40 @@ export function createIssueController(deps: IssueControllerDeps) {
 
 			try {
 				const issue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
-				let transitions: IssueStatusOption[] | undefined;
-				let transitionsError: string | undefined;
-				try {
-					transitions = await fetchIssueTransitions(authInfo, token, resolvedIssueKey);
-				} catch (transitionError) {
-					transitionsError = deriveErrorMessage(transitionError);
+				const issueProjectKeyResolved = deriveProjectKeyFromIssueKey(issue.key);
+				if (issueProjectKeyResolved) {
+					void projectStatusStore.ensure(issueProjectKeyResolved);
+					void projectStatusStore.ensureAllIssueTypeStatuses(issueProjectKeyResolved);
+					transitionPrefetcher.prefetch(issueProjectKeyResolved);
 				}
-				let assignees: IssueAssignableUser[] | undefined;
-				let assigneeError: string | undefined;
-				try {
-					assignees = await fetchAssignableUsers(authInfo, token, resolvedIssueKey);
-				} catch (assignError) {
-					assigneeError = deriveErrorMessage(assignError);
-				}
+				const transitionResult = await resolveIssueTransitions(
+					authInfo,
+					token,
+					issue,
+					issueProjectKeyResolved
+				);
 
 				if (disposed) {
 					return;
 				}
 
 				panelState.issue = issue;
-				panelState.transitions = transitions;
-				panelState.assignableUsers = assignees;
+				panelState.transitions = transitionResult.transitions;
+				if (issueProjectKeyResolved) {
+					const issueTypeCriteria = {
+						issueTypeId: issue.issueTypeId,
+						issueTypeName: issue.issueTypeName,
+					};
+					panelState.statusPrefill =
+						projectStatusStore.getIssueTypeStatuses(issueProjectKeyResolved, issueTypeCriteria) ??
+						projectStatusStore.get(issueProjectKeyResolved);
+				}
 				renderPanel({
-					statusOptions: transitions,
-					statusError: transitionsError ? `Unable to load available statuses: ${transitionsError}` : undefined,
-					assigneeOptions: assignees,
-					assigneeError: assigneeError ? `Unable to load assignable users: ${assigneeError}` : undefined,
+					statusOptions: panelState.transitions ?? panelState.statusPrefill,
+					statusPending: false,
+					statusError: transitionResult.error
+						? `Unable to load available statuses: ${transitionResult.error}`
+						: undefined,
 					assigneeQuery: panelState.assigneeQuery,
 				});
 			} catch (error) {
@@ -228,19 +287,39 @@ export function createIssueController(deps: IssueControllerDeps) {
 			try {
 				await transitionIssueStatus(authInfo, token, resolvedIssueKey, transitionId);
 				const updatedIssue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
-				let transitions: IssueStatusOption[] | undefined;
-				try {
-					transitions = await fetchIssueTransitions(authInfo, token, resolvedIssueKey);
-				} catch {
-					transitions = panelState.transitions;
+				const updatedProjectKey = deriveProjectKeyFromIssueKey(updatedIssue.key);
+				if (updatedProjectKey) {
+					void projectStatusStore.ensure(updatedProjectKey);
+					void projectStatusStore.ensureAllIssueTypeStatuses(updatedProjectKey);
+					transitionPrefetcher.prefetch(updatedProjectKey);
 				}
+				const transitionResult = await resolveIssueTransitions(
+					authInfo,
+					token,
+					updatedIssue,
+					updatedProjectKey,
+					{ useCache: false }
+				);
 				if (disposed) {
 					return;
 				}
 				panelState.issue = updatedIssue;
-				panelState.transitions = transitions;
+				panelState.transitions = transitionResult.transitions;
+				if (updatedProjectKey) {
+					const issueTypeCriteria = {
+						issueTypeId: updatedIssue.issueTypeId,
+						issueTypeName: updatedIssue.issueTypeName,
+					};
+					panelState.statusPrefill =
+						projectStatusStore.getIssueTypeStatuses(updatedProjectKey, issueTypeCriteria) ??
+						projectStatusStore.get(updatedProjectKey);
+				}
 				renderPanel({
-					statusOptions: transitions,
+					statusOptions: panelState.transitions ?? panelState.statusPrefill,
+					statusPending: false,
+					statusError: transitionResult.error
+						? `Unable to load available statuses: ${transitionResult.error}`
+						: undefined,
 					assigneeOptions: panelState.assignableUsers,
 					assigneeQuery: panelState.assigneeQuery,
 				});
@@ -474,7 +553,49 @@ export function createIssueController(deps: IssueControllerDeps) {
 		}
 	};
 
+	async function resolveIssueTransitions(
+		authInfo: JiraAuthInfo,
+		token: string,
+		targetIssue: JiraIssue,
+		projectKey?: string,
+		options?: { useCache?: boolean }
+	): Promise<{ transitions?: IssueStatusOption[]; error?: string }> {
+		const normalizedProjectKey = projectKey ?? deriveProjectKeyFromIssueKey(targetIssue.key);
+		const cacheKey = {
+			projectKey: normalizedProjectKey,
+			issueTypeId: targetIssue.issueTypeId ?? targetIssue.issueTypeName,
+			statusName: targetIssue.statusName,
+		};
+		const useCache = options?.useCache ?? true;
+		if (useCache) {
+			const cached = transitionStore.get(cacheKey);
+			if (cached && cached.length > 0) {
+				return { transitions: cached };
+			}
+		}
+
+		try {
+			const fetchedTransitions = await fetchIssueTransitions(authInfo, token, targetIssue.key);
+			if (fetchedTransitions && fetchedTransitions.length > 0) {
+				transitionStore.remember(cacheKey, fetchedTransitions);
+			}
+			return { transitions: fetchedTransitions };
+		} catch (error) {
+			return { error: deriveErrorMessage(error) };
+		}
+	}
+
 	return {
 		openIssueDetails,
 	};
+}
+
+function deriveProjectKeyFromIssueKey(issueKey?: string): string | undefined {
+	if (!issueKey) {
+		return undefined;
+	}
+	const separatorIndex = issueKey.indexOf('-');
+	const projectPart = separatorIndex === -1 ? issueKey : issueKey.slice(0, separatorIndex);
+	const trimmed = projectPart.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
 }

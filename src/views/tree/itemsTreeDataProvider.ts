@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 import { JiraAuthManager } from '../../model/authManager';
 import { JiraFocusManager } from '../../model/focusManager';
+import { ProjectTransitionPrefetcher } from '../../model/projectTransitionPrefetcher';
 import {
 	ITEMS_SEARCH_QUERY_KEY,
 	ITEMS_VIEW_MODE_CONTEXT,
@@ -27,7 +28,8 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	constructor(
 		private readonly extensionContext: vscode.ExtensionContext,
 		authManager: JiraAuthManager,
-		focusManager: JiraFocusManager
+		focusManager: JiraFocusManager,
+		private readonly transitionPrefetcher: ProjectTransitionPrefetcher
 	) {
 		super(authManager, focusManager);
 		const stored = this.extensionContext.workspaceState.get<ItemsViewMode>(ITEMS_VIEW_MODE_KEY);
@@ -171,6 +173,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			}
 
 			const limitedIssues = showingRecent ? relevantIssues.slice(0, RECENT_ITEMS_LIMIT) : relevantIssues;
+			this.transitionPrefetcher.prefetchIssues(selectedProject.key, limitedIssues);
 			const displayedIssues = showingRecent ? this.applySearchFilter(limitedIssues) : limitedIssues;
 
 			const filtered = showingRecent && this.searchQuery.length > 0;

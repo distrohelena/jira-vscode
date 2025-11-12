@@ -24,6 +24,8 @@ export type JiraIssue = {
 	key: string;
 	summary: string;
 	statusName: string;
+	issueTypeId?: string;
+	issueTypeName?: string;
 	assigneeName?: string;
 	assigneeUsername?: string;
 	assigneeKey?: string;
@@ -57,6 +59,17 @@ export type IssueStatusOption = {
 	id: string;
 	name: string;
 	category?: IssueStatusCategory;
+};
+
+export type ProjectIssueTypeStatuses = {
+	issueTypeId?: string;
+	issueTypeName?: string;
+	statuses: IssueStatusOption[];
+};
+
+export type ProjectStatusesResponse = {
+	allStatuses: IssueStatusOption[];
+	issueTypeStatuses: ProjectIssueTypeStatuses[];
 };
 
 export type IssueAssignableUser = {
@@ -104,6 +117,9 @@ export type CreateIssuePanelState = {
 	assigneePending?: boolean;
 	assigneeError?: string;
 	assigneeQuery?: string;
+	statusOptions?: IssueStatusOption[];
+	statusPending?: boolean;
+	statusError?: string;
 };
 
 export type GitExtensionExports = {

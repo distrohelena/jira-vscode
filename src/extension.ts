@@ -3,6 +3,9 @@ import * as vscode from 'vscode';
 import { initializeEnvironment } from './environment';
 import { JiraAuthManager } from './model/authManager';
 import { JiraFocusManager } from './model/focusManager';
+import { ProjectStatusStore } from './model/projectStatusStore';
+import { IssueTransitionStore } from './model/issueTransitionStore';
+import { ProjectTransitionPrefetcher } from './model/projectTransitionPrefetcher';
 import { createIssueController } from './controllers/issueController';
 import { createCreateIssueController } from './controllers/createIssueController';
 import { commitFromIssue } from './controllers/commitController';
@@ -17,9 +20,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const authManager = new JiraAuthManager(context);
 	const focusManager = new JiraFocusManager(context, authManager);
+	const projectStatusStore = new ProjectStatusStore(authManager);
+	const issueTransitionStore = new IssueTransitionStore();
+	const transitionPrefetcher = new ProjectTransitionPrefetcher(authManager, projectStatusStore, issueTransitionStore);
 
 	const projectsProvider = new JiraProjectsTreeDataProvider(context, authManager, focusManager);
-	const itemsProvider = new JiraItemsTreeDataProvider(context, authManager, focusManager);
+	const itemsProvider = new JiraItemsTreeDataProvider(context, authManager, focusManager, transitionPrefetcher);
 	const settingsProvider = new JiraSettingsTreeDataProvider(authManager, focusManager);
 
 	const projectsView = vscode.window.createTreeView('jiraProjectsView', {
@@ -43,17 +49,44 @@ export async function activate(context: vscode.ExtensionContext) {
 		itemsProvider.refresh();
 	};
 
-	const issueController = createIssueController({ authManager, refreshAll });
+	const issueController = createIssueController({
+		authManager,
+		refreshAll,
+		projectStatusStore,
+		transitionStore: issueTransitionStore,
+		transitionPrefetcher,
+	});
 	const issueCreationController = createCreateIssueController({
 		authManager,
 		focusManager,
+		projectStatusStore,
 		refreshItemsView: () => itemsProvider.refresh(),
 		openIssueDetails: issueController.openIssueDetails,
 	});
 
+	const warmProjectCaches = (projectKey: string | undefined) => {
+		if (!projectKey) {
+			return;
+		}
+		void projectStatusStore.ensure(projectKey);
+		void projectStatusStore.ensureAllIssueTypeStatuses(projectKey);
+		transitionPrefetcher.prefetch(projectKey);
+	};
+
 	const authChangeDisposable = authManager.onDidChangeAuth(() => {
+		projectStatusStore.clear();
+		issueTransitionStore.clear();
+		const selected = focusManager.getSelectedProject();
+		if (selected) {
+			warmProjectCaches(selected.key);
+		}
 		refreshAll();
 	});
+
+	const initiallySelectedProject = focusManager.getSelectedProject();
+	if (initiallySelectedProject) {
+		warmProjectCaches(initiallySelectedProject.key);
+	}
 
 	context.subscriptions.push(
 		authManager,
@@ -86,6 +119,10 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 		vscode.commands.registerCommand('jira.focusProject', async (project?: JiraProject) => {
 			const changed = await focusManager.focusProject(project);
+			const selected = focusManager.getSelectedProject();
+			if (selected) {
+				warmProjectCaches(selected.key);
+			}
 			if (changed) {
 				refreshAll();
 			}

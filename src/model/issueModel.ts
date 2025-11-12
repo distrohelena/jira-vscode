@@ -12,6 +12,8 @@ export function createPlaceholderIssue(issueKey: string): JiraIssue {
 		key: issueKey,
 		summary: 'Loading issue details…',
 		statusName: 'Loading',
+		issueTypeId: undefined,
+		issueTypeName: undefined,
 		assigneeKey: undefined,
 		assigneeAccountId: undefined,
 		assigneeUsername: undefined,

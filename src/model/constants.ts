@@ -15,6 +15,7 @@ export const COMMENT_FETCH_LIMIT = 50;
 export const ISSUE_DETAIL_FIELDS = [
 	'summary',
 	'status',
+	'issuetype',
 	'assignee',
 	'updated',
 	'parent',

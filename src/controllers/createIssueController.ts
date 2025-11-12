@@ -2,12 +2,14 @@ import * as vscode from 'vscode';
 
 import { JiraAuthManager } from '../model/authManager';
 import { JiraFocusManager } from '../model/focusManager';
+import { ProjectStatusStore } from '../model/projectStatusStore';
 import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../model/constants';
 import { createJiraIssue, fetchAssignableUsers } from '../model/jiraApiClient';
 import {
 	CreateIssueFormValues,
 	CreateIssuePanelState,
 	IssueAssignableUser,
+	IssueStatusOption,
 	JiraIssue,
 	SelectedProjectInfo,
 } from '../model/types';
@@ -17,12 +19,13 @@ import { renderCreateIssuePanel, showCreateIssuePanel } from '../views/webview/p
 export type CreateIssueControllerDeps = {
 	authManager: JiraAuthManager;
 	focusManager: JiraFocusManager;
+	projectStatusStore: ProjectStatusStore;
 	refreshItemsView: () => void;
 	openIssueDetails: (issueOrKey?: JiraIssue | string) => Promise<void>;
 };
 
 export function createCreateIssueController(deps: CreateIssueControllerDeps) {
-	const { authManager, focusManager, refreshItemsView, openIssueDetails } = deps;
+	const { authManager, focusManager, projectStatusStore, refreshItemsView, openIssueDetails } = deps;
 
 	const createIssue = async (): Promise<void> => {
 		const project = focusManager.getSelectedProject();
@@ -43,14 +46,19 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 			return;
 		}
 
+		const cachedStatuses = projectStatusStore.get(project.key);
+		const initialStatus = deriveInitialStatusName(cachedStatuses);
+
 		let state: CreateIssuePanelState = {
 			values: {
 				summary: '',
 				description: '',
 				issueType: 'Task',
-				status: ISSUE_STATUS_OPTIONS[0],
+				status: initialStatus,
 			},
 			assigneeQuery: '',
+			statusOptions: cachedStatuses,
+			statusPending: !cachedStatuses,
 		};
 
 		const panel = showCreateIssuePanel(project, state);
@@ -67,12 +75,51 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 			renderCreateIssuePanel(panel, project, state);
 		};
 
+		if (!cachedStatuses) {
+			void loadProjectStatuses(project.key);
+		}
+
+		async function loadProjectStatuses(projectKey: string): Promise<void> {
+			try {
+				const statuses = await projectStatusStore.ensure(projectKey);
+				if (!statuses || statuses.length === 0) {
+					updatePanel({
+						statusOptions: [],
+						statusPending: false,
+						statusError: 'No statuses available for this project. Using defaults.',
+					});
+					return;
+				}
+				const availableNames = deriveStatusNameList(statuses);
+				const currentStatus = state.values.status?.trim().toLowerCase();
+				const hasCurrentSelection =
+					currentStatus && availableNames.some((name) => name.toLowerCase() === currentStatus);
+				updatePanel({
+					statusOptions: statuses,
+					statusPending: false,
+					statusError: undefined,
+					values: hasCurrentSelection
+						? state.values
+						: {
+								...state.values,
+								status: availableNames[0] ?? state.values.status,
+						  },
+				});
+			} catch (error) {
+				const messageText = deriveErrorMessage(error);
+				updatePanel({
+					statusPending: false,
+					statusError: `Failed to load project statuses: ${messageText}`,
+				});
+			}
+		}
+
 		panel.webview.onDidReceiveMessage(async (message) => {
 			if (!message?.type) {
 				return;
 			}
-				if (message.type === 'loadCreateAssignees') {
-					const values = sanitizeCreateIssueValues(message.values, state.values);
+			if (message.type === 'loadCreateAssignees') {
+				const values = sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
 					const normalizedQuery =
 						typeof message.query === 'string' ? message.query.trim() : state.assigneeQuery?.trim() ?? '';
 					updatePanel({
@@ -126,7 +173,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 				return;
 			}
 
-			const values = sanitizeCreateIssueValues(message.values, state.values);
+			const values = sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
 			if (!values.summary.trim()) {
 				updatePanel({ error: 'Summary is required.', values });
 				return;
@@ -163,7 +210,8 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 
 function sanitizeCreateIssueValues(
 	raw: any,
-	fallback: CreateIssueFormValues
+	fallback: CreateIssueFormValues,
+	statusOptions?: IssueStatusOption[]
 ): CreateIssueFormValues {
 	const summary = typeof raw?.summary === 'string' ? raw.summary : fallback.summary;
 	const description = typeof raw?.description === 'string' ? raw.description : fallback.description;
@@ -172,7 +220,11 @@ function sanitizeCreateIssueValues(
 	const issueType = ISSUE_TYPE_OPTIONS.includes(normalizedType) ? normalizedType : fallback.issueType;
 	const statusRaw = typeof raw?.status === 'string' ? raw.status : fallback.status;
 	const normalizedStatus = statusRaw?.trim() || fallback.status;
-	const status = ISSUE_STATUS_OPTIONS.includes(normalizedStatus) ? normalizedStatus : fallback.status;
+	const availableStatuses = deriveStatusNameList(statusOptions);
+	const fallbackStatus = isStatusAllowed(fallback.status, availableStatuses)
+		? fallback.status
+		: availableStatuses[0] ?? fallback.status;
+	const status = isStatusAllowed(normalizedStatus, availableStatuses) ? normalizedStatus : fallbackStatus;
 	const assigneeAccountIdRaw =
 		typeof raw?.assigneeAccountId === 'string' ? raw.assigneeAccountId.trim() : undefined;
 	const fallbackAccountId = fallback.assigneeAccountId?.trim();
@@ -192,4 +244,37 @@ function sanitizeCreateIssueValues(
 		assigneeAccountId,
 		assigneeDisplayName,
 	};
+}
+
+function deriveStatusNameList(options?: IssueStatusOption[]): string[] {
+	if (!options || options.length === 0) {
+		return ISSUE_STATUS_OPTIONS;
+	}
+	const seen = new Set<string>();
+	const names: string[] = [];
+	for (const option of options) {
+		const name = option?.name?.trim();
+		if (!name) {
+			continue;
+		}
+		const key = name.toLowerCase();
+		if (!seen.has(key)) {
+			seen.add(key);
+			names.push(name);
+		}
+	}
+	return names.length > 0 ? names : ISSUE_STATUS_OPTIONS;
+}
+
+function deriveInitialStatusName(options?: IssueStatusOption[]): string {
+	const names = deriveStatusNameList(options);
+	return names[0] ?? ISSUE_STATUS_OPTIONS[0];
+}
+
+function isStatusAllowed(value: string | undefined, options: string[]): boolean {
+	const normalized = value?.trim().toLowerCase();
+	if (!normalized) {
+		return false;
+	}
+	return options.some((name) => name.toLowerCase() === normalized);
 }
