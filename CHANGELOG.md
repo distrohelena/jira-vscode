@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 - Changing an issue's assignee now requires confirming via the new OK button next to the assignee dropdown to prevent accidental reassignment.
 - Issue details panel now shows a full description card ahead of related issues, preserving rich Jira formatting.
 - Added complete Jira comment support (view, refresh, add with wiki/plain formats, and delete) directly inside the issue details webview.
+- Items view badge now reflects the count of in-progress issues so the extension number highlights active work.
+- Removed the project count badge so only issue counts appear on the activity bar badge.
 
 ## 1.0.0
 

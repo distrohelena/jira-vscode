@@ -972,11 +972,7 @@ class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
 			const projects = showingRecent
 				? await fetchRecentProjects(authInfo, token)
 				: await fetchAccessibleProjects(authInfo, token);
-			const noun = showingRecent ? 'recent' : 'accessible';
-			this.updateBadge(
-				projects.length,
-				projects.length === 1 ? `1 ${noun} project` : `${projects.length} ${noun} projects`
-			);
+			this.updateBadge();
 			const host = extractHost(authInfo.baseUrl);
 			const description = host
 				? showingRecent
@@ -1168,19 +1164,16 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			searchNode ? [searchNode, ...items] : items;
 
 		try {
-			const issues = await fetchProjectIssues(authInfo, token, selectedProject.key, {
-				onlyAssignedToCurrentUser: showingRecent,
-			});
+		const issues = await fetchProjectIssues(authInfo, token, selectedProject.key, {
+			onlyAssignedToCurrentUser: showingRecent,
+		});
 			const sortedIssues = sortIssuesByUpdatedDesc(issues);
 			const relevantIssues = showingRecent ? filterIssuesRelatedToUser(sortedIssues, authInfo) : sortedIssues;
 			if (relevantIssues.length === 0) {
-				const baseDescription = showingRecent ? `${projectLabel} • my latest` : projectLabel;
-				const tooltip = showingRecent
-					? this.searchQuery
-						? 'No matching recent issues'
-						: 'No personal issues in this project'
-					: 'No Jira issues in this project';
-				this.updateBadge(0, tooltip);
+			const baseDescription = showingRecent ? `${projectLabel} • my latest` : projectLabel;
+			const filtered = showingRecent && this.searchQuery.length > 0;
+			const tooltip = this.buildInProgressTooltip(0, filtered, showingRecent);
+			this.updateBadge(0, tooltip);
 				this.updateDescription(
 					showingRecent && this.searchQuery ? `${baseDescription} • filtered` : baseDescription
 				);
@@ -1198,35 +1191,23 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			const limitedIssues = showingRecent ? relevantIssues.slice(0, RECENT_ITEMS_LIMIT) : relevantIssues;
 			const displayedIssues = showingRecent ? this.applySearchFilter(limitedIssues) : limitedIssues;
 
-			if (showingRecent) {
-				const baseDescription = `${projectLabel} • my latest`;
-				if (this.searchQuery) {
-					this.updateBadge(
-						displayedIssues.length,
-						displayedIssues.length === 1 ? '1 matching issue' : `${displayedIssues.length} matching issues`
-					);
-					this.updateDescription(`${baseDescription} • filtered`);
-				} else {
-					this.updateBadge(
-						limitedIssues.length,
-						limitedIssues.length === 1 ? '1 of your latest issues' : `${limitedIssues.length} of your latest issues`
-					);
-					this.updateDescription(baseDescription);
-				}
-			} else {
-				this.updateBadge(
-					displayedIssues.length,
-					displayedIssues.length === 1 ? '1 Jira issue' : `${displayedIssues.length} Jira issues`
-				);
-				this.updateDescription(projectLabel);
-			}
+		const filtered = showingRecent && this.searchQuery.length > 0;
+		const inProgressCount = this.countInProgressIssues(displayedIssues);
+		const tooltip = this.buildInProgressTooltip(inProgressCount, filtered, showingRecent);
+		this.updateBadge(inProgressCount, tooltip);
+		if (showingRecent) {
+			const baseDescription = `${projectLabel} • my latest`;
+			this.updateDescription(filtered ? `${baseDescription} • filtered` : baseDescription);
+		} else {
+			this.updateDescription(projectLabel);
+		}
 
-			if (displayedIssues.length === 0) {
-				const noMatchMessage = `No recent items match "${this.searchQuery}". Clear or edit the search to see more.`;
-				return prependSearchNode([
-					new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None),
-				]);
-			}
+		if (displayedIssues.length === 0) {
+			const noMatchMessage = `No recent items match "${this.searchQuery}". Clear or edit the search to see more.`;
+			return prependSearchNode([
+				new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None),
+			]);
+		}
 
 			const groupedNodes = groupIssuesByStatus(displayedIssues).map((group) => {
 				const childNodes = group.issues.map((issue) => createIssueTreeItem(issue));
@@ -1310,6 +1291,24 @@ class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			];
 			return values.some((value) => value?.toLowerCase().includes(query));
 		});
+	}
+
+	private countInProgressIssues(issues: JiraIssue[]): number {
+		return issues.reduce((count, issue) => {
+			return determineStatusCategory(issue.statusName) === 'inProgress' ? count + 1 : count;
+		}, 0);
+	}
+
+	private buildInProgressTooltip(count: number, filtered: boolean, showingRecent: boolean): string {
+		if (filtered) {
+			return count === 1 ? '1 matching in-progress issue' : `${count} matching in-progress issues`;
+		}
+		if (showingRecent) {
+			return count === 1
+				? '1 in-progress issue (recent)'
+				: `${count} in-progress issues (recent)`;
+		}
+		return count === 1 ? '1 in-progress issue' : `${count} in-progress issues`;
 	}
 }
 
