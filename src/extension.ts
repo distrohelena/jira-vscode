@@ -108,6 +108,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('jira.showRecentProjects', async () => {
 			await projectsProvider.showRecentProjects();
 		}),
+		vscode.commands.registerCommand('jira.showFavoriteProjects', async () => {
+			await projectsProvider.showFavoriteProjects();
+		}),
 		vscode.commands.registerCommand('jira.showAllItems', async () => {
 			await itemsProvider.showAllItems();
 		}),
@@ -147,6 +150,12 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 		vscode.commands.registerCommand('jira.refreshProjectsView', () => {
 			projectsProvider.refresh();
+		}),
+		vscode.commands.registerCommand('jira.addProjectFavorite', async (node?: JiraTreeItem) => {
+			await projectsProvider.favoriteProject(node?.project);
+		}),
+		vscode.commands.registerCommand('jira.removeProjectFavorite', async (node?: JiraTreeItem) => {
+			await projectsProvider.unfavoriteProject(node?.project);
 		}),
 		vscode.commands.registerCommand('jira.createIssue', async () => {
 			await issueCreationController.createIssue();

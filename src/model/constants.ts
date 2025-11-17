@@ -5,6 +5,7 @@ export const SECRET_PREFIX = 'jira-token';
 export const SELECTED_PROJECT_KEY = 'jira.selectedProject';
 export const PROJECTS_VIEW_MODE_KEY = 'jira.projectsViewMode';
 export const PROJECTS_VIEW_MODE_CONTEXT = 'jiraProjectsViewMode';
+export const PROJECT_FAVORITES_KEY = 'jira.projectFavorites';
 export const ITEMS_VIEW_MODE_KEY = 'jira.itemsViewMode';
 export const ITEMS_VIEW_MODE_CONTEXT = 'jiraItemsViewMode';
 export const ITEMS_SEARCH_QUERY_KEY = 'jira.itemsSearchQuery';

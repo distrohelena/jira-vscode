@@ -148,7 +148,7 @@ export type SelectedProjectInfo = {
 	typeKey?: string;
 };
 
-export type ProjectsViewMode = 'recent' | 'all';
+export type ProjectsViewMode = 'recent' | 'all' | 'favorites';
 export type ItemsViewMode = 'recent' | 'all';
 export type ItemsGroupMode = 'none' | 'status' | 'type';
 

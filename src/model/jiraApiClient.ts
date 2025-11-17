@@ -979,25 +979,47 @@ export async function fetchAccessibleProjects(authInfo: JiraAuthInfo, token: str
 	let lastError: unknown;
 	for (const endpoint of endpoints) {
 		try {
-			const response = await axios.get(endpoint, {
-				params: {
-					startAt: 0,
-					maxResults: 50,
-					orderBy: 'name',
-					status: 'live',
-				},
-				auth: {
-					username: authInfo.username,
-					password: token,
-				},
-				headers: {
-					Accept: 'application/json',
-					'User-Agent': 'jira-vscode',
-				},
-			});
+			const aggregated: JiraProject[] = [];
+			let startAt = 0;
+			const maxResults = 50;
+			let shouldContinue = true;
 
-			const projects = Array.isArray(response.data?.values) ? response.data.values : [];
-			return projects.map((project: any) => mapProject(project, urlRoot));
+			while (shouldContinue) {
+				const response = await axios.get(endpoint, {
+					params: {
+						startAt,
+						maxResults,
+						orderBy: 'name',
+						status: 'live',
+					},
+					auth: {
+						username: authInfo.username,
+						password: token,
+					},
+					headers: {
+						Accept: 'application/json',
+						'User-Agent': 'jira-vscode',
+					},
+				});
+
+				const page = Array.isArray(response.data?.values) ? response.data.values : [];
+				aggregated.push(...page.map((project: any) => mapProject(project, urlRoot)));
+
+				const total: number | undefined =
+					typeof response.data?.total === 'number' ? response.data.total : undefined;
+				const isLast =
+					response.data?.isLast === true ||
+					page.length < maxResults ||
+					(total !== undefined && aggregated.length >= total);
+
+				if (isLast || page.length === 0) {
+					shouldContinue = false;
+				} else {
+					startAt += page.length;
+				}
+			}
+
+			return aggregated;
 		} catch (error) {
 			lastError = error;
 		}

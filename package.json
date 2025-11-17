@@ -2,7 +2,7 @@
     "name": "helenofcode-jira-vscode",
     "displayName": "Jira VS Code",
     "description": "Open-source Jira integration for VS Code with reliable authentication for Jira Cloud and custom servers.",
-    "version": "1.0.11",
+    "version": "1.0.12",
     "publisher": "helenofcode",
     "repository": {
         "type": "git",
@@ -71,6 +71,21 @@
             {
                 "command": "jira.showRecentProjects",
                 "title": "Show Recent",
+                "category": "Jira"
+            },
+            {
+                "command": "jira.showFavoriteProjects",
+                "title": "Show Favorites",
+                "category": "Jira"
+            },
+            {
+                "command": "jira.addProjectFavorite",
+                "title": "Favorite Project",
+                "category": "Jira"
+            },
+            {
+                "command": "jira.removeProjectFavorite",
+                "title": "Remove Favorite",
                 "category": "Jira"
             },
             {
@@ -166,11 +181,16 @@
                 },
                 {
                     "command": "jira.showAllProjects",
-                    "when": "view == jiraProjectsView && jiraProjectsViewMode != 'all'",
+                    "when": "view == jiraProjectsView && jiraProjectsViewMode == 'recent'",
                     "group": "navigation@2"
                 },
                 {
                     "command": "jira.showRecentProjects",
+                    "when": "view == jiraProjectsView && jiraProjectsViewMode == 'favorites'",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "jira.showFavoriteProjects",
                     "when": "view == jiraProjectsView && jiraProjectsViewMode == 'all'",
                     "group": "navigation@2"
                 }
@@ -190,6 +210,16 @@
                     "submenu": "jiraItemsGroupBy",
                     "when": "view == jiraItemsView && viewItem == view",
                     "group": "navigation@9"
+                },
+                {
+                    "command": "jira.addProjectFavorite",
+                    "when": "view == jiraProjectsView && viewItem == jiraProject",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "jira.removeProjectFavorite",
+                    "when": "view == jiraProjectsView && viewItem == jiraProjectFavorite",
+                    "group": "navigation@2"
                 }
             ],
             "jiraItemsGroupBy": [

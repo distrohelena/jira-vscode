@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 - Opening an issue that is already displayed now simply brings its existing webview panel to the foreground instead of spawning a duplicate.
 - Reopening or refreshing an issue panel now shows explicit loading banners/spinners while reusing the current description/comments, so updates are visible without clearing existing data.
 - Added a “Group By” context menu (None / Status / Type) to the Items view so you can flatten the list or regroup issues without leaving the tree.
+- Projects view “Show All” now fetches every accessible project instead of stopping at the first 50 results from Jira.
+- Added a Favorites tab to the Projects view, including a three-state Recent/All/Favorites toggle button and context menu actions to star or unstar projects.
 
 ## 1.0.9
 

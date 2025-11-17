@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 
-import { JiraIssue, JiraNodeKind } from '../../model/types';
+import { JiraIssue, JiraNodeKind, JiraProject } from '../../model/types';
 import { determineStatusCategory } from '../../model/issueModel';
 
 export class JiraTreeItem extends vscode.TreeItem {
+	project?: JiraProject;
 	constructor(
 		public readonly kind: JiraNodeKind,
 		label: string,
