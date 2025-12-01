@@ -153,6 +153,10 @@ export function createIssueController(deps: IssueControllerDeps) {
 					const queryValue =
 						typeof message.query === 'string' ? message.query : panelState.assigneeQuery ?? '';
 					await handleAssigneeSearch(queryValue, !!message.force);
+				} else if (message?.type === 'commitFromIssue') {
+					await vscode.commands.executeCommand('jira.commitFromIssue', {
+						issue: panelState.issue ?? { key: resolvedIssueKey },
+					});
 				} else if (message?.type === 'addComment' && typeof message.body === 'string') {
 					const format =
 						message.format === 'plain'

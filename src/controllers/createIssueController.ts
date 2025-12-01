@@ -56,6 +56,10 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 				issueType: 'Task',
 				status: initialStatus,
 			},
+			currentUser: {
+				accountId: authInfo.accountId ?? authInfo.username,
+				displayName: authInfo.displayName ?? authInfo.username,
+			},
 			assigneeQuery: '',
 			statusOptions: cachedStatuses,
 			statusPending: !cachedStatuses,
@@ -158,11 +162,14 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 					typeof message.accountId === 'string' ? message.accountId.trim() : undefined;
 				const displayName =
 					typeof message.displayName === 'string' ? message.displayName.trim() : undefined;
+				const avatarUrl =
+					typeof message.avatarUrl === 'string' ? message.avatarUrl.trim() : undefined;
 				updatePanel({
 					values: {
 						...state.values,
 						assigneeAccountId: accountIdRaw || undefined,
 						assigneeDisplayName: accountIdRaw ? displayName || accountIdRaw : undefined,
+						assigneeAvatarUrl: accountIdRaw ? avatarUrl || state.values.assigneeAvatarUrl : undefined,
 					},
 					successIssue: undefined,
 				});
@@ -190,6 +197,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 						status: values.status,
 						assigneeAccountId: values.assigneeAccountId,
 						assigneeDisplayName: values.assigneeDisplayName,
+						assigneeAvatarUrl: values.assigneeAvatarUrl,
 					},
 					submitting: false,
 					successIssue: createdIssue,
@@ -230,11 +238,16 @@ function sanitizeCreateIssueValues(
 	const fallbackAccountId = fallback.assigneeAccountId?.trim();
 	const assigneeAccountId = assigneeAccountIdRaw || fallbackAccountId || undefined;
 	let assigneeDisplayName: string | undefined;
+	let assigneeAvatarUrl: string | undefined;
 	if (assigneeAccountId) {
 		const displayNameRaw =
 			typeof raw?.assigneeDisplayName === 'string' ? raw.assigneeDisplayName.trim() : undefined;
 		const fallbackDisplayName = fallback.assigneeDisplayName?.trim();
 		assigneeDisplayName = displayNameRaw || fallbackDisplayName || assigneeAccountId;
+		const avatarUrlRaw =
+			typeof raw?.assigneeAvatarUrl === 'string' ? raw.assigneeAvatarUrl.trim() : undefined;
+		const fallbackAvatarUrl = fallback.assigneeAvatarUrl?.trim();
+		assigneeAvatarUrl = avatarUrlRaw || fallbackAvatarUrl;
 	}
 	return {
 		summary,
@@ -243,6 +256,7 @@ function sanitizeCreateIssueValues(
 		status,
 		assigneeAccountId,
 		assigneeDisplayName,
+		assigneeAvatarUrl,
 	};
 }
 

@@ -120,38 +120,64 @@ function renderIssueDetailsHtml(
 	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
 	<title>${escapeHtml(issue.key)}</title>
 	<style>
-		body {
-			font-family: var(--vscode-font-family);
-			font-size: var(--vscode-font-size);
-			padding: 24px;
-			color: var(--vscode-foreground);
-			background-color: var(--vscode-editor-background);
-			line-height: 1.5;
-			max-width: 1100px;
-			margin: 0 auto;
-		}
-		.issue-header {
-			display: flex;
-			gap: 16px;
-			align-items: flex-start;
-			margin-bottom: 24px;
-		}
-		.status-icon {
-			width: 56px;
-			height: 56px;
-			flex-shrink: 0;
-			margin-top: 4px;
+	body {
+		font-family: var(--vscode-font-family);
+		font-size: var(--vscode-font-size);
+		padding: 24px;
+		color: var(--vscode-foreground);
+		background-color: var(--vscode-editor-background);
+		line-height: 1.5;
+		max-width: 1100px;
+		margin: 0 auto;
+	}
+	.issue-header {
+		display: flex;
+		justify-content: space-between;
+		gap: 16px;
+		align-items: flex-start;
+		margin-bottom: 24px;
+	}
+	.issue-header-main {
+		display: flex;
+		gap: 16px;
+		align-items: flex-start;
+		flex: 1;
+	}
+	.status-icon {
+		width: 56px;
+		height: 56px;
+		flex-shrink: 0;
+		margin-top: 4px;
 		}
 		h1 {
 			margin-top: 0;
 			font-size: 2em;
 			margin-bottom: 8px;
-		}
-		p.issue-summary {
-			font-size: 1.1em;
-			margin-top: 0;
-			margin-bottom: 24px;
-		}
+	}
+	p.issue-summary {
+		font-size: 1.1em;
+		margin-top: 0;
+		margin-bottom: 24px;
+	}
+.issue-actions {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+}
+.issue-commit {
+	border-radius: 4px;
+	border: 1px solid var(--vscode-button-secondaryBorder, transparent);
+	background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+	color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+	padding: 8px 12px;
+	cursor: pointer;
+	font-size: 0.95em;
+	white-space: nowrap;
+}
+.issue-commit:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
 	.section {
 		margin-top: 24px;
 	}
@@ -469,10 +495,17 @@ function renderIssueDetailsHtml(
 	<div class="issue-layout">
 		<div class="issue-main">
 			<div class="issue-header">
-				${statusIconMarkup}
-				<div>
-					<h1>${escapeHtml(issue.key)}</h1>
-					<p class="issue-summary">${escapeHtml(issue.summary ?? 'Loading issue details…')}</p>
+				<div class="issue-header-main">
+					${statusIconMarkup}
+					<div>
+						<h1>${escapeHtml(issue.key)}</h1>
+						<p class="issue-summary">${escapeHtml(issue.summary ?? 'Loading issue details…')}</p>
+					</div>
+				</div>
+				<div class="issue-actions">
+					<button type="button" class="issue-commit" data-issue-key="${escapeAttribute(
+						issue.key
+					)}" ${isLoading ? 'disabled' : ''}>Commit from Issue</button>
 				</div>
 			</div>
 			${messageBanner}
@@ -494,6 +527,21 @@ function renderIssueDetailsHtml(
 						vscode.postMessage({ type: 'openIssue', key });
 					}
 				});
+				});
+				document.querySelectorAll('.issue-commit').forEach((button) => {
+					button.addEventListener('click', () => {
+						if (button.disabled) {
+							return;
+						}
+						const issueKey = button.getAttribute('data-issue-key');
+						if (issueKey) {
+							button.disabled = true;
+							vscode.postMessage({ type: 'commitFromIssue', issueKey });
+							setTimeout(() => {
+								button.disabled = false;
+							}, 500);
+						}
+					});
 				});
 				document.querySelectorAll('.jira-status-select').forEach((select) => {
 					select.addEventListener('change', () => {
@@ -792,6 +840,46 @@ function renderCreateIssuePanelHtml(
 \t\t\tflex-direction: column;
 \t\t\tgap: 10px;
 \t\t}
+\t\t.assignee-actions {
+\t\t\tdisplay: flex;
+\t\t\tjustify-content: flex-start;
+\t\t}
+\t\t.jira-create-assign-me {
+\t\t\tpadding: 6px 12px;
+\t\t\tborder-radius: 4px;
+\t\t\tborder: 1px solid var(--vscode-button-secondaryBorder, transparent);
+\t\t\tbackground: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+\t\t\tcolor: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+\t\t\tcursor: pointer;
+\t\t\tmin-width: 110px;
+\t\t}
+\t\t.jira-create-assign-me:disabled {
+\t\t\topacity: 0.6;
+\t\t\tcursor: not-allowed;
+\t\t}
+\t\t.assignee-selected {
+\t\t\tdisplay: flex;
+\t\t\talign-items: center;
+\t\t\tgap: 10px;
+\t\t}
+\t\t.assignee-selected-name {
+\t\t\tfont-weight: 600;
+\t\t}
+\t\t.assignee-avatar {
+\t\t\twidth: 44px;
+\t\t\theight: 44px;
+\t\t\tborder-radius: 50%;
+\t\t\tobject-fit: cover;
+\t\t\tflex-shrink: 0;
+\t\t\tborder: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
+\t\t\tbackground-color: var(--vscode-sideBar-background);
+\t\t}
+\t\t.assignee-avatar.fallback {
+\t\t\tdisplay: flex;
+\t\t\talign-items: center;
+\t\t\tjustify-content: center;
+\t\t\tfont-weight: 600;
+\t\t}
 \t\t.assignee-control-details {
 \t\t\tdisplay: flex;
 \t\t\tflex-direction: column;
@@ -926,6 +1014,9 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\t<input type="hidden" name="assigneeDisplayName" value="${escapeAttribute(
 						values.assigneeDisplayName ?? ''
 					)}" />
+					<input type="hidden" name="assigneeAvatarUrl" value="${escapeAttribute(
+						values.assigneeAvatarUrl ?? ''
+					)}" />
 \t\t\t\t</div>
 \t\t\t</div>
 \t\t</form>
@@ -937,8 +1028,10 @@ function renderCreateIssuePanelHtml(
 \t\t\tconst searchInput = document.querySelector('.jira-create-assignee-search');
 \t\t\tconst select = document.querySelector('.jira-create-assignee-select');
 \t\t\tconst applyButton = document.querySelector('.jira-create-assignee-apply');
+\t\t\tconst assignMeButton = document.querySelector('.jira-create-assign-me');
 \t\t\tconst accountInput = form ? form.querySelector('input[name="assigneeAccountId"]') : null;
 \t\t\tconst displayInput = form ? form.querySelector('input[name="assigneeDisplayName"]') : null;
+\t\t\tconst avatarInput = form ? form.querySelector('input[name="assigneeAvatarUrl"]') : null;
 \t\t\tconst asString = (value, fallback = '') => (typeof value === 'string' ? value : fallback);
 
 \t\t\tconst buildFormPayload = () => {
@@ -950,6 +1043,7 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\t\tstatus: '${defaultStatusAttr}',
 \t\t\t\t\t\tassigneeAccountId: '',
 \t\t\t\t\t\tassigneeDisplayName: '',
+\t\t\t\t\t\tassigneeAvatarUrl: '',
 \t\t\t\t\t};
 \t\t\t\t}
 \t\t\t\tconst formData = new FormData(form);
@@ -960,6 +1054,7 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\tstatus: asString(formData.get('status'), '${defaultStatusAttr}'),
 \t\t\t\t\tassigneeAccountId: asString(formData.get('assigneeAccountId')),
 \t\t\t\t\tassigneeDisplayName: asString(formData.get('assigneeDisplayName')),
+\t\t\t\t\tassigneeAvatarUrl: asString(formData.get('assigneeAvatarUrl')),
 \t\t\t\t};
 \t\t\t};
 
@@ -989,6 +1084,33 @@ function renderCreateIssuePanelHtml(
 \t\t\t\tconst value = (select.value || '').trim();
 \t\t\t\tconst hasChange = value !== current;
 \t\t\t\tapplyButton.disabled = select.disabled || !hasChange;
+\t\t\t};
+
+\t\t\tconst applyLocalSelection = (accountId, displayName, avatarUrl) => {
+\t\t\t\tif (accountInput) {
+\t\t\t\t\taccountInput.value = accountId || '';
+\t\t\t\t}
+\t\t\t\tif (displayInput) {
+\t\t\t\t\tdisplayInput.value = accountId ? displayName : '';
+\t\t\t\t}
+\t\t\t\tif (avatarInput) {
+\t\t\t\t\tavatarInput.value = accountId ? avatarUrl : '';
+\t\t\t\t}
+\t\t\t\tif (select) {
+\t\t\t\t\tif (accountId) {
+\t\t\t\t\t\tlet existing = Array.from(select.options).find((option) => option.value === accountId);
+\t\t\t\t\t\tconst label = displayName || accountId;
+\t\t\t\t\t\tif (!existing) {
+\t\t\t\t\t\t\texisting = new Option(label, accountId);
+\t\t\t\t\t\t\tselect.appendChild(existing);
+\t\t\t\t\t\t}
+\t\t\t\t\t\texisting.setAttribute('data-avatar-url', avatarUrl || '');
+\t\t\t\t\t\texisting.textContent = label;
+\t\t\t\t\t\texisting.selected = true;
+\t\t\t\t\t}
+\t\t\t\t\tselect.setAttribute('data-current-account-id', accountId || '');
+\t\t\t\t\tupdateApplyState();
+\t\t\t\t}
 \t\t\t};
 
 \t\t\tif (searchInput) {
@@ -1022,6 +1144,25 @@ function renderCreateIssuePanelHtml(
 \t\t\t\tupdateApplyState();
 \t\t\t}
 
+\t\t\tif (assignMeButton) {
+\t\t\t\tassignMeButton.addEventListener('click', () => {
+\t\t\t\t\tconst accountId = (assignMeButton.getAttribute('data-account-id') || '').trim();
+\t\t\t\t\tif (!accountId) {
+\t\t\t\t\t\treturn;
+\t\t\t\t\t}
+\t\t\t\t\tconst displayName =
+\t\t\t\t\t\t(assignMeButton.getAttribute('data-display-name') || '').trim() || 'Me';
+\t\t\t\t\tconst avatarUrl = (assignMeButton.getAttribute('data-avatar-url') || '').trim();
+\t\t\t\t\tapplyLocalSelection(accountId, displayName, avatarUrl);
+\t\t\t\t\tvscode.postMessage({
+\t\t\t\t\t\ttype: 'selectCreateAssignee',
+\t\t\t\t\t\taccountId,
+\t\t\t\t\t\tdisplayName,
+\t\t\t\t\t\tavatarUrl,
+\t\t\t\t\t});
+\t\t\t\t});
+\t\t\t}
+
 \t\t\tif (applyButton && select) {
 \t\t\t\tapplyButton.addEventListener('click', () => {
 \t\t\t\t\tif (applyButton.disabled) {
@@ -1030,12 +1171,17 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\tconst selectedOption = select.options[select.selectedIndex];
 \t\t\t\t\tconst displayName = selectedOption ? (selectedOption.textContent || '').trim() : '';
 \t\t\t\t\tconst accountId = select.value || '';
+\t\t\t\t\tconst avatarUrl = selectedOption ? selectedOption.getAttribute('data-avatar-url') || '' : '';
 \t\t\t\t\tconst resolvedDisplayName = accountId ? displayName : '';
+\t\t\t\t\tconst resolvedAvatarUrl = accountId ? avatarUrl : '';
 \t\t\t\t\tif (accountInput) {
 \t\t\t\t\t\taccountInput.value = accountId;
 \t\t\t\t\t}
 \t\t\t\t\tif (displayInput) {
 \t\t\t\t\t\tdisplayInput.value = resolvedDisplayName;
+\t\t\t\t\t}
+\t\t\t\t\tif (avatarInput) {
+\t\t\t\t\t\tavatarInput.value = resolvedAvatarUrl;
 \t\t\t\t\t}
 \t\t\t\t\tselect.setAttribute('data-current-account-id', accountId);
 \t\t\t\t\tupdateApplyState();
@@ -1043,6 +1189,7 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\t\ttype: 'selectCreateAssignee',
 \t\t\t\t\t\taccountId,
 \t\t\t\t\t\tdisplayName: resolvedDisplayName,
+\t\t\t\t\t\tavatarUrl: resolvedAvatarUrl,
 \t\t\t\t\t});
 \t\t\t\t});
 \t\t\t}
@@ -1287,6 +1434,7 @@ function renderCreateAssigneeSection(state: CreateIssuePanelState): string {
 	const queryValue = state.assigneeQuery ?? '';
 	const hasOptions = !!state.assigneeOptions && state.assigneeOptions.length > 0;
 	const selectLoadState = pending ? 'pending' : hasOptions ? 'true' : 'false';
+	const selection = resolveCreateAssigneeSelection(state);
 	const placeholderText = hasOptions
 		? 'Select an assignee'
 		: pending
@@ -1302,14 +1450,30 @@ function renderCreateAssigneeSection(state: CreateIssuePanelState): string {
 		!pending && state.assigneeError
 			? `<div class="status-error">${escapeHtml(state.assigneeError)}</div>`
 			: '';
-	const currentLabel = state.values.assigneeDisplayName
-		? `Selected: ${state.values.assigneeDisplayName}`
-		: 'Selected: Unassigned (assign later)';
+	const selectedLabel = selection.label ?? 'Unassigned (assign later)';
 	const selectDisabledAttr = interactionDisabled ? 'disabled' : '';
 	const searchDisabledAttr = interactionDisabled ? 'disabled' : '';
+	const assignMeButton =
+		state.currentUser?.accountId && state.currentUser.accountId.trim().length > 0
+			? `<div class="assignee-actions">
+				<button type="button" class="jira-create-assign-me" data-account-id="${escapeAttribute(
+					state.currentUser.accountId
+				)}" data-display-name="${escapeAttribute(
+					state.currentUser.displayName ?? ''
+				)}" data-avatar-url="${escapeAttribute(
+					state.currentUser.avatarUrl ?? ''
+				)}" ${interactionDisabled ? 'disabled' : ''}>Assign to Me</button>
+			</div>`
+			: '';
 	return `<div class="assignee-card">
+		<div class="assignee-selected">
+			${renderCreateAssigneeAvatar(selection)}
+			<div class="assignee-selected-copy">
+				<div class="muted">Selected</div>
+				<div class="assignee-selected-name">${escapeHtml(selectedLabel)}</div>
+			</div>
+		</div>
 		<div class="assignee-control-details">
-			<div class="muted">${escapeHtml(currentLabel)}</div>
 			<div class="assignee-search-row">
 				<input type="text" class="jira-create-assignee-search" value="${escapeAttribute(
 					queryValue
@@ -1321,15 +1485,44 @@ function renderCreateAssigneeSection(state: CreateIssuePanelState): string {
 				)}" data-query="${escapeAttribute(queryValue)}" data-current-account-id="${escapeAttribute(
 		state.values.assigneeAccountId ?? ''
 	)}" ${selectDisabledAttr}>
-					<option value="">${escapeHtml(placeholderText)}</option>
+					<option value="" data-avatar-url="">${escapeHtml(placeholderText)}</option>
 					${selectOptions}
 				</select>
 				<button type="button" class="jira-create-assignee-apply" disabled>OK</button>
 			</div>
 			<div class="muted assignee-helper">${escapeHtml(helperText)}</div>
 			${errorText}
+			${assignMeButton}
 		</div>
 	</div>`;
+}
+
+function resolveCreateAssigneeSelection(state: CreateIssuePanelState) {
+	const accountId = state.values.assigneeAccountId?.trim();
+	if (!accountId) {
+		return { label: undefined, avatarUrl: undefined, accountId: undefined };
+	}
+	const match = state.assigneeOptions?.find((user) => user.accountId === accountId);
+	if (match) {
+		return {
+			label: match.displayName || accountId,
+			avatarUrl: match.avatarUrl,
+			accountId,
+		};
+	}
+	return {
+		label: state.values.assigneeDisplayName ?? accountId,
+		avatarUrl: state.values.assigneeAvatarUrl,
+		accountId,
+	};
+}
+
+function renderCreateAssigneeAvatar(selection: { label?: string; avatarUrl?: string }): string {
+	if (selection.avatarUrl) {
+		return `<img class="assignee-avatar" src="${escapeAttribute(selection.avatarUrl)}" alt="Selected assignee avatar" />`;
+	}
+	const initials = getInitials(selection.label);
+	return `<div class="assignee-avatar fallback">${escapeHtml(initials)}</div>`;
 }
 
 function renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
@@ -1345,16 +1538,18 @@ function renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
 			if (isSelected) {
 				hasCurrent = true;
 			}
-			return `<option value="${escapeAttribute(user.accountId)}" ${
+			return `<option value="${escapeAttribute(user.accountId)}" data-avatar-url="${escapeAttribute(
+				user.avatarUrl ?? ''
+			)}" ${
 				isSelected ? 'selected' : ''
 			}>${escapeHtml(user.displayName)}</option>`;
 		})
 		.join('');
 	if (currentId && !hasCurrent) {
 		const fallbackLabel = state.values.assigneeDisplayName ?? `Selected (${currentId})`;
-		return `<option value="${escapeAttribute(currentId)}" selected>${escapeHtml(
-			fallbackLabel
-		)}</option>${rendered}`;
+		return `<option value="${escapeAttribute(currentId)}" data-avatar-url="${escapeAttribute(
+			state.values.assigneeAvatarUrl ?? ''
+		)}" selected>${escapeHtml(fallbackLabel)}</option>${rendered}`;
 	}
 	return rendered;
 }
@@ -1478,11 +1673,16 @@ function sanitizeCreateIssueValues(
 	const fallbackAccountId = fallback.assigneeAccountId?.trim();
 	const assigneeAccountId = assigneeAccountIdRaw || fallbackAccountId || undefined;
 	let assigneeDisplayName: string | undefined;
+	let assigneeAvatarUrl: string | undefined;
 	if (assigneeAccountId) {
 		const displayNameRaw =
 			typeof raw?.assigneeDisplayName === 'string' ? raw.assigneeDisplayName.trim() : undefined;
 		const fallbackDisplayName = fallback.assigneeDisplayName?.trim();
 		assigneeDisplayName = displayNameRaw || fallbackDisplayName || assigneeAccountId;
+		const avatarUrlRaw =
+			typeof raw?.assigneeAvatarUrl === 'string' ? raw.assigneeAvatarUrl.trim() : undefined;
+		const fallbackAvatarUrl = fallback.assigneeAvatarUrl?.trim();
+		assigneeAvatarUrl = avatarUrlRaw || fallbackAvatarUrl;
 	}
 	return {
 		summary,
@@ -1491,6 +1691,7 @@ function sanitizeCreateIssueValues(
 		status,
 		assigneeAccountId,
 		assigneeDisplayName,
+		assigneeAvatarUrl,
 	};
 }
 

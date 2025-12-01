@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Added a “Group By” context menu (None / Status / Type) to the Items view so you can flatten the list or regroup issues without leaving the tree.
 - Projects view “Show All” now fetches every accessible project instead of stopping at the first 50 results from Jira.
 - Added a Favorites tab to the Projects view, including a three-state Recent/All/Favorites toggle button and context menu actions to star or unstar projects.
+- VSIX packaging now excludes the nested `vscode/` workspace artifacts so the extension ships only the bundled dist output and assets.
 
 ## 1.0.9
 

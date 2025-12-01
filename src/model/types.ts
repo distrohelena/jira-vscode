@@ -106,6 +106,7 @@ export type CreateIssueFormValues = {
 	status: string;
 	assigneeAccountId?: string;
 	assigneeDisplayName?: string;
+	assigneeAvatarUrl?: string;
 };
 
 export type CreateIssuePanelState = {
@@ -113,6 +114,11 @@ export type CreateIssuePanelState = {
 	submitting?: boolean;
 	error?: string;
 	successIssue?: JiraIssue;
+	currentUser?: {
+		accountId?: string;
+		displayName?: string;
+		avatarUrl?: string;
+	};
 	assigneeOptions?: IssueAssignableUser[];
 	assigneePending?: boolean;
 	assigneeError?: string;
