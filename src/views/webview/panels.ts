@@ -60,6 +60,7 @@ export function showCreateIssuePanel(project: SelectedProjectInfo, state: Create
 		vscode.ViewColumn.Active,
 		{
 			enableScripts: true,
+			retainContextWhenHidden: true,
 		}
 	);
 	const iconPath = getItemsIconPath();
