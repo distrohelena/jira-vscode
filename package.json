@@ -100,9 +100,9 @@
             },
             {
                 "command": "jira.searchItems",
-                "title": "Jira: Search Items",
+                "title": "Jira: Filter Items",
                 "category": "Jira",
-                "icon": "$(search)"
+                "icon": "$(filter)"
             },
             {
                 "command": "jira.createIssue",

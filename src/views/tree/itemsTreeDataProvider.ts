@@ -26,6 +26,12 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private viewMode: ItemsViewMode;
 	private searchQuery: string;
 	private groupMode: ItemsGroupMode;
+	private forceRemoteReload = true;
+	private issueCache?: {
+		projectKey: string;
+		viewMode: ItemsViewMode;
+		issues: JiraIssue[];
+	};
 
 	constructor(
 		private readonly extensionContext: vscode.ExtensionContext,
@@ -68,14 +74,14 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	async openAssignedItemsSearch(): Promise<void> {
 		const selectedProject = this.focusManager.getSelectedProject();
 		if (!selectedProject) {
-			await vscode.window.showInformationMessage('Select a project before searching items.');
+			await vscode.window.showInformationMessage('Select a project before filtering items.');
 			return;
 		}
 
 		if (this.viewMode !== 'assigned') {
 			const switchLabel = 'Switch to Assigned';
 			const choice = await vscode.window.showInformationMessage(
-				'Search is available for your assigned items. Switch the Items view to Assigned?',
+				'Filter is available for your assigned items. Switch the Items view to Assigned?',
 				switchLabel,
 				'Cancel'
 			);
@@ -105,11 +111,16 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		const trimmed = input.trim();
 		this.searchQuery = trimmed;
 		await this.extensionContext.workspaceState.update(ITEMS_SEARCH_QUERY_KEY, trimmed);
-		this.refresh();
+		this.refreshFromCache();
 	}
 
 	protected getSectionChildren(authInfo: JiraAuthInfo): Promise<JiraTreeItem[]> {
 		return this.loadItems(authInfo);
+	}
+
+	refresh(): void {
+		this.forceRemoteReload = true;
+		super.refresh();
 	}
 
 	private async setViewMode(mode: ItemsViewMode): Promise<void> {
@@ -132,6 +143,20 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 	private updateGroupModeContext(): Thenable<void> {
 		return vscode.commands.executeCommand('setContext', ITEMS_GROUP_MODE_CONTEXT, this.groupMode);
+	}
+
+	private refreshFromCache(): void {
+		this.forceRemoteReload = false;
+		super.refresh();
+	}
+
+	private getCachedIssues(projectKey: string, viewMode: ItemsViewMode): JiraIssue[] | undefined {
+		if (!this.issueCache) {
+			return undefined;
+		}
+		return this.issueCache.projectKey === projectKey && this.issueCache.viewMode === viewMode
+			? this.issueCache.issues
+			: undefined;
 	}
 
 	private async loadItems(authInfo: JiraAuthInfo): Promise<JiraTreeItem[]> {
@@ -170,9 +195,22 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			searchNode ? [searchNode, ...items] : items;
 
 		try {
-			const issues = await fetchProjectIssues(authInfo, token, selectedProject.key, {
-				onlyAssignedToCurrentUser: showingAssigned,
-			});
+			const cachedIssues = this.getCachedIssues(selectedProject.key, this.viewMode);
+			const shouldUseCache = !this.forceRemoteReload && !!cachedIssues;
+			const issues =
+				shouldUseCache && cachedIssues
+					? cachedIssues
+					: await fetchProjectIssues(authInfo, token, selectedProject.key, {
+							onlyAssignedToCurrentUser: showingAssigned,
+					  });
+			if (!shouldUseCache) {
+				this.issueCache = {
+					projectKey: selectedProject.key,
+					viewMode: this.viewMode,
+					issues,
+				};
+			}
+			this.forceRemoteReload = false;
 			const sortedIssues = sortIssuesByUpdatedDesc(issues);
 			const relevantIssues = showingAssigned
 				? filterIssuesRelatedToUser(sortedIssues, authInfo).filter(
@@ -307,14 +345,14 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		const hasQuery = this.searchQuery.length > 0;
 		const item = new JiraTreeItem(
 			'search',
-			'Search assigned items',
+			'Filter assigned items',
 			vscode.TreeItemCollapsibleState.None,
 			{
 				command: 'jira.searchItems',
-				title: 'Search Items',
+				title: 'Filter Items',
 			}
 		);
-		item.iconPath = new vscode.ThemeIcon('search');
+		item.iconPath = new vscode.ThemeIcon('filter');
 		item.description = hasQuery ? this.searchQuery : 'Type to filter';
 		item.tooltip = hasQuery
 			? `Filtering assigned items${projectLabel ? ` in ${projectLabel}` : ''} by "${this.searchQuery}". Click to update or clear.`
