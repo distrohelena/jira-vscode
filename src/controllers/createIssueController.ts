@@ -158,18 +158,20 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 			}
 
 			if (message.type === 'selectCreateAssignee') {
+				const values = sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
 				const accountIdRaw =
 					typeof message.accountId === 'string' ? message.accountId.trim() : undefined;
+				const accountId = accountIdRaw || values.assigneeAccountId || undefined;
 				const displayName =
 					typeof message.displayName === 'string' ? message.displayName.trim() : undefined;
 				const avatarUrl =
 					typeof message.avatarUrl === 'string' ? message.avatarUrl.trim() : undefined;
 				updatePanel({
 					values: {
-						...state.values,
-						assigneeAccountId: accountIdRaw || undefined,
-						assigneeDisplayName: accountIdRaw ? displayName || accountIdRaw : undefined,
-						assigneeAvatarUrl: accountIdRaw ? avatarUrl || state.values.assigneeAvatarUrl : undefined,
+						...values,
+						assigneeAccountId: accountId,
+						assigneeDisplayName: accountId ? displayName || values.assigneeDisplayName || accountId : undefined,
+						assigneeAvatarUrl: accountId ? avatarUrl || values.assigneeAvatarUrl : undefined,
 					},
 					successIssue: undefined,
 				});
@@ -203,7 +205,16 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 					successIssue: createdIssue,
 				});
 				refreshItemsView();
-				await openIssueDetails(createdIssue);
+				try {
+					await openIssueDetails(createdIssue);
+				} catch (error) {
+					const messageText = deriveErrorMessage(error);
+					void vscode.window.showErrorMessage(
+						`Created ${createdIssue.key} but failed to open details: ${messageText}`
+					);
+				} finally {
+					panel.dispose();
+				}
 			} catch (error) {
 				const messageText = deriveErrorMessage(error);
 				updatePanel({ submitting: false, error: `Failed to create issue: ${messageText}` });
@@ -280,9 +291,23 @@ function deriveStatusNameList(options?: IssueStatusOption[]): string[] {
 	return names.length > 0 ? names : ISSUE_STATUS_OPTIONS;
 }
 
+function pickPreferredInitialStatus(names: string[]): string | undefined {
+	const preferredOrder = ['To Do', 'Backlog'];
+	const lowerNames = names.map((name) => name.toLowerCase());
+	for (const target of preferredOrder) {
+		const index = lowerNames.indexOf(target.toLowerCase());
+		if (index >= 0) {
+			return names[index];
+		}
+	}
+	const firstNonDone = names.find((name) => !/done|closed|resolved/i.test(name));
+	return firstNonDone;
+}
+
 function deriveInitialStatusName(options?: IssueStatusOption[]): string {
 	const names = deriveStatusNameList(options);
-	return names[0] ?? ISSUE_STATUS_OPTIONS[0];
+	const preferred = pickPreferredInitialStatus(names);
+	return preferred ?? names[0] ?? ISSUE_STATUS_OPTIONS[0];
 }
 
 function isStatusAllowed(value: string | undefined, options: string[]): boolean {

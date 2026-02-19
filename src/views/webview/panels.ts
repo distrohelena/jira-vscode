@@ -723,7 +723,7 @@ function renderCreateIssuePanelHtml(
 	const assigneeSection = renderCreateAssigneeSection(state);
 	const buttonLabel = state.submitting ? 'Creating…' : 'Create Ticket';
 	const statusNames = deriveStatusOptionNames(state.statusOptions);
-	const defaultStatus = statusNames[0] ?? ISSUE_STATUS_OPTIONS[0];
+	const defaultStatus = pickPreferredInitialStatus(statusNames) ?? statusNames[0] ?? ISSUE_STATUS_OPTIONS[0];
 	const defaultStatusAttr = escapeAttribute(defaultStatus);
 	const statusPending = state.statusPending ?? false;
 	const statusError = state.statusError;
@@ -1154,11 +1154,13 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\t\t(assignMeButton.getAttribute('data-display-name') || '').trim() || 'Me';
 \t\t\t\t\tconst avatarUrl = (assignMeButton.getAttribute('data-avatar-url') || '').trim();
 \t\t\t\t\tapplyLocalSelection(accountId, displayName, avatarUrl);
+\t\t\t\t\tconst payload = buildFormPayload();
 \t\t\t\t\tvscode.postMessage({
 \t\t\t\t\t\ttype: 'selectCreateAssignee',
 \t\t\t\t\t\taccountId,
 \t\t\t\t\t\tdisplayName,
 \t\t\t\t\t\tavatarUrl,
+\t\t\t\t\t\tvalues: payload,
 \t\t\t\t\t});
 \t\t\t\t});
 \t\t\t}
@@ -1185,11 +1187,13 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\t}
 \t\t\t\t\tselect.setAttribute('data-current-account-id', accountId);
 \t\t\t\t\tupdateApplyState();
+\t\t\t\t\tconst payload = buildFormPayload();
 \t\t\t\t\tvscode.postMessage({
 \t\t\t\t\t\ttype: 'selectCreateAssignee',
 \t\t\t\t\t\taccountId,
 \t\t\t\t\t\tdisplayName: resolvedDisplayName,
 \t\t\t\t\t\tavatarUrl: resolvedAvatarUrl,
+\t\t\t\t\t\tvalues: payload,
 \t\t\t\t\t});
 \t\t\t\t});
 \t\t\t}
@@ -1572,6 +1576,19 @@ function deriveStatusOptionNames(options?: IssueStatusOption[]): string[] {
 		}
 	}
 	return names.length > 0 ? names : ISSUE_STATUS_OPTIONS;
+}
+
+function pickPreferredInitialStatus(names: string[]): string | undefined {
+	const preferredOrder = ['To Do', 'Backlog'];
+	const lowerNames = names.map((name) => name.toLowerCase());
+	for (const target of preferredOrder) {
+		const index = lowerNames.indexOf(target.toLowerCase());
+		if (index >= 0) {
+			return names[index];
+		}
+	}
+	const firstNonDone = names.find((name) => !/done|closed|resolved/i.test(name));
+	return firstNonDone;
 }
 
 function renderAssigneeControl(
