@@ -155,7 +155,7 @@ export type SelectedProjectInfo = {
 };
 
 export type ProjectsViewMode = 'recent' | 'all' | 'favorites';
-export type ItemsViewMode = 'recent' | 'all';
+export type ItemsViewMode = 'assigned' | 'all';
 export type ItemsGroupMode = 'none' | 'status' | 'type';
 
 export type JiraProfileResponse = {

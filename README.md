@@ -5,7 +5,7 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 ## Features
 
 - **Projects View** – Browse accessible Jira projects, focus a project for work, and refresh data with a single click.
-- **Items View** – Displays the currently focused project's Jira issues grouped by status, with badges, an inline search/filter row for your recent items, and tree view actions that mirror VS Code's source control UX.
+- **Items View** – Displays the currently focused project's Jira issues grouped by status, with badges, an inline search/filter row for your assigned active items, and tree view actions that mirror VS Code's source control UX.
 - **Issue Details Panel** – Open any ticket to view full metadata (including the rich-text description card), switch assignees, transition workflow status, and launch the issue in the browser.
 - **Inline Comments** – Read the latest Jira comments (with wiki formatting), refresh the thread, add comments in wiki or plain text, and delete your own remarks without leaving VS Code.
 - **Ticket Creation** – Use the `+ Ticket` button to create new issues with summary, description, issue type, and starting status right from VS Code.
@@ -31,7 +31,7 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 
 ### Working with Issues
 - Issues appear grouped by status in the Items view. Selecting an item opens the details panel.
-- Use the first "Search recent items" row in the Items view to filter your recent issues without leaving the tree.
+- Use the first "Search assigned items" row in the Items view to filter your active assigned issues without leaving the tree.
 - Change assignees by selecting a user and confirming with the OK button beside the dropdown in the details panel.
 - Inside the panel you can:
   - Update status via the combobox (transitions are fetched from Jira).
@@ -53,7 +53,7 @@ Jira VS Code is an open-source Visual Studio Code extension that brings the esse
 | `Jira: Focus Project` | Choose a project to work on. |
 | `Jira: Clear Project Focus` | Reset the focused project. |
 | `Jira: Refresh Items` | Refresh the Items tree. |
-| `Jira: Search Items` | Edit the inline Items search/filter row to narrow your recent issues. |
+| `Jira: Search Items` | Edit the inline Items search/filter row to narrow your active assigned issues. |
 | `Jira: Refresh Projects` | Refresh the Projects tree. |
 | `Jira: Create Issue` | Launch the ticket creation panel. |
 | `Jira: Open Issue Details` | Open the webview panel for a specific ticket. |
@@ -82,7 +82,7 @@ If you're new to Jira VS Code, follow these steps to get from zero to productive
    - You can switch between “Recent” and “All” projects via the context commands at the top of the view if needed.
 
 6. **Explore issues**
-   - Use the Items view to browse issues; the inline “Search recent items” row lets you filter your own tickets quickly.
+   - Use the Items view to browse issues; the inline “Search assigned items” row lets you filter your active assigned tickets quickly.
    - Select an issue to open the details panel. There you can review the description, related issues, comments, and metadata without leaving VS Code.
 
 7. **Update work**

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Replaced the Items view "Show Recent" toggle with "Show Assigned".
+- "Show Assigned" now loads all active (non-Done) issues assigned to the current user for the focused project, with inline search updated to match.
+
 ## 1.0.11
 
 - Prefetch project statuses per issue type plus transitions for every status so issue detail dropdowns unlock immediately even on first open.

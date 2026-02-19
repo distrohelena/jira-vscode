@@ -9,7 +9,6 @@ import {
 	ITEMS_SEARCH_QUERY_KEY,
 	ITEMS_VIEW_MODE_CONTEXT,
 	ITEMS_VIEW_MODE_KEY,
-	RECENT_ITEMS_LIMIT,
 } from '../../model/constants';
 import { fetchProjectIssues } from '../../model/jiraApiClient';
 import {
@@ -35,8 +34,11 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		private readonly transitionPrefetcher: ProjectTransitionPrefetcher
 	) {
 		super(authManager, focusManager);
-		const stored = this.extensionContext.workspaceState.get<ItemsViewMode>(ITEMS_VIEW_MODE_KEY);
-		this.viewMode = stored === 'all' ? 'all' : 'recent';
+		const stored = this.extensionContext.workspaceState.get<string>(ITEMS_VIEW_MODE_KEY);
+		this.viewMode = stored === 'all' ? 'all' : 'assigned';
+		if (stored === 'recent') {
+			void this.extensionContext.workspaceState.update(ITEMS_VIEW_MODE_KEY, 'assigned');
+		}
 		const storedGroup = this.extensionContext.workspaceState.get<ItemsGroupMode>(ITEMS_GROUP_MODE_KEY);
 		this.groupMode = storedGroup === 'none' || storedGroup === 'type' ? storedGroup : 'status';
 		const storedSearch = this.extensionContext.workspaceState.get<string>(ITEMS_SEARCH_QUERY_KEY) ?? '';
@@ -49,8 +51,8 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		await this.setViewMode('all');
 	}
 
-	async showRecentItems(): Promise<void> {
-		await this.setViewMode('recent');
+	async showAssignedItems(): Promise<void> {
+		await this.setViewMode('assigned');
 	}
 
 	async setGroupMode(mode: ItemsGroupMode): Promise<void> {
@@ -63,22 +65,22 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		this.refresh();
 	}
 
-	async openRecentItemsSearch(): Promise<void> {
+	async openAssignedItemsSearch(): Promise<void> {
 		const selectedProject = this.focusManager.getSelectedProject();
 		if (!selectedProject) {
 			await vscode.window.showInformationMessage('Select a project before searching items.');
 			return;
 		}
 
-		if (this.viewMode !== 'recent') {
-			const switchLabel = 'Switch to Recent';
+		if (this.viewMode !== 'assigned') {
+			const switchLabel = 'Switch to Assigned';
 			const choice = await vscode.window.showInformationMessage(
-				'Search is available for your recent items. Switch the Items view to Recent?',
+				'Search is available for your assigned items. Switch the Items view to Assigned?',
 				switchLabel,
 				'Cancel'
 			);
 			if (choice === switchLabel) {
-				await this.setViewMode('recent');
+				await this.setViewMode('assigned');
 			} else {
 				return;
 			}
@@ -89,7 +91,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			: selectedProject.key;
 
 		const input = await vscode.window.showInputBox({
-			title: projectLabel ? `Filter Recent Items (${projectLabel})` : 'Filter Recent Items',
+			title: projectLabel ? `Filter Assigned Items (${projectLabel})` : 'Filter Assigned Items',
 			placeHolder: 'Type to filter by issue key, summary, status, or assignee',
 			prompt: 'Leave empty to clear the filter.',
 			value: this.searchQuery,
@@ -116,7 +118,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		}
 		this.viewMode = mode;
 		await this.extensionContext.workspaceState.update(ITEMS_VIEW_MODE_KEY, mode);
-		if (mode !== 'recent') {
+		if (mode !== 'assigned') {
 			this.searchQuery = '';
 			await this.extensionContext.workspaceState.update(ITEMS_SEARCH_QUERY_KEY, '');
 		}
@@ -162,78 +164,73 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		const projectLabel = selectedProject.name
 			? `${selectedProject.name} (${selectedProject.key})`
 			: selectedProject.key;
-		const showingRecent = this.viewMode === 'recent';
-		const searchNode = showingRecent ? this.createSearchTreeItem(projectLabel) : undefined;
+		const showingAssigned = this.viewMode === 'assigned';
+		const searchNode = showingAssigned ? this.createSearchTreeItem(projectLabel) : undefined;
 		const prependSearchNode = (items: JiraTreeItem[]): JiraTreeItem[] =>
 			searchNode ? [searchNode, ...items] : items;
 
 		try {
 			const issues = await fetchProjectIssues(authInfo, token, selectedProject.key, {
-				onlyAssignedToCurrentUser: showingRecent,
+				onlyAssignedToCurrentUser: showingAssigned,
 			});
 			const sortedIssues = sortIssuesByUpdatedDesc(issues);
-			const relevantIssues = showingRecent ? filterIssuesRelatedToUser(sortedIssues, authInfo) : sortedIssues;
+			const relevantIssues = showingAssigned
+				? filterIssuesRelatedToUser(sortedIssues, authInfo).filter(
+						(issue) => determineStatusCategory(issue.statusName) !== 'done'
+				  )
+				: sortedIssues;
 			if (relevantIssues.length === 0) {
-				const baseDescription = showingRecent ? `${projectLabel} • my latest` : projectLabel;
-				const filtered = showingRecent && this.searchQuery.length > 0;
-				const tooltip = this.buildInProgressTooltip(0, filtered, showingRecent);
+				const baseDescription = showingAssigned ? `${projectLabel} • assigned to me` : projectLabel;
+				const filtered = showingAssigned && this.searchQuery.length > 0;
+				const tooltip = this.buildInProgressTooltip(0, filtered, showingAssigned);
 				this.updateBadge(0, tooltip);
 				this.updateDescription(
-					showingRecent && this.searchQuery ? `${baseDescription} • filtered` : baseDescription
+					showingAssigned && this.searchQuery ? `${baseDescription} • filtered` : baseDescription
 				);
 				const emptyMessage =
-					showingRecent && this.searchQuery
-						? `No recent items match "${this.searchQuery}". Clear or edit the search to see more.`
-						: showingRecent
-						? 'No recent items assigned to you. Use Show All to list every issue.'
+					showingAssigned && this.searchQuery
+						? `No assigned items match "${this.searchQuery}". Clear or edit the search to see more.`
+						: showingAssigned
+						? 'No active assigned items. Use Show All to list every issue.'
 						: 'No issues in this project (latest 50 shown).';
-		return prependSearchNode([
-			new JiraTreeItem('info', emptyMessage, vscode.TreeItemCollapsibleState.None),
-		]);
+				return prependSearchNode([
+					new JiraTreeItem('info', emptyMessage, vscode.TreeItemCollapsibleState.None),
+				]);
 			}
 
-			const limitedIssues = showingRecent ? relevantIssues.slice(0, RECENT_ITEMS_LIMIT) : relevantIssues;
-			this.transitionPrefetcher.prefetchIssues(selectedProject.key, limitedIssues);
-			const displayedIssues = showingRecent ? this.applySearchFilter(limitedIssues) : limitedIssues;
+			this.transitionPrefetcher.prefetchIssues(selectedProject.key, relevantIssues);
+			const displayedIssues = showingAssigned ? this.applySearchFilter(relevantIssues) : relevantIssues;
 
-			const filtered = showingRecent && this.searchQuery.length > 0;
+			const filtered = showingAssigned && this.searchQuery.length > 0;
 			const inProgressCount = this.countInProgressIssues(displayedIssues);
-			const tooltip = this.buildInProgressTooltip(inProgressCount, filtered, showingRecent);
+			const tooltip = this.buildInProgressTooltip(inProgressCount, filtered, showingAssigned);
 			this.updateBadge(inProgressCount, tooltip);
-			if (showingRecent) {
-				const baseDescription = `${projectLabel} • my latest`;
+			if (showingAssigned) {
+				const baseDescription = `${projectLabel} • assigned to me`;
 				this.updateDescription(filtered ? `${baseDescription} • filtered` : baseDescription);
 			} else {
 				this.updateDescription(projectLabel);
 			}
 
 			if (displayedIssues.length === 0) {
-				const noMatchMessage = `No recent items match "${this.searchQuery}". Clear or edit the search to see more.`;
-		return prependSearchNode([
-			new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None),
-		]);
+				const noMatchMessage = `No assigned items match "${this.searchQuery}". Clear or edit the search to see more.`;
+				return prependSearchNode([
+					new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None),
+				]);
 			}
 
-		const issueNodes = this.buildIssueNodes(displayedIssues);
-
-			if (showingRecent && relevantIssues.length > limitedIssues.length) {
-				const infoText = this.searchQuery
-					? `Showing matches from the latest ${limitedIssues.length} of ${relevantIssues.length} of your issues. Use Show All to see more.`
-					: `Showing latest ${limitedIssues.length} of ${relevantIssues.length} of your issues. Use Show All to see more.`;
-				issueNodes.push(new JiraTreeItem('info', infoText, vscode.TreeItemCollapsibleState.None));
-			}
-
-		return prependSearchNode(issueNodes);
+			const issueNodes = this.buildIssueNodes(displayedIssues);
+			return prependSearchNode(issueNodes);
 		} catch (error) {
 			const message = deriveErrorMessage(error);
 			this.updateBadge();
-		return prependSearchNode([
-			new JiraTreeItem(
-				'info',
-				`Failed to load project issues: ${message}`,
-				vscode.TreeItemCollapsibleState.None
-			),
-		]);
+			return prependSearchNode([
+				new JiraTreeItem(
+					'info',
+					`Failed to load project issues: ${message}`,
+					vscode.TreeItemCollapsibleState.None
+				),
+			]);
 		}
 	}
 
@@ -306,11 +303,11 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return Array.from(groups.values()).sort((a, b) => a.typeName.localeCompare(b.typeName));
 	}
 
-private createSearchTreeItem(projectLabel?: string): JiraTreeItem {
+	private createSearchTreeItem(projectLabel?: string): JiraTreeItem {
 		const hasQuery = this.searchQuery.length > 0;
 		const item = new JiraTreeItem(
 			'search',
-			'Search recent items',
+			'Search assigned items',
 			vscode.TreeItemCollapsibleState.None,
 			{
 				command: 'jira.searchItems',
@@ -320,8 +317,8 @@ private createSearchTreeItem(projectLabel?: string): JiraTreeItem {
 		item.iconPath = new vscode.ThemeIcon('search');
 		item.description = hasQuery ? this.searchQuery : 'Type to filter';
 		item.tooltip = hasQuery
-			? `Filtering recent items${projectLabel ? ` in ${projectLabel}` : ''} by "${this.searchQuery}". Click to update or clear.`
-			: `Click to filter your recent items${projectLabel ? ` in ${projectLabel}` : ''}.`;
+			? `Filtering assigned items${projectLabel ? ` in ${projectLabel}` : ''} by "${this.searchQuery}". Click to update or clear.`
+			: `Click to filter your assigned items${projectLabel ? ` in ${projectLabel}` : ''}.`;
 		item.contextValue = 'jiraItemsSearch';
 		return item;
 	}
@@ -349,12 +346,12 @@ private createSearchTreeItem(projectLabel?: string): JiraTreeItem {
 		}, 0);
 	}
 
-	private buildInProgressTooltip(count: number, filtered: boolean, showingRecent: boolean): string {
+	private buildInProgressTooltip(count: number, filtered: boolean, showingAssigned: boolean): string {
 		if (filtered) {
 			return count === 1 ? '1 matching in-progress issue' : `${count} matching in-progress issues`;
 		}
-		if (showingRecent) {
-			return count === 1 ? '1 in-progress issue (recent)' : `${count} in-progress issues (recent)`;
+		if (showingAssigned) {
+			return count === 1 ? '1 in-progress issue (assigned)' : `${count} in-progress issues (assigned)`;
 		}
 		return count === 1 ? '1 in-progress issue' : `${count} in-progress issues`;
 	}

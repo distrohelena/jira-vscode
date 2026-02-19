@@ -11,8 +11,7 @@ export const ITEMS_VIEW_MODE_CONTEXT = 'jiraItemsViewMode';
 export const ITEMS_SEARCH_QUERY_KEY = 'jira.itemsSearchQuery';
 export const ITEMS_GROUP_MODE_KEY = 'jira.itemsGroupMode';
 export const ITEMS_GROUP_MODE_CONTEXT = 'jiraItemsGroupMode';
-export const RECENT_ITEMS_LIMIT = 50;
-export const RECENT_ITEMS_FETCH_LIMIT = 500;
+export const ASSIGNED_ITEMS_PAGE_SIZE = 100;
 export const COMMENT_FETCH_LIMIT = 50;
 
 export const ISSUE_DETAIL_FIELDS = [

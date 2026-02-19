@@ -3,9 +3,9 @@ import axios from 'axios';
 import { normalizeBaseUrl } from '../shared/urlUtils';
 import { escapeHtml, sanitizeRenderedHtml } from '../shared/html';
 import {
+	ASSIGNED_ITEMS_PAGE_SIZE,
 	COMMENT_FETCH_LIMIT,
 	ISSUE_DETAIL_FIELDS,
-	RECENT_ITEMS_FETCH_LIMIT,
 } from './constants';
 import {
 	FetchProjectIssuesOptions,
@@ -104,15 +104,18 @@ export async function fetchProjectIssues(
 		if (assigneeClause) {
 			jqlParts.push(assigneeClause);
 		}
+		jqlParts.push('statusCategory != Done');
 	}
 	const jql = `${jqlParts.join(' AND ')} ORDER BY updated DESC`;
-	const maxResults = options?.onlyAssignedToCurrentUser ? RECENT_ITEMS_FETCH_LIMIT : 50;
+	if (options?.onlyAssignedToCurrentUser) {
+		return searchAllJiraIssues(authInfo, token, {
+			jql,
+			maxResults: ASSIGNED_ITEMS_PAGE_SIZE,
+			fields: ISSUE_DETAIL_FIELDS,
+		});
+	}
 
-	return searchJiraIssues(authInfo, token, {
-		jql,
-		maxResults,
-		fields: ISSUE_DETAIL_FIELDS,
-	});
+	return searchJiraIssues(authInfo, token, { jql, maxResults: 50, fields: ISSUE_DETAIL_FIELDS });
 }
 
 export async function fetchIssueDetails(authInfo: JiraAuthInfo, token: string, issueKey: string): Promise<JiraIssue> {
@@ -721,8 +724,35 @@ export async function finalizeCreatedIssue(
 type JiraIssueSearchOptions = {
 	jql: string;
 	maxResults?: number;
+	startAt?: number;
 	fields?: string[];
 };
+
+async function searchAllJiraIssues(
+	authInfo: JiraAuthInfo,
+	token: string,
+	options: JiraIssueSearchOptions
+): Promise<JiraIssue[]> {
+	const maxResults = options.maxResults ?? ASSIGNED_ITEMS_PAGE_SIZE;
+	const aggregated: JiraIssue[] = [];
+	let startAt = options.startAt ?? 0;
+
+	while (true) {
+		const page = await searchJiraIssues(authInfo, token, {
+			jql: options.jql,
+			maxResults,
+			startAt,
+			fields: options.fields,
+		});
+		aggregated.push(...page);
+		if (page.length < maxResults) {
+			break;
+		}
+		startAt += page.length;
+	}
+
+	return aggregated;
+}
 
 export async function searchJiraIssues(
 	authInfo: JiraAuthInfo,
@@ -741,6 +771,7 @@ export async function searchJiraIssues(
 	const searchPayload = {
 		jql: options.jql,
 		maxResults: options.maxResults ?? 50,
+		startAt: options.startAt ?? 0,
 		fields: options.fields ?? ISSUE_DETAIL_FIELDS,
 	};
 
@@ -764,6 +795,7 @@ export async function searchJiraIssues(
 				params: {
 					jql: searchPayload.jql,
 					maxResults: searchPayload.maxResults,
+					startAt: searchPayload.startAt,
 					fields: searchPayload.fields.join(','),
 				},
 				...config,
