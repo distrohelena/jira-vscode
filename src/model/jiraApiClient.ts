@@ -3,9 +3,9 @@ import axios from 'axios';
 import { normalizeBaseUrl } from '../shared/urlUtils';
 import { escapeHtml, sanitizeRenderedHtml } from '../shared/html';
 import {
-	ASSIGNED_ITEMS_PAGE_SIZE,
 	COMMENT_FETCH_LIMIT,
 	ISSUE_DETAIL_FIELDS,
+	PROJECT_ISSUES_PAGE_SIZE,
 } from './constants';
 import {
 	FetchProjectIssuesOptions,
@@ -107,15 +107,11 @@ export async function fetchProjectIssues(
 		jqlParts.push('statusCategory != Done');
 	}
 	const jql = `${jqlParts.join(' AND ')} ORDER BY updated DESC`;
-	if (options?.onlyAssignedToCurrentUser) {
-		return searchAllJiraIssues(authInfo, token, {
-			jql,
-			maxResults: ASSIGNED_ITEMS_PAGE_SIZE,
-			fields: ISSUE_DETAIL_FIELDS,
-		});
-	}
-
-	return searchJiraIssues(authInfo, token, { jql, maxResults: 50, fields: ISSUE_DETAIL_FIELDS });
+	return searchAllJiraIssues(authInfo, token, {
+		jql,
+		maxResults: PROJECT_ISSUES_PAGE_SIZE,
+		fields: ISSUE_DETAIL_FIELDS,
+	});
 }
 
 export async function fetchIssueDetails(authInfo: JiraAuthInfo, token: string, issueKey: string): Promise<JiraIssue> {
@@ -733,7 +729,7 @@ async function searchAllJiraIssues(
 	token: string,
 	options: JiraIssueSearchOptions
 ): Promise<JiraIssue[]> {
-	const maxResults = options.maxResults ?? ASSIGNED_ITEMS_PAGE_SIZE;
+	const maxResults = options.maxResults ?? PROJECT_ISSUES_PAGE_SIZE;
 	const aggregated: JiraIssue[] = [];
 	let startAt = options.startAt ?? 0;
 

@@ -192,7 +192,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 						? `No assigned items match "${this.searchQuery}". Clear or edit the search to see more.`
 						: showingAssigned
 						? 'No active assigned items. Use Show All to list every issue.'
-						: 'No issues in this project (latest 50 shown).';
+						: 'No issues in this project.';
 				return prependSearchNode([
 					new JiraTreeItem('info', emptyMessage, vscode.TreeItemCollapsibleState.None),
 				]);
