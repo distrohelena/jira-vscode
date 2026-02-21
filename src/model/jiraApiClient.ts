@@ -723,7 +723,15 @@ type JiraIssueSearchOptions = {
 	jql: string;
 	maxResults?: number;
 	startAt?: number;
+	nextPageToken?: string;
 	fields?: string[];
+};
+
+type JiraIssueSearchPage = {
+	issues: JiraIssue[];
+	mode: 'classic' | 'enhanced';
+	isLast?: boolean;
+	nextPageToken?: string;
 };
 
 async function searchAllJiraIssues(
@@ -734,19 +742,32 @@ async function searchAllJiraIssues(
 	const maxResults = options.maxResults ?? PROJECT_ISSUES_PAGE_SIZE;
 	const aggregated: JiraIssue[] = [];
 	let startAt = options.startAt ?? 0;
+	let nextPageToken = options.nextPageToken;
 
 	while (true) {
-		const page = await searchJiraIssues(authInfo, token, {
+		const page = await searchJiraIssuesPage(authInfo, token, {
 			jql: options.jql,
 			maxResults,
 			startAt,
+			nextPageToken,
 			fields: options.fields,
 		});
-		aggregated.push(...page);
-		if (page.length < maxResults) {
+		aggregated.push(...page.issues);
+		if (page.issues.length === 0) {
 			break;
 		}
-		startAt += page.length;
+		if (page.mode === 'enhanced') {
+			if (page.isLast === true || !page.nextPageToken) {
+				break;
+			}
+			nextPageToken = page.nextPageToken;
+			continue;
+		}
+		if (page.issues.length < maxResults) {
+			break;
+		}
+		startAt += page.issues.length;
+		nextPageToken = undefined;
 	}
 
 	return aggregated;
@@ -757,25 +778,47 @@ export async function searchJiraIssues(
 	token: string,
 	options: JiraIssueSearchOptions
 ): Promise<JiraIssue[]> {
+	const page = await searchJiraIssuesPage(authInfo, token, options);
+	return page.issues;
+}
+
+async function searchJiraIssuesPage(
+	authInfo: JiraAuthInfo,
+	token: string,
+	options: JiraIssueSearchOptions
+): Promise<JiraIssueSearchPage> {
 	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const searchResources =
+		authInfo.serverLabel === 'cloud'
+			? options.nextPageToken
+				? ['search/jql']
+				: ['search/jql', 'search']
+			: ['search'];
 	const endpoints = buildRestApiEndpoints(
 		urlRoot,
 		authInfo.serverLabel,
-		'search/jql',
-		'search',
-		'jql/search',
-		'issue/search'
+		...searchResources
 	);
-	const searchPayload = {
-		jql: options.jql,
-		maxResults: options.maxResults ?? 50,
-		startAt: options.startAt ?? 0,
-		fields: options.fields ?? ISSUE_DETAIL_FIELDS,
-	};
+	const maxResults = options.maxResults ?? 50;
+	const startAt = options.startAt ?? 0;
+	const nextPageToken = options.nextPageToken?.trim();
+	const fields = options.fields ?? ISSUE_DETAIL_FIELDS;
 
 	let lastError: unknown;
 	for (const endpoint of endpoints) {
-		const supportsGet = !/\/search\/jql$/.test(endpoint);
+		const isEnhancedEndpoint = /\/search\/jql$/.test(endpoint);
+		const postPayload: Record<string, unknown> = {
+			jql: options.jql,
+			maxResults,
+			fields,
+		};
+		if (isEnhancedEndpoint) {
+			if (nextPageToken) {
+				postPayload.nextPageToken = nextPageToken;
+			}
+		} else {
+			postPayload.startAt = startAt;
+		}
 		const config = {
 			auth: {
 				username: authInfo.username,
@@ -789,36 +832,59 @@ export async function searchJiraIssues(
 		} as const;
 
 		const tryGet = async () => {
+			const params: Record<string, unknown> = {
+				jql: options.jql,
+				maxResults,
+				fields: fields.join(','),
+			};
+			if (isEnhancedEndpoint) {
+				if (nextPageToken) {
+					params.nextPageToken = nextPageToken;
+				}
+			} else {
+				params.startAt = startAt;
+			}
 			const response = await axios.get(endpoint, {
-				params: {
-					jql: searchPayload.jql,
-					maxResults: searchPayload.maxResults,
-					startAt: searchPayload.startAt,
-					fields: searchPayload.fields.join(','),
-				},
+				params,
 				...config,
 			});
 			return response.data;
 		};
 
 		const tryPost = async () => {
-			const response = await axios.post(endpoint, searchPayload, config);
+			const response = await axios.post(endpoint, postPayload, config);
 			return response.data;
 		};
 
 		try {
 			const data = await tryPost();
-			return mapIssues(data, urlRoot);
+			return {
+				issues: mapIssues(data, urlRoot),
+				mode: isEnhancedEndpoint ? 'enhanced' : 'classic',
+				isLast: typeof data?.isLast === 'boolean' ? data.isLast : undefined,
+				nextPageToken:
+					typeof data?.nextPageToken === 'string' && data.nextPageToken.trim().length > 0
+						? data.nextPageToken
+						: undefined,
+			};
 		} catch (postError) {
 			lastError = postError;
 
-			if (!supportsGet || !shouldFallbackToGet(postError)) {
+			if (!shouldFallbackToGet(postError)) {
 				continue;
 			}
 
 			try {
 				const data = await tryGet();
-				return mapIssues(data, urlRoot);
+				return {
+					issues: mapIssues(data, urlRoot),
+					mode: isEnhancedEndpoint ? 'enhanced' : 'classic',
+					isLast: typeof data?.isLast === 'boolean' ? data.isLast : undefined,
+					nextPageToken:
+						typeof data?.nextPageToken === 'string' && data.nextPageToken.trim().length > 0
+							? data.nextPageToken
+							: undefined,
+				};
 			} catch (getError) {
 				lastError = getError;
 			}
