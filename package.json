@@ -2,7 +2,7 @@
     "name": "helenofcode-jira-vscode",
     "displayName": "Jira VS Code",
     "description": "Open-source Jira integration for VS Code with reliable authentication for Jira Cloud and custom servers.",
-    "version": "1.0.14",
+    "version": "1.0.15",
     "publisher": "helenofcode",
     "repository": {
         "type": "git",
@@ -284,7 +284,8 @@
     "scripts": {
         "bundle": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js",
         "compile": "npm run bundle",
-        "watch": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js --watch"
+        "watch": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js --watch",
+        "package": "vsce package"
     },
     "devDependencies": {
         "@types/node": "^20.11.0",
