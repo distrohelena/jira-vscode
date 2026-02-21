@@ -811,6 +811,11 @@ function renderCreateIssuePanelHtml(
 \t\t}
 \t\t.form-actions {
 \t\t\tmargin-top: 8px;
+\t\t\tgrid-column: 1 / 2;
+\t\t}
+\t\t.form-actions button {
+\t\t\twidth: 100%;
+\t\t\tmax-width: 220px;
 \t\t}
 \t\t.meta-card {
 \t\t\tborder: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
@@ -981,9 +986,6 @@ function renderCreateIssuePanelHtml(
 						)}</textarea>
 \t\t\t\t\t</label>
 \t\t\t\t</div>
-\t\t\t\t<div class="form-actions">
-\t\t\t\t\t<button type="submit" class="primary" ${disabledAttr}>${buttonLabel}</button>
-\t\t\t\t</div>
 \t\t\t</div>
 \t\t\t<div class="issue-sidebar">
 \t\t\t\t<div class="meta-card">
@@ -1019,6 +1021,9 @@ function renderCreateIssuePanelHtml(
 						values.assigneeAvatarUrl ?? ''
 					)}" />
 \t\t\t\t</div>
+\t\t\t</div>
+\t\t\t<div class="form-actions">
+\t\t\t\t<button type="submit" class="primary" ${disabledAttr}>${buttonLabel}</button>
 \t\t\t</div>
 \t\t</form>
 \t</div>
