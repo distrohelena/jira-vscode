@@ -191,20 +191,8 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 			updatePanel({ submitting: true, error: undefined, successIssue: undefined, values });
 			try {
 				const createdIssue = await createJiraIssue(authInfo, token, project.key, values);
-				updatePanel({
-					values: {
-						summary: '',
-						description: '',
-						issueType: values.issueType,
-						status: values.status,
-						assigneeAccountId: values.assigneeAccountId,
-						assigneeDisplayName: values.assigneeDisplayName,
-						assigneeAvatarUrl: values.assigneeAvatarUrl,
-					},
-					submitting: false,
-					successIssue: createdIssue,
-				});
 				refreshItemsView();
+				panel.dispose();
 				try {
 					await openIssueDetails(createdIssue);
 				} catch (error) {
@@ -212,8 +200,6 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 					void vscode.window.showErrorMessage(
 						`Created ${createdIssue.key} but failed to open details: ${messageText}`
 					);
-				} finally {
-					panel.dispose();
 				}
 			} catch (error) {
 				const messageText = deriveErrorMessage(error);
