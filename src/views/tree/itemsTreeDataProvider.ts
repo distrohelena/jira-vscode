@@ -41,7 +41,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	) {
 		super(authManager, focusManager);
 		const stored = this.extensionContext.workspaceState.get<string>(ITEMS_VIEW_MODE_KEY);
-		this.viewMode = stored === 'all' ? 'all' : 'assigned';
+		this.viewMode = stored === 'all' || stored === 'unassigned' ? stored : 'assigned';
 		if (stored === 'recent') {
 			void this.extensionContext.workspaceState.update(ITEMS_VIEW_MODE_KEY, 'assigned');
 		}
@@ -61,6 +61,10 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		await this.setViewMode('assigned');
 	}
 
+	async showUnassignedItems(): Promise<void> {
+		await this.setViewMode('unassigned');
+	}
+
 	async setGroupMode(mode: ItemsGroupMode): Promise<void> {
 		if (this.groupMode === mode) {
 			return;
@@ -71,17 +75,17 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		this.refresh();
 	}
 
-	async openAssignedItemsSearch(): Promise<void> {
+	async openItemsFilter(): Promise<void> {
 		const selectedProject = this.focusManager.getSelectedProject();
 		if (!selectedProject) {
 			await vscode.window.showInformationMessage('Select a project before filtering items.');
 			return;
 		}
 
-		if (this.viewMode !== 'assigned') {
+		if (this.viewMode === 'all') {
 			const switchLabel = 'Switch to Assigned';
 			const choice = await vscode.window.showInformationMessage(
-				'Filter is available for your assigned items. Switch the Items view to Assigned?',
+				'Filter is available in Assigned and Unassigned modes. Switch the Items view to Assigned?',
 				switchLabel,
 				'Cancel'
 			);
@@ -95,9 +99,10 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		const projectLabel = selectedProject.name
 			? `${selectedProject.name} (${selectedProject.key})`
 			: selectedProject.key;
+		const filterScopeLabel = this.viewMode === 'unassigned' ? 'Unassigned' : 'Assigned';
 
 		const input = await vscode.window.showInputBox({
-			title: projectLabel ? `Filter Assigned Items (${projectLabel})` : 'Filter Assigned Items',
+			title: projectLabel ? `Filter ${filterScopeLabel} Items (${projectLabel})` : `Filter ${filterScopeLabel} Items`,
 			placeHolder: 'Type to filter by issue key, summary, status, or assignee',
 			prompt: 'Leave empty to clear the filter.',
 			value: this.searchQuery,
@@ -129,7 +134,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		}
 		this.viewMode = mode;
 		await this.extensionContext.workspaceState.update(ITEMS_VIEW_MODE_KEY, mode);
-		if (mode !== 'assigned') {
+		if (mode === 'all') {
 			this.searchQuery = '';
 			await this.extensionContext.workspaceState.update(ITEMS_SEARCH_QUERY_KEY, '');
 		}
@@ -190,7 +195,10 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			? `${selectedProject.name} (${selectedProject.key})`
 			: selectedProject.key;
 		const showingAssigned = this.viewMode === 'assigned';
-		const searchNode = showingAssigned ? this.createSearchTreeItem(projectLabel) : undefined;
+		const showingUnassigned = this.viewMode === 'unassigned';
+		const showingScopedItems = showingAssigned || showingUnassigned;
+		const scopeLabel: 'assigned' | 'unassigned' = showingUnassigned ? 'unassigned' : 'assigned';
+		const searchNode = showingScopedItems ? this.createSearchTreeItem(projectLabel, scopeLabel) : undefined;
 		const prependSearchNode = (items: JiraTreeItem[]): JiraTreeItem[] =>
 			searchNode ? [searchNode, ...items] : items;
 
@@ -198,10 +206,11 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			const cachedIssues = this.getCachedIssues(selectedProject.key, this.viewMode);
 			const shouldUseCache = !this.forceRemoteReload && !!cachedIssues;
 			const issues =
-				shouldUseCache && cachedIssues
-					? cachedIssues
-					: await fetchProjectIssues(authInfo, token, selectedProject.key, {
+					shouldUseCache && cachedIssues
+						? cachedIssues
+						: await fetchProjectIssues(authInfo, token, selectedProject.key, {
 							onlyAssignedToCurrentUser: showingAssigned,
+							onlyUnassigned: showingUnassigned,
 					  });
 			if (!shouldUseCache) {
 				this.issueCache = {
@@ -216,20 +225,28 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				? filterIssuesRelatedToUser(sortedIssues, authInfo).filter(
 						(issue) => determineStatusCategory(issue.statusName) !== 'done'
 				  )
+				: showingUnassigned
+				? sortedIssues.filter((issue) => this.isUnassignedIssue(issue))
 				: sortedIssues;
 			if (relevantIssues.length === 0) {
-				const baseDescription = showingAssigned ? `${projectLabel} • assigned to me` : projectLabel;
-				const filtered = showingAssigned && this.searchQuery.length > 0;
-				const tooltip = this.buildInProgressTooltip(0, filtered, showingAssigned);
+				const baseDescription = showingAssigned
+					? `${projectLabel} • assigned to me`
+					: showingUnassigned
+					? `${projectLabel} • unassigned`
+					: projectLabel;
+				const filtered = showingScopedItems && this.searchQuery.length > 0;
+				const tooltip = this.buildInProgressTooltip(0, filtered, this.viewMode);
 				this.updateBadge(0, tooltip);
 				this.updateDescription(
-					showingAssigned && this.searchQuery ? `${baseDescription} • filtered` : baseDescription
+					showingScopedItems && this.searchQuery ? `${baseDescription} • filtered` : baseDescription
 				);
 				const emptyMessage =
-					showingAssigned && this.searchQuery
-						? `No assigned items match "${this.searchQuery}". Clear or edit the search to see more.`
+					showingScopedItems && this.searchQuery
+						? `No ${scopeLabel} items match "${this.searchQuery}". Clear or edit the filter to see more.`
 						: showingAssigned
 						? 'No active assigned items. Use Show All to list every issue.'
+						: showingUnassigned
+						? 'No unassigned items in this project. Use Show All to list every issue.'
 						: 'No issues in this project.';
 				return prependSearchNode([
 					new JiraTreeItem('info', emptyMessage, vscode.TreeItemCollapsibleState.None),
@@ -237,21 +254,24 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			}
 
 			this.transitionPrefetcher.prefetchIssues(selectedProject.key, relevantIssues);
-			const displayedIssues = showingAssigned ? this.applySearchFilter(relevantIssues) : relevantIssues;
+			const displayedIssues = showingScopedItems ? this.applySearchFilter(relevantIssues) : relevantIssues;
 
-			const filtered = showingAssigned && this.searchQuery.length > 0;
+			const filtered = showingScopedItems && this.searchQuery.length > 0;
 			const inProgressCount = this.countInProgressIssues(displayedIssues);
-			const tooltip = this.buildInProgressTooltip(inProgressCount, filtered, showingAssigned);
+			const tooltip = this.buildInProgressTooltip(inProgressCount, filtered, this.viewMode);
 			this.updateBadge(inProgressCount, tooltip);
 			if (showingAssigned) {
 				const baseDescription = `${projectLabel} • assigned to me`;
+				this.updateDescription(filtered ? `${baseDescription} • filtered` : baseDescription);
+			} else if (showingUnassigned) {
+				const baseDescription = `${projectLabel} • unassigned`;
 				this.updateDescription(filtered ? `${baseDescription} • filtered` : baseDescription);
 			} else {
 				this.updateDescription(projectLabel);
 			}
 
 			if (displayedIssues.length === 0) {
-				const noMatchMessage = `No assigned items match "${this.searchQuery}". Clear or edit the search to see more.`;
+				const noMatchMessage = `No ${scopeLabel} items match "${this.searchQuery}". Clear or edit the filter to see more.`;
 				return prependSearchNode([
 					new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None),
 				]);
@@ -341,11 +361,11 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return Array.from(groups.values()).sort((a, b) => a.typeName.localeCompare(b.typeName));
 	}
 
-	private createSearchTreeItem(projectLabel?: string): JiraTreeItem {
+	private createSearchTreeItem(projectLabel: string | undefined, scopeLabel: 'assigned' | 'unassigned'): JiraTreeItem {
 		const hasQuery = this.searchQuery.length > 0;
 		const item = new JiraTreeItem(
 			'search',
-			'Filter assigned items',
+			`Filter ${scopeLabel} items`,
 			vscode.TreeItemCollapsibleState.None,
 			{
 				command: 'jira.searchItems',
@@ -355,10 +375,17 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		item.iconPath = new vscode.ThemeIcon('filter');
 		item.description = hasQuery ? this.searchQuery : 'Type to filter';
 		item.tooltip = hasQuery
-			? `Filtering assigned items${projectLabel ? ` in ${projectLabel}` : ''} by "${this.searchQuery}". Click to update or clear.`
-			: `Click to filter your assigned items${projectLabel ? ` in ${projectLabel}` : ''}.`;
+			? `Filtering ${scopeLabel} items${projectLabel ? ` in ${projectLabel}` : ''} by "${this.searchQuery}". Click to update or clear.`
+			: `Click to filter ${scopeLabel} items${projectLabel ? ` in ${projectLabel}` : ''}.`;
 		item.contextValue = 'jiraItemsSearch';
 		return item;
+	}
+
+	private isUnassignedIssue(issue: JiraIssue): boolean {
+		return !issue.assigneeAccountId?.trim() &&
+			!issue.assigneeUsername?.trim() &&
+			!issue.assigneeKey?.trim() &&
+			!issue.assigneeName?.trim();
 	}
 
 	private applySearchFilter(issues: JiraIssue[]): JiraIssue[] {
@@ -384,12 +411,15 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		}, 0);
 	}
 
-	private buildInProgressTooltip(count: number, filtered: boolean, showingAssigned: boolean): string {
+	private buildInProgressTooltip(count: number, filtered: boolean, mode: ItemsViewMode): string {
 		if (filtered) {
 			return count === 1 ? '1 matching in-progress issue' : `${count} matching in-progress issues`;
 		}
-		if (showingAssigned) {
+		if (mode === 'assigned') {
 			return count === 1 ? '1 in-progress issue (assigned)' : `${count} in-progress issues (assigned)`;
+		}
+		if (mode === 'unassigned') {
+			return count === 1 ? '1 in-progress issue (unassigned)' : `${count} in-progress issues (unassigned)`;
 		}
 		return count === 1 ? '1 in-progress issue' : `${count} in-progress issues`;
 	}

@@ -117,6 +117,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('jira.showAssignedItems', async () => {
 			await itemsProvider.showAssignedItems();
 		}),
+		vscode.commands.registerCommand('jira.showUnassignedItems', async () => {
+			await itemsProvider.showUnassignedItems();
+		}),
 		vscode.commands.registerCommand('jira.showRecentItems', async () => {
 			await itemsProvider.showAssignedItems();
 		}),
@@ -130,7 +133,7 @@ export async function activate(context: vscode.ExtensionContext) {
 			await itemsProvider.setGroupMode('type');
 		}),
 		vscode.commands.registerCommand('jira.searchItems', async () => {
-			await itemsProvider.openAssignedItemsSearch();
+			await itemsProvider.openItemsFilter();
 		}),
 		vscode.commands.registerCommand('jira.focusProject', async (project?: JiraProject) => {
 			const changed = await focusManager.focusProject(project);

@@ -155,7 +155,7 @@ export type SelectedProjectInfo = {
 };
 
 export type ProjectsViewMode = 'recent' | 'all' | 'favorites';
-export type ItemsViewMode = 'assigned' | 'all';
+export type ItemsViewMode = 'assigned' | 'all' | 'unassigned';
 export type ItemsGroupMode = 'none' | 'status' | 'type';
 
 export type JiraProfileResponse = {
@@ -178,6 +178,7 @@ export type JiraNodeKind =
 
 export type FetchProjectIssuesOptions = {
 	onlyAssignedToCurrentUser?: boolean;
+	onlyUnassigned?: boolean;
 };
 
 export type JiraApiVersion = '3' | 'latest' | '2';

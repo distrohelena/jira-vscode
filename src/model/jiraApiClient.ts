@@ -99,7 +99,9 @@ export async function fetchProjectIssues(
 	}
 
 	const jqlParts = [`project = ${sanitizedKey}`];
-	if (options?.onlyAssignedToCurrentUser) {
+	if (options?.onlyUnassigned) {
+		jqlParts.push('assignee IS EMPTY');
+	} else if (options?.onlyAssignedToCurrentUser) {
 		const assigneeClause = buildAssigneeFilterClause(authInfo);
 		if (assigneeClause) {
 			jqlParts.push(assigneeClause);

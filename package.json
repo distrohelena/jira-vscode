@@ -99,6 +99,11 @@
                 "category": "Jira"
             },
             {
+                "command": "jira.showUnassignedItems",
+                "title": "Show Unassigned",
+                "category": "Jira"
+            },
+            {
                 "command": "jira.searchItems",
                 "title": "Jira: Filter Items",
                 "category": "Jira",
@@ -166,12 +171,17 @@
                 },
                 {
                     "command": "jira.showAllItems",
-                    "when": "view == jiraItemsView && jiraItemsViewMode != 'all'",
+                    "when": "view == jiraItemsView && jiraItemsViewMode == 'assigned'",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "jira.showUnassignedItems",
+                    "when": "view == jiraItemsView && jiraItemsViewMode == 'all'",
                     "group": "navigation@2"
                 },
                 {
                     "command": "jira.showAssignedItems",
-                    "when": "view == jiraItemsView && jiraItemsViewMode == 'all'",
+                    "when": "view == jiraItemsView && jiraItemsViewMode == 'unassigned'",
                     "group": "navigation@2"
                 },
                 {
