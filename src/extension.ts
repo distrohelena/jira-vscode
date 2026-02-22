@@ -132,6 +132,15 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('jira.groupItemsByType', async () => {
 			await itemsProvider.setGroupMode('type');
 		}),
+		vscode.commands.registerCommand('jira.sortItemsByDate', async () => {
+			await itemsProvider.setSortMode('date');
+		}),
+		vscode.commands.registerCommand('jira.sortItemsByLastUpdate', async () => {
+			await itemsProvider.setSortMode('lastUpdate');
+		}),
+		vscode.commands.registerCommand('jira.sortItemsByAlphabetical', async () => {
+			await itemsProvider.setSortMode('alphabetical');
+		}),
 		vscode.commands.registerCommand('jira.searchItems', async () => {
 			await itemsProvider.openItemsFilter();
 		}),

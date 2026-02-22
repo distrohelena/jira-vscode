@@ -8,6 +8,8 @@ import {
 	ITEMS_GROUP_MODE_CONTEXT,
 	ITEMS_GROUP_MODE_KEY,
 	ITEMS_SEARCH_QUERY_KEY,
+	ITEMS_SORT_MODE_CONTEXT,
+	ITEMS_SORT_MODE_KEY,
 	ITEMS_VIEW_MODE_CONTEXT,
 	ITEMS_VIEW_MODE_KEY,
 } from '../../model/constants';
@@ -16,9 +18,8 @@ import {
 	determineStatusCategory,
 	filterIssuesRelatedToUser,
 	groupIssuesByStatus,
-	sortIssuesByUpdatedDesc,
 } from '../../model/issueModel';
-import { JiraAuthInfo, JiraIssue, ItemsGroupMode, ItemsViewMode } from '../../model/types';
+import { JiraAuthInfo, JiraIssue, ItemsGroupMode, ItemsSortMode, ItemsViewMode } from '../../model/types';
 import { deriveErrorMessage } from '../../shared/errors';
 import { JiraTreeDataProvider } from './baseTreeDataProvider';
 import { JiraTreeItem, createIssueTreeItem, deriveIssueIcon } from './treeItems';
@@ -27,6 +28,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private viewMode: ItemsViewMode;
 	private searchQuery: string;
 	private groupMode: ItemsGroupMode;
+	private sortMode: ItemsSortMode;
 	private forceRemoteReload = true;
 	private pendingLoadMore = false;
 	private issueCache?: {
@@ -52,10 +54,14 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		}
 		const storedGroup = this.extensionContext.workspaceState.get<ItemsGroupMode>(ITEMS_GROUP_MODE_KEY);
 		this.groupMode = storedGroup === 'none' || storedGroup === 'type' ? storedGroup : 'status';
+		const storedSort = this.extensionContext.workspaceState.get<ItemsSortMode>(ITEMS_SORT_MODE_KEY);
+		this.sortMode =
+			storedSort === 'alphabetical' || storedSort === 'lastUpdate' ? storedSort : 'date';
 		const storedSearch = this.extensionContext.workspaceState.get<string>(ITEMS_SEARCH_QUERY_KEY) ?? '';
 		this.searchQuery = storedSearch.trim();
 		void this.updateViewModeContext();
 		void this.updateGroupModeContext();
+		void this.updateSortModeContext();
 	}
 
 	async showAllItems(): Promise<void> {
@@ -95,6 +101,16 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		await this.extensionContext.workspaceState.update(ITEMS_GROUP_MODE_KEY, mode);
 		await this.updateGroupModeContext();
 		this.refresh();
+	}
+
+	async setSortMode(mode: ItemsSortMode): Promise<void> {
+		if (this.sortMode === mode) {
+			return;
+		}
+		this.sortMode = mode;
+		await this.extensionContext.workspaceState.update(ITEMS_SORT_MODE_KEY, mode);
+		await this.updateSortModeContext();
+		this.refreshFromCache();
 	}
 
 	async openItemsFilter(): Promise<void> {
@@ -171,6 +187,10 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 	private updateGroupModeContext(): Thenable<void> {
 		return vscode.commands.executeCommand('setContext', ITEMS_GROUP_MODE_CONTEXT, this.groupMode);
+	}
+
+	private updateSortModeContext(): Thenable<void> {
+		return vscode.commands.executeCommand('setContext', ITEMS_SORT_MODE_CONTEXT, this.sortMode);
 	}
 
 	private refreshFromCache(): void {
@@ -278,14 +298,14 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			this.pendingLoadMore = false;
 			this.forceRemoteReload = false;
 			const loadMoreNode = hasMore ? this.createLoadMoreTreeItem(issues.length) : undefined;
-			const sortedIssues = sortIssuesByUpdatedDesc(issues);
-			const relevantIssues = showingAssigned
-				? filterIssuesRelatedToUser(sortedIssues, authInfo).filter(
+			const scopedIssues = showingAssigned
+				? filterIssuesRelatedToUser(issues, authInfo).filter(
 						(issue) => determineStatusCategory(issue.statusName) !== 'done'
 				  )
 				: showingUnassigned
-				? sortedIssues.filter((issue) => this.isUnassignedIssue(issue))
-				: sortedIssues;
+				? issues.filter((issue) => this.isUnassignedIssue(issue))
+				: issues;
+			const relevantIssues = this.sortIssuesForDisplay(scopedIssues);
 			if (relevantIssues.length === 0) {
 				const baseDescription = showingAssigned
 					? `${projectLabel} • assigned to me`
@@ -504,5 +524,40 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			return count === 1 ? '1 in-progress issue (unassigned)' : `${count} in-progress issues (unassigned)`;
 		}
 		return count === 1 ? '1 in-progress issue' : `${count} in-progress issues`;
+	}
+
+	private sortIssuesForDisplay(issues: JiraIssue[]): JiraIssue[] {
+		if (this.sortMode === 'alphabetical') {
+			return [...issues].sort((a, b) => {
+				const primary = (a.summary || '').localeCompare(b.summary || '', undefined, {
+					sensitivity: 'base',
+					numeric: true,
+				});
+				if (primary !== 0) {
+					return primary;
+				}
+				return (a.key || '').localeCompare(b.key || '', undefined, {
+					sensitivity: 'base',
+					numeric: true,
+				});
+			});
+		}
+		if (this.sortMode === 'lastUpdate') {
+			return [...issues].sort((a, b) => this.getIssueUpdatedTimestamp(b) - this.getIssueUpdatedTimestamp(a));
+		}
+		return [...issues].sort((a, b) => this.getIssueCreatedTimestamp(b) - this.getIssueCreatedTimestamp(a));
+	}
+
+	private getIssueUpdatedTimestamp(issue: JiraIssue): number {
+		const parsed = issue.updated ? Date.parse(issue.updated) : NaN;
+		return Number.isNaN(parsed) ? 0 : parsed;
+	}
+
+	private getIssueCreatedTimestamp(issue: JiraIssue): number {
+		const parsed = issue.created ? Date.parse(issue.created) : NaN;
+		if (!Number.isNaN(parsed)) {
+			return parsed;
+		}
+		return this.getIssueUpdatedTimestamp(issue);
 	}
 }

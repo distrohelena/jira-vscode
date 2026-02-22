@@ -134,6 +134,21 @@
                 "category": "Jira"
             },
             {
+                "command": "jira.sortItemsByDate",
+                "title": "Sort Items: Date",
+                "category": "Jira"
+            },
+            {
+                "command": "jira.sortItemsByLastUpdate",
+                "title": "Sort Items: Last Update",
+                "category": "Jira"
+            },
+            {
+                "command": "jira.sortItemsByAlphabetical",
+                "title": "Sort Items: Alphabetically",
+                "category": "Jira"
+            },
+            {
                 "command": "jira.openIssueDetails",
                 "title": "Jira: Open Issue Details"
             },
@@ -155,6 +170,10 @@
             {
                 "id": "jiraItemsGroupBy",
                 "label": "Group By"
+            },
+            {
+                "id": "jiraItemsSortBy",
+                "label": "Sort By"
             }
         ],
         "menus": {
@@ -227,6 +246,16 @@
                     "group": "navigation@9"
                 },
                 {
+                    "submenu": "jiraItemsSortBy",
+                    "when": "view == jiraItemsView",
+                    "group": "navigation@10"
+                },
+                {
+                    "submenu": "jiraItemsSortBy",
+                    "when": "view == jiraItemsView && viewItem == view",
+                    "group": "navigation@10"
+                },
+                {
                     "command": "jira.addProjectFavorite",
                     "when": "view == jiraProjectsView && viewItem == jiraProject",
                     "group": "navigation@2"
@@ -255,6 +284,26 @@
                     "when": "view == jiraItemsView",
                     "toggled": "jiraItemsGroupMode == 'type'",
                     "group": "3_type"
+                }
+            ],
+            "jiraItemsSortBy": [
+                {
+                    "command": "jira.sortItemsByDate",
+                    "when": "view == jiraItemsView",
+                    "toggled": "jiraItemsSortMode == 'date'",
+                    "group": "1_date"
+                },
+                {
+                    "command": "jira.sortItemsByLastUpdate",
+                    "when": "view == jiraItemsView",
+                    "toggled": "jiraItemsSortMode == 'lastUpdate'",
+                    "group": "2_lastUpdate"
+                },
+                {
+                    "command": "jira.sortItemsByAlphabetical",
+                    "when": "view == jiraItemsView",
+                    "toggled": "jiraItemsSortMode == 'alphabetical'",
+                    "group": "3_alpha"
                 }
             ]
         },

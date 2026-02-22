@@ -994,6 +994,7 @@ function mapIssue(issue: any, urlRoot: string): JiraIssue {
 		key: issue?.key,
 		summary: fields?.summary ?? 'Untitled',
 		statusName: fields?.status?.name ?? 'Unknown',
+		created: fields?.created ?? undefined,
 		issueTypeId,
 		issueTypeName,
 		assigneeName: fields?.assignee?.displayName ?? fields?.assignee?.name ?? undefined,

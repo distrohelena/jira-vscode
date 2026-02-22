@@ -24,6 +24,7 @@ export type JiraIssue = {
 	key: string;
 	summary: string;
 	statusName: string;
+	created?: string;
 	issueTypeId?: string;
 	issueTypeName?: string;
 	assigneeName?: string;
@@ -157,6 +158,7 @@ export type SelectedProjectInfo = {
 export type ProjectsViewMode = 'recent' | 'all' | 'favorites';
 export type ItemsViewMode = 'assigned' | 'all' | 'unassigned';
 export type ItemsGroupMode = 'none' | 'status' | 'type';
+export type ItemsSortMode = 'date' | 'lastUpdate' | 'alphabetical';
 
 export type JiraProfileResponse = {
 	displayName?: string;
