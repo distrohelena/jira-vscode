@@ -9,7 +9,6 @@ import {
 	JiraIssue,
 	JiraIssueComment,
 	JiraRelatedIssue,
-	JiraCommentFormat,
 	SelectedProjectInfo,
 } from '../../model/types';
 import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../../model/constants';
@@ -95,11 +94,17 @@ function renderIssueDetailsHtml(
 	const childrenSection = errorMessage ? '' : renderChildrenSection(issue);
 	const cspSource = webview.cspSource;
 	const metadataPanel = renderMetadataPanel(issue, assignee, updatedText, options);
-	const statusIconMarkup = statusIconSrc
-		? `<img class="status-icon" src="${escapeAttribute(statusIconSrc)}" alt="${escapeHtml(
-				issue.statusName ?? 'Issue status'
-		  )} status icon" />`
-		: '';
+	const issueTypeLabel = (issue.issueTypeName?.trim() || 'Issue').toUpperCase();
+	const statusIconMarkup = `<div class="ticket-icon-block">
+		${
+			statusIconSrc
+				? `<img class="status-icon" src="${escapeAttribute(statusIconSrc)}" alt="${escapeHtml(
+						issue.statusName ?? 'Issue status'
+				  )} status icon" />`
+				: ''
+		}
+		<div class="ticket-type-label">${escapeHtml(issueTypeLabel)}</div>
+	</div>`;
 	let messageBanner = '';
 	if (errorMessage) {
 		messageBanner = `<div class="section error-banner">${escapeHtml(errorMessage)}</div>`;
@@ -150,6 +155,24 @@ function renderIssueDetailsHtml(
 		flex-shrink: 0;
 		margin-top: 4px;
 		}
+	.ticket-icon-block {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		flex-shrink: 0;
+		min-width: 56px;
+	}
+	.ticket-type-label {
+		margin-top: 4px;
+		font-size: 10px;
+		line-height: 1.2;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--vscode-descriptionForeground);
+		text-align: center;
+		white-space: nowrap;
+	}
 		h1 {
 			margin-top: 0;
 			font-size: 2em;
@@ -639,7 +662,6 @@ function renderIssueDetailsHtml(
 			const commentForm = document.querySelector('.comment-form');
 			if (commentForm) {
 				const textarea = commentForm.querySelector('.comment-input');
-				const formatSelect = commentForm.querySelector('.comment-format-select');
 				const submitButton = commentForm.querySelector('.comment-submit');
 				const errorEl = commentForm.querySelector('.comment-error');
 				const updateSubmitState = () => {
@@ -659,17 +681,12 @@ function renderIssueDetailsHtml(
 						}
 					});
 				}
-				if (formatSelect) {
-					formatSelect.addEventListener('change', () => {
-						vscode.postMessage({ type: 'changeCommentFormat', format: formatSelect.value });
-					});
-				}
 				commentForm.addEventListener('submit', (event) => {
 					event.preventDefault();
-					if (!textarea || !formatSelect || !submitButton || submitButton.disabled) {
+					if (!textarea || !submitButton || submitButton.disabled) {
 						return;
 					}
-					vscode.postMessage({ type: 'addComment', body: textarea.value, format: formatSelect.value });
+					vscode.postMessage({ type: 'addComment', body: textarea.value, format: 'wiki' });
 				});
 				updateSubmitState();
 			}
@@ -849,6 +866,7 @@ function renderCreateIssuePanelHtml(
 \t\t.assignee-actions {
 \t\t\tdisplay: flex;
 \t\t\tjustify-content: flex-start;
+\t\t\twidth: 100%;
 \t\t}
 \t\t.jira-create-assign-me {
 \t\t\tpadding: 6px 12px;
@@ -857,7 +875,8 @@ function renderCreateIssuePanelHtml(
 \t\t\tbackground: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
 \t\t\tcolor: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
 \t\t\tcursor: pointer;
-\t\t\tmin-width: 110px;
+\t\t\tmin-width: 0;
+\t\t\twidth: 100%;
 \t\t}
 \t\t.jira-create-assign-me:disabled {
 \t\t\topacity: 0.6;
@@ -1323,7 +1342,6 @@ function renderCommentItem(comment: JiraIssueComment, options?: IssuePanelOption
 function renderCommentForm(options?: IssuePanelOptions): string {
 	const pending = options?.commentSubmitPending ?? false;
 	const draftValue = options?.commentDraft ?? '';
-	const format: JiraCommentFormat = options?.commentFormat === 'plain' ? 'plain' : 'wiki';
 	const hasText = draftValue.trim().length > 0;
 	const buttonDisabled = pending || !hasText;
 	const buttonLabel = pending ? 'Adding…' : 'Add comment';
@@ -1334,16 +1352,8 @@ function renderCommentForm(options?: IssuePanelOptions): string {
 		<label class="section-title" for="comment-input">Add a comment</label>
 		<textarea id="comment-input" class="comment-input" ${pending ? 'disabled' : ''} placeholder="Share updates or blockers">${escapeHtml(draftValue)}</textarea>
 		<div class="comment-controls">
-			<label class="comment-select-label">
-				Format
-				<select class="comment-format-select" ${pending ? 'disabled' : ''}>
-					<option value="wiki" ${format === 'wiki' ? 'selected' : ''}>Jira wiki (full formatting)</option>
-					<option value="plain" ${format === 'plain' ? 'selected' : ''}>Plain text</option>
-				</select>
-			</label>
 			<button type="submit" class="comment-submit" ${buttonDisabled ? 'disabled' : ''}>${escapeHtml(buttonLabel)}</button>
 		</div>
-		<div class="muted comment-helper">All Jira formatting is supported when using the Jira wiki option.</div>
 		${errorMarkup}
 	</form>`;
 }
