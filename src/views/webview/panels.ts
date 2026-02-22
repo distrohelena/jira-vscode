@@ -118,6 +118,24 @@ function renderIssueDetailsHtml(
 	</div>`
 			: '';
 	const commentsSection = renderCommentsSection(options);
+	const richTextEditorStyles = renderRichTextEditorStyles();
+	const richTextEditorBootstrapScript = renderRichTextEditorBootstrapScript();
+	const summaryText = issue.summary ?? 'Loading issue details…';
+	const summaryValue = issue.summary ?? '';
+	const summaryEditPending = options?.summaryEditPending ?? false;
+	const summaryEditError = options?.summaryEditError;
+	const summaryEditDisabled = isLoading || !!errorMessage || summaryEditPending;
+	const summaryEditDisabledAttr = summaryEditDisabled ? 'disabled' : '';
+	const summaryBlockClasses = ['issue-summary-block'];
+	if (summaryEditPending) {
+		summaryBlockClasses.push('summary-edit-pending');
+	}
+	if (summaryEditDisabled) {
+		summaryBlockClasses.push('summary-edit-disabled');
+	}
+	const summaryErrorMarkup = summaryEditError
+		? `<div class="status-error issue-summary-error">${escapeHtml(summaryEditError)}</div>`
+		: '';
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -182,6 +200,91 @@ function renderIssueDetailsHtml(
 		font-size: 1.1em;
 		margin-top: 0;
 		margin-bottom: 24px;
+	}
+	.issue-summary-block {
+		position: relative;
+		max-width: 100%;
+	}
+	.issue-summary-block .issue-summary {
+		margin-bottom: 6px;
+	}
+	.issue-summary-block .jira-summary-display {
+		cursor: text;
+		border-radius: 4px;
+		padding: 2px 4px;
+		margin-left: -4px;
+		margin-right: -4px;
+		transition: background-color 120ms ease-in-out;
+	}
+	.issue-summary-block.selection-ready .jira-summary-display {
+		background: var(--vscode-editor-selectionBackground, rgba(127,127,127,0.24));
+	}
+	.jira-summary-preview {
+		display: none;
+		font-size: 0.85em;
+		color: var(--vscode-descriptionForeground);
+		padding: 3px 8px;
+		border: 1px dashed var(--vscode-panel-border, rgba(255,255,255,0.22));
+		border-radius: 4px;
+		width: fit-content;
+		user-select: none;
+		cursor: pointer;
+	}
+	.issue-summary-block.selection-ready .jira-summary-preview {
+		display: inline-block;
+	}
+	.jira-summary-editor {
+		display: none;
+		flex-direction: column;
+		gap: 8px;
+		margin-bottom: 12px;
+	}
+	.issue-summary-block.editor-open .jira-summary-editor {
+		display: flex;
+	}
+	.issue-summary-block.editor-open .jira-summary-display,
+	.issue-summary-block.editor-open .jira-summary-preview {
+		display: none;
+	}
+	.jira-summary-input {
+		width: 100%;
+		background: var(--vscode-input-background);
+		color: var(--vscode-input-foreground);
+		border: 1px solid var(--vscode-input-border);
+		border-radius: 4px;
+		padding: 6px 10px;
+		font-size: 1em;
+	}
+	.jira-summary-actions {
+		display: flex;
+		gap: 8px;
+	}
+	.jira-summary-save,
+	.jira-summary-cancel {
+		border-radius: 4px;
+		border: 1px solid var(--vscode-button-secondaryBorder, transparent);
+		background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+		color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+		padding: 6px 12px;
+		cursor: pointer;
+		font-size: 0.9em;
+	}
+	.jira-summary-save:disabled,
+	.jira-summary-cancel:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+	.summary-edit-pending .jira-summary-preview {
+		display: inline-block;
+	}
+	.summary-edit-pending .jira-summary-preview::before {
+		content: 'Saving title...';
+	}
+	.summary-edit-pending .jira-summary-preview span {
+		display: none;
+	}
+	.issue-summary-error {
+		margin-bottom: 10px;
 	}
 .issue-actions {
 	display: flex;
@@ -323,7 +426,7 @@ function renderIssueDetailsHtml(
 		flex-direction: column;
 		gap: 12px;
 	}
-	.comment-form textarea {
+	.comment-form .jira-rich-editor-input {
 		min-height: 120px;
 		resize: vertical;
 	}
@@ -508,6 +611,7 @@ function renderIssueDetailsHtml(
 				color: var(--vscode-errorForeground);
 				font-size: 0.9em;
 			}
+			${richTextEditorStyles}
 			@media (max-width: 900px) {
 				.issue-layout {
 					grid-template-columns: 1fr;
@@ -523,7 +627,22 @@ function renderIssueDetailsHtml(
 					${statusIconMarkup}
 					<div>
 						<h1>${escapeHtml(issue.key)}</h1>
-						<p class="issue-summary">${escapeHtml(issue.summary ?? 'Loading issue details…')}</p>
+						<div class="${summaryBlockClasses.join(' ')}" data-issue-key="${escapeAttribute(
+							issue.key
+						)}" data-summary-edit-disabled="${summaryEditDisabled ? 'true' : 'false'}">
+							<p class="issue-summary jira-summary-display">${escapeHtml(summaryText)}</p>
+							<div class="jira-summary-preview"><span>Select title text, then click to edit</span></div>
+							<form class="jira-summary-editor">
+								<input type="text" class="jira-summary-input" value="${escapeAttribute(
+									summaryValue
+								)}" ${summaryEditDisabledAttr} />
+								<div class="jira-summary-actions">
+									<button type="submit" class="jira-summary-save" ${summaryEditDisabledAttr}>Save</button>
+									<button type="button" class="jira-summary-cancel" ${summaryEditDisabledAttr}>Cancel</button>
+								</div>
+							</form>
+							${summaryErrorMarkup}
+						</div>
 					</div>
 				</div>
 				<div class="issue-actions">
@@ -544,6 +663,110 @@ function renderIssueDetailsHtml(
 		<script nonce="${nonce}">
 			(function () {
 				const vscode = acquireVsCodeApi();
+				${richTextEditorBootstrapScript}
+				initializeJiraRichTextEditors(document);
+				const summaryBlock = document.querySelector('.issue-summary-block');
+				if (summaryBlock) {
+					const summaryDisplay = summaryBlock.querySelector('.jira-summary-display');
+					const summaryPreview = summaryBlock.querySelector('.jira-summary-preview');
+					const summaryEditor = summaryBlock.querySelector('.jira-summary-editor');
+					const summaryInput = summaryBlock.querySelector('.jira-summary-input');
+					const summaryCancel = summaryBlock.querySelector('.jira-summary-cancel');
+					const issueKey = summaryBlock.getAttribute('data-issue-key');
+					const editDisabled = summaryBlock.getAttribute('data-summary-edit-disabled') === 'true';
+					const openSummaryEditor = () => {
+						if (
+							editDisabled ||
+							!summaryEditor ||
+							!summaryInput ||
+							summaryBlock.classList.contains('summary-edit-pending')
+						) {
+							return;
+						}
+						summaryBlock.classList.add('editor-open');
+						summaryBlock.classList.remove('selection-ready');
+						summaryInput.focus();
+						summaryInput.select();
+					};
+					const closeSummaryEditor = () => {
+						if (!summaryEditor || !summaryInput || !summaryDisplay) {
+							return;
+						}
+						summaryInput.value = summaryDisplay.textContent || '';
+						summaryBlock.classList.remove('editor-open');
+					};
+					const updateSelectionPreview = () => {
+						if (
+							!summaryDisplay ||
+							!summaryPreview ||
+							editDisabled ||
+							summaryBlock.classList.contains('editor-open')
+						) {
+							return;
+						}
+						const selection = window.getSelection();
+						const selectedText = selection ? selection.toString().trim() : '';
+						const anchorInside =
+							!!selection?.anchorNode && summaryDisplay.contains(selection.anchorNode);
+						const focusInside =
+							!!selection?.focusNode && summaryDisplay.contains(selection.focusNode);
+						const selectionInsideSummary = selectedText.length > 0 && anchorInside && focusInside;
+						summaryBlock.classList.toggle('selection-ready', selectionInsideSummary);
+					};
+					if (summaryDisplay) {
+						summaryDisplay.addEventListener('mousedown', (event) => {
+							if (summaryBlock.classList.contains('selection-ready')) {
+								event.preventDefault();
+								openSummaryEditor();
+							}
+						});
+						summaryDisplay.addEventListener('click', () => {
+							if (summaryBlock.classList.contains('selection-ready')) {
+								openSummaryEditor();
+							}
+						});
+					}
+					if (summaryPreview) {
+						summaryPreview.addEventListener('click', () => {
+							openSummaryEditor();
+						});
+					}
+					document.addEventListener('selectionchange', updateSelectionPreview);
+					if (summaryEditor && summaryInput && issueKey) {
+						summaryEditor.addEventListener('submit', (event) => {
+							event.preventDefault();
+							const nextSummary = summaryInput.value.trim();
+							if (!nextSummary) {
+								return;
+							}
+							if (nextSummary === (summaryDisplay?.textContent || '').trim()) {
+								closeSummaryEditor();
+								return;
+							}
+							summaryBlock.classList.remove('selection-ready');
+							summaryBlock.classList.add('summary-edit-pending');
+							const buttons = summaryEditor.querySelectorAll('button');
+							buttons.forEach((button) => {
+								button.disabled = true;
+							});
+							summaryInput.disabled = true;
+							vscode.postMessage({ type: 'updateSummary', issueKey, summary: nextSummary });
+						});
+					}
+					if (summaryCancel) {
+						summaryCancel.addEventListener('click', () => {
+							closeSummaryEditor();
+						});
+					}
+					if (summaryInput) {
+						summaryInput.addEventListener('keydown', (event) => {
+							if (event.key === 'Escape') {
+								event.preventDefault();
+								closeSummaryEditor();
+							}
+						});
+					}
+				}
 				document.querySelectorAll('.issue-link').forEach((el) => {
 					el.addEventListener('click', () => {
 					const key = el.getAttribute('data-issue-key');
@@ -745,6 +968,8 @@ function renderCreateIssuePanelHtml(
 	const defaultStatusAttr = escapeAttribute(defaultStatus);
 	const statusPending = state.statusPending ?? false;
 	const statusError = state.statusError;
+	const richTextEditorStyles = renderRichTextEditorStyles();
+	const richTextEditorBootstrapScript = renderRichTextEditorBootstrapScript();
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -966,6 +1191,7 @@ function renderCreateIssuePanelHtml(
 \t\t\tcolor: var(--vscode-errorForeground);
 \t\t\tfont-size: 0.9em;
 \t\t}
+\t\t${richTextEditorStyles}
 \t\ta {
 \t\t\tcolor: var(--vscode-textLink-foreground);
 \t\t\ttext-decoration: none;
@@ -1000,9 +1226,16 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t<div class="form-field">
 \t\t\t\t\t<label>
 \t\t\t\t\t\t<span class="section-title">Description</span>
-\t\t\t\t\t\t<textarea name="description" placeholder="What needs to be done?" ${disabledAttr}>${escapeHtml(
-							values.description
-						)}</textarea>
+\t\t\t\t\t\t${renderRichTextEditor({
+							editorId: 'create-description-input',
+							name: 'description',
+							value: values.description,
+							placeholder: 'What needs to be done?',
+							disabled: !!state.submitting,
+							minRows: 8,
+							inputClassName: 'create-description-input',
+							ariaLabel: 'Description',
+						})}
 \t\t\t\t\t</label>
 \t\t\t\t</div>
 \t\t\t</div>
@@ -1049,6 +1282,8 @@ function renderCreateIssuePanelHtml(
 \t<script nonce="${nonce}">
 \t\t(function () {
 \t\t\tconst vscode = acquireVsCodeApi();
+\t\t\t${richTextEditorBootstrapScript}
+\t\t\tinitializeJiraRichTextEditors(document);
 \t\t\tconst form = document.getElementById('create-issue-form');
 \t\t\tconst searchInput = document.querySelector('.jira-create-assignee-search');
 \t\t\tconst select = document.querySelector('.jira-create-assignee-select');
@@ -1273,6 +1508,186 @@ function renderDescriptionSection(issue: JiraIssue): string {
 	</div>`;
 }
 
+type RichTextEditorRenderOptions = {
+	editorId: string;
+	name?: string;
+	value: string;
+	placeholder: string;
+	disabled?: boolean;
+	minRows?: number;
+	inputClassName?: string;
+	editorClassName?: string;
+	ariaLabel?: string;
+};
+
+function renderRichTextEditor(options: RichTextEditorRenderOptions): string {
+	const disabledAttr = options.disabled ? 'disabled' : '';
+	const wrapperClasses = ['jira-rich-editor'];
+	if (options.editorClassName) {
+		wrapperClasses.push(options.editorClassName);
+	}
+	const inputClasses = ['jira-rich-editor-input'];
+	if (options.inputClassName) {
+		inputClasses.push(options.inputClassName);
+	}
+	const nameAttr = options.name ? `name="${escapeAttribute(options.name)}"` : '';
+	const rows = Math.max(3, options.minRows ?? 6);
+	const label = options.ariaLabel ?? 'Rich text input';
+	return `<div class="${wrapperClasses.join(' ')}" data-disabled="${options.disabled ? 'true' : 'false'}">
+		<div class="jira-rich-editor-toolbar" role="toolbar" aria-label="${escapeAttribute(label)} formatting">
+			<button type="button" class="jira-rich-editor-action" data-action="bold" title="Bold (*text*)" ${disabledAttr}>B</button>
+			<button type="button" class="jira-rich-editor-action" data-action="italic" title="Italic (_text_)" ${disabledAttr}>I</button>
+			<button type="button" class="jira-rich-editor-action" data-action="strike" title="Strike (-text-)" ${disabledAttr}>S</button>
+			<button type="button" class="jira-rich-editor-action" data-action="code" title="Inline code ({{code}})" ${disabledAttr}>{ }</button>
+			<button type="button" class="jira-rich-editor-action" data-action="h2" title="Heading (h2.)" ${disabledAttr}>H2</button>
+			<button type="button" class="jira-rich-editor-action" data-action="bullet" title="Bulleted list (* )" ${disabledAttr}>• List</button>
+			<button type="button" class="jira-rich-editor-action" data-action="number" title="Numbered list (# )" ${disabledAttr}>1. List</button>
+			<button type="button" class="jira-rich-editor-action" data-action="quote" title="Quote (bq.)" ${disabledAttr}>Quote</button>
+			<button type="button" class="jira-rich-editor-action" data-action="codeblock" title="Code block ({code})" ${disabledAttr}>Code</button>
+			<button type="button" class="jira-rich-editor-action" data-action="link" title="Link ([text|url])" ${disabledAttr}>Link</button>
+		</div>
+		<textarea id="${escapeAttribute(options.editorId)}" class="${inputClasses.join(' ')}" ${nameAttr} rows="${rows}" placeholder="${escapeAttribute(
+			options.placeholder
+		)}" ${disabledAttr}>${escapeHtml(options.value)}</textarea>
+	</div>`;
+}
+
+function renderRichTextEditorStyles(): string {
+	return `
+	.jira-rich-editor {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.jira-rich-editor-toolbar {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.jira-rich-editor-action {
+		border-radius: 4px;
+		border: 1px solid var(--vscode-button-secondaryBorder, transparent);
+		background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+		color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+		padding: 4px 8px;
+		cursor: pointer;
+		font-size: 0.85em;
+		line-height: 1.2;
+	}
+	.jira-rich-editor-action:hover:not(:disabled) {
+		background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
+	}
+	.jira-rich-editor-action:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+	.jira-rich-editor-input {
+		width: 100%;
+	}
+	`;
+}
+
+function renderRichTextEditorBootstrapScript(): string {
+	return `
+				const wrapEditorSelection = (input, prefix, suffix, placeholder) => {
+					if (!input || input.disabled) {
+						return;
+					}
+					const start = input.selectionStart ?? 0;
+					const end = input.selectionEnd ?? start;
+					const value = input.value || '';
+					const selected = value.slice(start, end);
+					const baseText = selected || placeholder;
+					const next = value.slice(0, start) + prefix + baseText + suffix + value.slice(end);
+					input.value = next;
+					const cursorStart = start + prefix.length;
+					const cursorEnd = cursorStart + baseText.length;
+					input.setSelectionRange(cursorStart, cursorEnd);
+					input.dispatchEvent(new Event('input', { bubbles: true }));
+				};
+
+				const prefixEditorLines = (input, prefix, placeholder) => {
+					if (!input || input.disabled) {
+						return;
+					}
+					const start = input.selectionStart ?? 0;
+					const end = input.selectionEnd ?? start;
+					const value = input.value || '';
+					if (start === end) {
+						const next = value.slice(0, start) + prefix + placeholder + value.slice(end);
+						input.value = next;
+						const cursorStart = start + prefix.length;
+						const cursorEnd = cursorStart + placeholder.length;
+						input.setSelectionRange(cursorStart, cursorEnd);
+						input.dispatchEvent(new Event('input', { bubbles: true }));
+						return;
+					}
+					const lineStart = value.lastIndexOf('\\n', start - 1) + 1;
+					const lineEndIndex = value.indexOf('\\n', end);
+					const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
+					const selectedLines = value.slice(lineStart, lineEnd);
+					const prefixedLines = selectedLines
+						.split('\\n')
+						.map((line) => (line.trim().length > 0 ? prefix + line : prefix.trim()))
+						.join('\\n');
+					input.value = value.slice(0, lineStart) + prefixedLines + value.slice(lineEnd);
+					input.setSelectionRange(lineStart, lineStart + prefixedLines.length);
+					input.dispatchEvent(new Event('input', { bubbles: true }));
+				};
+
+				const wrapEditorBlock = (input, prefix, suffix, placeholder) => {
+					if (!input || input.disabled) {
+						return;
+					}
+					const start = input.selectionStart ?? 0;
+					const end = input.selectionEnd ?? start;
+					const value = input.value || '';
+					const selected = value.slice(start, end) || placeholder;
+					const next = value.slice(0, start) + prefix + selected + suffix + value.slice(end);
+					input.value = next;
+					const cursorStart = start + prefix.length;
+					const cursorEnd = cursorStart + selected.length;
+					input.setSelectionRange(cursorStart, cursorEnd);
+					input.dispatchEvent(new Event('input', { bubbles: true }));
+				};
+
+				const editorActionHandlers = {
+					bold: (input) => wrapEditorSelection(input, '*', '*', 'bold text'),
+					italic: (input) => wrapEditorSelection(input, '_', '_', 'italic text'),
+					strike: (input) => wrapEditorSelection(input, '-', '-', 'struck text'),
+					code: (input) => wrapEditorSelection(input, '{{', '}}', 'code'),
+					h2: (input) => prefixEditorLines(input, 'h2. ', 'Heading'),
+					bullet: (input) => prefixEditorLines(input, '* ', 'List item'),
+					number: (input) => prefixEditorLines(input, '# ', 'List item'),
+					quote: (input) => prefixEditorLines(input, 'bq. ', 'Quoted text'),
+					codeblock: (input) => wrapEditorBlock(input, '{code}\\n', '\\n{code}', 'code block'),
+					link: (input) => wrapEditorSelection(input, '[', '|https://example.com]','link text'),
+				};
+
+				const initializeJiraRichTextEditors = (root) => {
+					const editorNodes = Array.from((root || document).querySelectorAll('.jira-rich-editor'));
+					editorNodes.forEach((editor) => {
+						const input = editor.querySelector('.jira-rich-editor-input');
+						const toolbarButtons = Array.from(editor.querySelectorAll('.jira-rich-editor-action'));
+						toolbarButtons.forEach((button) => {
+							button.addEventListener('click', () => {
+								if (!input || input.disabled) {
+									return;
+								}
+								const action = button.getAttribute('data-action') || '';
+								const handler = editorActionHandlers[action];
+								if (!handler) {
+									return;
+								}
+								handler(input);
+								input.focus();
+							});
+						});
+					});
+				};
+	`;
+}
+
 function renderCommentsSection(options?: IssuePanelOptions): string {
 	const comments = options?.comments ?? [];
 	const pending = options?.commentsPending ?? false;
@@ -1350,7 +1765,16 @@ function renderCommentForm(options?: IssuePanelOptions): string {
 		: '<div class="comment-error hidden"></div>';
 	return `<form class="comment-form" data-pending="${pending ? 'true' : 'false'}">
 		<label class="section-title" for="comment-input">Add a comment</label>
-		<textarea id="comment-input" class="comment-input" ${pending ? 'disabled' : ''} placeholder="Share updates or blockers">${escapeHtml(draftValue)}</textarea>
+		${renderRichTextEditor({
+			editorId: 'comment-input',
+			value: draftValue,
+			placeholder: 'Share updates or blockers',
+			disabled: pending,
+			minRows: 6,
+			inputClassName: 'comment-input',
+			editorClassName: 'comment-editor',
+			ariaLabel: 'Comment',
+		})}
 		<div class="comment-controls">
 			<button type="submit" class="comment-submit" ${buttonDisabled ? 'disabled' : ''}>${escapeHtml(buttonLabel)}</button>
 		</div>

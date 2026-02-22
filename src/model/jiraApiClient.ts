@@ -484,6 +484,56 @@ export async function assignIssue(
 	throw lastError ?? new Error('Unable to update assignee.');
 }
 
+export async function updateIssueSummary(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string,
+	summary: string
+): Promise<void> {
+	const sanitizedKey = issueKey?.trim();
+	if (!sanitizedKey) {
+		throw new Error('Issue key is required.');
+	}
+	const trimmedSummary = summary?.trim();
+	if (!trimmedSummary) {
+		throw new Error('Issue title cannot be empty.');
+	}
+
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(sanitizedKey)}`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			await axios.put(
+				endpoint,
+				{
+					fields: {
+						summary: trimmedSummary,
+					},
+				},
+				{
+					auth: {
+						username: authInfo.username,
+						password: token,
+					},
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+						'User-Agent': 'jira-vscode',
+					},
+				}
+			);
+			return;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to update issue title.');
+}
+
 export async function fetchIssueComments(
 	authInfo: JiraAuthInfo,
 	token: string,

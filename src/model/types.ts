@@ -82,6 +82,8 @@ export type IssueAssignableUser = {
 export type IssuePanelOptions = {
 	loading?: boolean;
 	error?: string;
+	summaryEditPending?: boolean;
+	summaryEditError?: string;
 	statusOptions?: IssueStatusOption[];
 	statusPending?: boolean;
 	statusError?: string;

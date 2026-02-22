@@ -10,6 +10,7 @@ import {
 	fetchIssueDetails,
 	fetchIssueTransitions,
 	transitionIssueStatus,
+	updateIssueSummary,
 } from '../model/jiraApiClient';
 import {
 	IssueAssignableUser,
@@ -99,6 +100,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 			commentFormat: JiraCommentFormat;
 			commentDraft: string;
 			commentDeletingId?: string;
+			summaryEditPending: boolean;
+			summaryEditError?: string;
 			loadingIssue: boolean;
 		} = {
 			issue: initialIssue ?? createPlaceholderIssue(resolvedIssueKey),
@@ -114,10 +117,14 @@ export function createIssueController(deps: IssueControllerDeps) {
 			commentFormat: 'wiki',
 			commentDraft: '',
 			commentDeletingId: undefined,
+			summaryEditPending: false,
+			summaryEditError: undefined,
 			loadingIssue: true,
 		};
 
 		const buildCommentOptions = (): IssuePanelOptions => ({
+			summaryEditPending: panelState.summaryEditPending,
+			summaryEditError: panelState.summaryEditError,
 			comments: panelState.comments,
 			commentsError: panelState.commentsError,
 			commentsPending: panelState.commentsLoading,
@@ -163,6 +170,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 					await handleDeleteComment(message.commentId);
 				} else if (message?.type === 'refreshComments') {
 					await refreshComments(true);
+				} else if (message?.type === 'updateSummary' && typeof message.summary === 'string') {
+					await handleSummaryUpdate(message.summary);
 				} else if (message?.type === 'commentDraftChanged' && typeof message.value === 'string') {
 					panelState.commentDraft = message.value;
 					if (panelState.commentSubmitError) {
@@ -276,6 +285,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 						projectStatusStore.get(issueProjectKeyResolved);
 				}
 				panelState.loadingIssue = false;
+				panelState.summaryEditPending = false;
+				panelState.summaryEditError = undefined;
 				renderPanel({
 					statusOptions: panelState.transitions ?? panelState.statusPrefill,
 					statusPending: false,
@@ -466,6 +477,61 @@ export function createIssueController(deps: IssueControllerDeps) {
 					});
 				}
 				await vscode.window.showErrorMessage(`Failed to load assignable users: ${message}`);
+			}
+		}
+
+		async function handleSummaryUpdate(summary: string): Promise<void> {
+			if (disposed) {
+				return;
+			}
+
+			const trimmed = summary?.trim() ?? '';
+			if (!trimmed) {
+				panelState.summaryEditError = 'Title cannot be empty.';
+				renderPanel();
+				return;
+			}
+
+			if (trimmed === (panelState.issue.summary ?? '').trim()) {
+				panelState.summaryEditError = undefined;
+				renderPanel();
+				return;
+			}
+
+			const authInfo = await authManager.getAuthInfo();
+			const token = await authManager.getToken();
+			if (!authInfo || !token) {
+				await vscode.window.showInformationMessage('Log in to Jira to update issue title.');
+				return;
+			}
+
+			panelState.summaryEditPending = true;
+			panelState.summaryEditError = undefined;
+			renderPanel();
+
+			try {
+				await updateIssueSummary(authInfo, token, resolvedIssueKey, trimmed);
+				const updatedIssue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				if (disposed) {
+					return;
+				}
+				panelState.issue = updatedIssue;
+				panelState.summaryEditPending = false;
+				panelState.summaryEditError = undefined;
+				renderPanel({
+					statusOptions: panelState.transitions ?? panelState.statusPrefill,
+					assigneeOptions: panelState.assignableUsers,
+					assigneeQuery: panelState.assigneeQuery,
+				});
+				refreshAll();
+			} catch (error) {
+				const message = deriveErrorMessage(error);
+				if (!disposed) {
+					panelState.summaryEditPending = false;
+					panelState.summaryEditError = `Failed to update title: ${message}`;
+					renderPanel();
+				}
+				await vscode.window.showErrorMessage(`Failed to update title: ${message}`);
 			}
 		}
 
