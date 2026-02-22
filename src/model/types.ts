@@ -181,6 +181,7 @@ export type JiraNodeKind =
 export type FetchProjectIssuesOptions = {
 	onlyAssignedToCurrentUser?: boolean;
 	onlyUnassigned?: boolean;
+	searchQuery?: string;
 	maxResults?: number;
 	startAt?: number;
 	nextPageToken?: string;

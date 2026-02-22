@@ -9,6 +9,7 @@ export const PROJECT_FAVORITES_KEY = 'jira.projectFavorites';
 export const ITEMS_VIEW_MODE_KEY = 'jira.itemsViewMode';
 export const ITEMS_VIEW_MODE_CONTEXT = 'jiraItemsViewMode';
 export const ITEMS_SEARCH_QUERY_KEY = 'jira.itemsSearchQuery';
+export const ITEMS_REMOTE_SEARCH_QUERY_KEY = 'jira.itemsRemoteSearchQuery';
 export const ITEMS_GROUP_MODE_KEY = 'jira.itemsGroupMode';
 export const ITEMS_GROUP_MODE_CONTEXT = 'jiraItemsGroupMode';
 export const ITEMS_SORT_MODE_KEY = 'jira.itemsSortMode';

@@ -110,6 +110,12 @@
                 "icon": "$(filter)"
             },
             {
+                "command": "jira.remoteSearchItems",
+                "title": "Jira: Search Items",
+                "category": "Jira",
+                "icon": "$(search)"
+            },
+            {
                 "command": "jira.loadMoreItems",
                 "title": "Jira: Load More Items",
                 "category": "Jira"
@@ -187,6 +193,11 @@
                     "command": "jira.searchItems",
                     "when": "view == jiraItemsView",
                     "group": "navigation@1"
+                },
+                {
+                    "command": "jira.remoteSearchItems",
+                    "when": "view == jiraItemsView",
+                    "group": "navigation@1.1"
                 },
                 {
                     "command": "jira.createIssue",

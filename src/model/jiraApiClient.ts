@@ -88,6 +88,20 @@ function buildAssigneeFilterClause(authInfo: JiraAuthInfo): string | undefined {
 	return `assignee in (${uniqueEntries.join(', ')})`;
 }
 
+function buildTextSearchClause(rawQuery: string | undefined): string | undefined {
+	const query = rawQuery?.trim();
+	if (!query) {
+		return undefined;
+	}
+	const escaped = escapeJqlValue(query);
+	const keyMatch = query.match(/^([A-Za-z][A-Za-z0-9_]*)-(\d+)$/);
+	if (keyMatch) {
+		const issueKey = `${keyMatch[1].toUpperCase()}-${keyMatch[2]}`;
+		return `(key = "${escapeJqlValue(issueKey)}" OR text ~ "${escaped}")`;
+	}
+	return `text ~ "${escaped}"`;
+}
+
 export async function fetchProjectIssues(
 	authInfo: JiraAuthInfo,
 	token: string,
@@ -170,6 +184,10 @@ function buildProjectIssuesJql(
 			jqlParts.push(assigneeClause);
 		}
 		jqlParts.push('statusCategory != Done');
+	}
+	const textSearchClause = buildTextSearchClause(options?.searchQuery);
+	if (textSearchClause) {
+		jqlParts.push(textSearchClause);
 	}
 	return `${jqlParts.join(' AND ')} ORDER BY updated DESC`;
 }

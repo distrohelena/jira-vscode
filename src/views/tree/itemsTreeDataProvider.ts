@@ -7,6 +7,7 @@ import {
 	ITEMS_LOAD_BATCH_SIZE,
 	ITEMS_GROUP_MODE_CONTEXT,
 	ITEMS_GROUP_MODE_KEY,
+	ITEMS_REMOTE_SEARCH_QUERY_KEY,
 	ITEMS_SEARCH_QUERY_KEY,
 	ITEMS_SORT_MODE_CONTEXT,
 	ITEMS_SORT_MODE_KEY,
@@ -27,6 +28,7 @@ import { JiraTreeItem, createIssueTreeItem, deriveIssueIcon } from './treeItems'
 export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private viewMode: ItemsViewMode;
 	private searchQuery: string;
+	private remoteSearchQuery: string;
 	private groupMode: ItemsGroupMode;
 	private sortMode: ItemsSortMode;
 	private forceRemoteReload = true;
@@ -34,6 +36,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private issueCache?: {
 		projectKey: string;
 		viewMode: ItemsViewMode;
+		remoteSearchQuery: string;
 		issues: JiraIssue[];
 		hasMore: boolean;
 		nextStartAt?: number;
@@ -59,6 +62,9 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			storedSort === 'alphabetical' || storedSort === 'lastUpdate' ? storedSort : 'date';
 		const storedSearch = this.extensionContext.workspaceState.get<string>(ITEMS_SEARCH_QUERY_KEY) ?? '';
 		this.searchQuery = storedSearch.trim();
+		const storedRemoteSearch =
+			this.extensionContext.workspaceState.get<string>(ITEMS_REMOTE_SEARCH_QUERY_KEY) ?? '';
+		this.remoteSearchQuery = storedRemoteSearch.trim();
 		void this.updateViewModeContext();
 		void this.updateGroupModeContext();
 		void this.updateSortModeContext();
@@ -85,6 +91,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			!this.issueCache ||
 			this.issueCache.projectKey !== selectedProject.key ||
 			this.issueCache.viewMode !== this.viewMode ||
+			this.issueCache.remoteSearchQuery !== this.remoteSearchQuery ||
 			!this.issueCache.hasMore
 		) {
 			return;
@@ -157,6 +164,38 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		this.refreshFromCache();
 	}
 
+	async openItemsSearch(): Promise<void> {
+		const selectedProject = this.focusManager.getSelectedProject();
+		if (!selectedProject) {
+			await vscode.window.showInformationMessage('Select a project before searching items.');
+			return;
+		}
+
+		const projectLabel = selectedProject.name
+			? `${selectedProject.name} (${selectedProject.key})`
+			: selectedProject.key;
+		const scopeLabel = this.viewMode === 'assigned' ? 'Assigned' : this.viewMode === 'unassigned' ? 'Unassigned' : 'All';
+		const input = await vscode.window.showInputBox({
+			title: projectLabel ? `Search ${scopeLabel} Items (${projectLabel})` : `Search ${scopeLabel} Items`,
+			placeHolder: 'Search Jira using JQL text search (server-side)',
+			prompt: 'Leave empty to clear search.',
+			value: this.remoteSearchQuery,
+			ignoreFocusOut: true,
+		});
+		if (input === undefined) {
+			return;
+		}
+
+		const trimmed = input.trim();
+		if (trimmed === this.remoteSearchQuery) {
+			return;
+		}
+		this.pendingLoadMore = false;
+		this.remoteSearchQuery = trimmed;
+		await this.extensionContext.workspaceState.update(ITEMS_REMOTE_SEARCH_QUERY_KEY, trimmed);
+		this.refresh();
+	}
+
 	protected getSectionChildren(authInfo: JiraAuthInfo): Promise<JiraTreeItem[]> {
 		return this.loadItems(authInfo);
 	}
@@ -201,11 +240,13 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 	private getCacheEntry(
 		projectKey: string,
-		viewMode: ItemsViewMode
+		viewMode: ItemsViewMode,
+		remoteSearchQuery: string
 	):
 		| {
 				projectKey: string;
 				viewMode: ItemsViewMode;
+				remoteSearchQuery: string;
 				issues: JiraIssue[];
 				hasMore: boolean;
 				nextStartAt?: number;
@@ -215,7 +256,9 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		if (!this.issueCache) {
 			return undefined;
 		}
-		return this.issueCache.projectKey === projectKey && this.issueCache.viewMode === viewMode
+		return this.issueCache.projectKey === projectKey &&
+			this.issueCache.viewMode === viewMode &&
+			this.issueCache.remoteSearchQuery === remoteSearchQuery
 			? this.issueCache
 			: undefined;
 	}
@@ -255,13 +298,14 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		const showingAssigned = this.viewMode === 'assigned';
 		const showingUnassigned = this.viewMode === 'unassigned';
 		const showingScopedItems = showingAssigned || showingUnassigned;
+		const hasRemoteSearch = this.remoteSearchQuery.length > 0;
 		const scopeLabel: 'assigned' | 'unassigned' = showingUnassigned ? 'unassigned' : 'assigned';
 		const searchNode = showingScopedItems ? this.createSearchTreeItem(projectLabel, scopeLabel) : undefined;
 		const prependSearchNode = (items: JiraTreeItem[]): JiraTreeItem[] =>
 			searchNode ? [searchNode, ...items] : items;
 
 		try {
-			const cacheEntry = this.getCacheEntry(selectedProject.key, this.viewMode);
+			const cacheEntry = this.getCacheEntry(selectedProject.key, this.viewMode, this.remoteSearchQuery);
 			const shouldLoadMore = !!(this.pendingLoadMore && cacheEntry && cacheEntry.hasMore);
 			const shouldUseCache = !this.forceRemoteReload && !!cacheEntry && !shouldLoadMore;
 			let issues: JiraIssue[];
@@ -278,6 +322,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				const page = await fetchProjectIssuesPage(authInfo, token, selectedProject.key, {
 					onlyAssignedToCurrentUser: showingAssigned,
 					onlyUnassigned: showingUnassigned,
+					searchQuery: this.remoteSearchQuery || undefined,
 					maxResults: ITEMS_LOAD_BATCH_SIZE,
 					startAt: shouldLoadMore ? cacheEntry?.nextStartAt : undefined,
 					nextPageToken: shouldLoadMore ? cacheEntry?.nextPageToken : undefined,
@@ -289,6 +334,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				this.issueCache = {
 					projectKey: selectedProject.key,
 					viewMode: this.viewMode,
+					remoteSearchQuery: this.remoteSearchQuery,
 					issues,
 					hasMore,
 					nextStartAt,
@@ -297,7 +343,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			}
 			this.pendingLoadMore = false;
 			this.forceRemoteReload = false;
-			const loadMoreNode = hasMore ? this.createLoadMoreTreeItem(issues.length) : undefined;
+			const loadMoreNode = hasMore ? this.createLoadMoreTreeItem(issues.length, hasRemoteSearch) : undefined;
 			const scopedIssues = showingAssigned
 				? filterIssuesRelatedToUser(issues, authInfo).filter(
 						(issue) => determineStatusCategory(issue.statusName) !== 'done'
@@ -313,13 +359,13 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 					? `${projectLabel} • unassigned`
 					: projectLabel;
 				const filtered = showingScopedItems && this.searchQuery.length > 0;
-				const tooltip = this.buildInProgressTooltip(0, filtered, this.viewMode);
+				const tooltip = this.buildInProgressTooltip(0, filtered || hasRemoteSearch, this.viewMode);
 				this.updateBadge(0, tooltip);
-				this.updateDescription(
-					showingScopedItems && this.searchQuery ? `${baseDescription} • filtered` : baseDescription
-				);
+				this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
 				const emptyMessage =
-					showingScopedItems && this.searchQuery
+					hasRemoteSearch
+						? `No items found for "${this.remoteSearchQuery}". Clear or refine the search.`
+						: showingScopedItems && this.searchQuery
 						? `No ${scopeLabel} items match "${this.searchQuery}". Clear or edit the filter to see more.`
 						: showingAssigned
 						? 'No active assigned items. Use Show All to list every issue.'
@@ -338,16 +384,20 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 			const filtered = showingScopedItems && this.searchQuery.length > 0;
 			const inProgressCount = this.countInProgressIssues(displayedIssues);
-			const tooltip = this.buildInProgressTooltip(inProgressCount, filtered, this.viewMode);
+			const tooltip = this.buildInProgressTooltip(
+				inProgressCount,
+				filtered || hasRemoteSearch,
+				this.viewMode
+			);
 			this.updateBadge(inProgressCount, tooltip);
 			if (showingAssigned) {
 				const baseDescription = `${projectLabel} • assigned to me`;
-				this.updateDescription(filtered ? `${baseDescription} • filtered` : baseDescription);
+				this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
 			} else if (showingUnassigned) {
 				const baseDescription = `${projectLabel} • unassigned`;
-				this.updateDescription(filtered ? `${baseDescription} • filtered` : baseDescription);
+				this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
 			} else {
-				this.updateDescription(projectLabel);
+				this.updateDescription(this.composeItemsDescription(projectLabel, false, hasRemoteSearch));
 			}
 
 			if (displayedIssues.length === 0) {
@@ -466,7 +516,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return item;
 	}
 
-	private createLoadMoreTreeItem(loadedCount: number): JiraTreeItem {
+	private createLoadMoreTreeItem(loadedCount: number, hasRemoteSearch: boolean): JiraTreeItem {
 		const item = new JiraTreeItem(
 			'info',
 			'Load More',
@@ -478,9 +528,22 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		);
 		item.iconPath = new vscode.ThemeIcon('chevron-down');
 		item.description = `${loadedCount} loaded`;
-		item.tooltip = `Load ${ITEMS_LOAD_BATCH_SIZE} more recent items.`;
+		item.tooltip = hasRemoteSearch
+			? `Load ${ITEMS_LOAD_BATCH_SIZE} more matching items.`
+			: `Load ${ITEMS_LOAD_BATCH_SIZE} more recent items.`;
 		item.contextValue = 'jiraItemsLoadMore';
 		return item;
+	}
+
+	private composeItemsDescription(baseDescription: string, filtered: boolean, hasRemoteSearch: boolean): string {
+		let description = baseDescription;
+		if (hasRemoteSearch) {
+			description += ` • search: ${this.remoteSearchQuery}`;
+		}
+		if (filtered) {
+			description += ' • filtered';
+		}
+		return description;
 	}
 
 	private isUnassignedIssue(issue: JiraIssue): boolean {
