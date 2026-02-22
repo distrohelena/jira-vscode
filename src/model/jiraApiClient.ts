@@ -9,6 +9,7 @@ import {
 } from './constants';
 import {
 	FetchProjectIssuesOptions,
+	FetchProjectIssuesPage,
 	IssueAssignableUser,
 	IssueStatusOption,
 	JiraApiVersion,
@@ -93,9 +94,71 @@ export async function fetchProjectIssues(
 	projectKey: string,
 	options?: FetchProjectIssuesOptions
 ): Promise<JiraIssue[]> {
+	const jql = buildProjectIssuesJql(authInfo, projectKey, options);
+	if (!jql) {
+		return [];
+	}
+
+	return searchAllJiraIssues(authInfo, token, {
+		jql,
+		maxResults: options?.maxResults ?? PROJECT_ISSUES_PAGE_SIZE,
+		startAt: options?.startAt,
+		nextPageToken: options?.nextPageToken,
+		fields: ISSUE_DETAIL_FIELDS,
+	});
+}
+
+export async function fetchProjectIssuesPage(
+	authInfo: JiraAuthInfo,
+	token: string,
+	projectKey: string,
+	options?: FetchProjectIssuesOptions
+): Promise<FetchProjectIssuesPage> {
+	const jql = buildProjectIssuesJql(authInfo, projectKey, options);
+	if (!jql) {
+		return {
+			issues: [],
+			hasMore: false,
+		};
+	}
+
+	const maxResults = options?.maxResults ?? PROJECT_ISSUES_PAGE_SIZE;
+	const page = await searchJiraIssuesPage(authInfo, token, {
+		jql,
+		maxResults,
+		startAt: options?.startAt,
+		nextPageToken: options?.nextPageToken,
+		fields: ISSUE_DETAIL_FIELDS,
+	});
+	if (page.mode === 'enhanced') {
+		const hasMore = !(page.isLast === true || !page.nextPageToken);
+		return {
+			issues: page.issues,
+			hasMore,
+			nextPageToken: hasMore ? page.nextPageToken : undefined,
+		};
+	}
+
+	const startAt = page.startAt ?? options?.startAt ?? 0;
+	const hasMore =
+		typeof page.total === 'number'
+			? startAt + page.issues.length < page.total
+			: page.issues.length >= maxResults;
+	return {
+		issues: page.issues,
+		hasMore,
+		nextStartAt: hasMore ? startAt + page.issues.length : undefined,
+	};
+}
+
+function buildProjectIssuesJql(
+	authInfo: JiraAuthInfo,
+	projectKey: string,
+	options?: FetchProjectIssuesOptions
+): string | undefined {
 	const sanitizedKey = projectKey?.trim();
 	if (!sanitizedKey) {
-		return [];
+		return undefined;
 	}
 
 	const jqlParts = [`project = ${sanitizedKey}`];
@@ -108,12 +171,7 @@ export async function fetchProjectIssues(
 		}
 		jqlParts.push('statusCategory != Done');
 	}
-	const jql = `${jqlParts.join(' AND ')} ORDER BY updated DESC`;
-	return searchAllJiraIssues(authInfo, token, {
-		jql,
-		maxResults: PROJECT_ISSUES_PAGE_SIZE,
-		fields: ISSUE_DETAIL_FIELDS,
-	});
+	return `${jqlParts.join(' AND ')} ORDER BY updated DESC`;
 }
 
 export async function fetchIssueDetails(authInfo: JiraAuthInfo, token: string, issueKey: string): Promise<JiraIssue> {
@@ -731,6 +789,8 @@ type JiraIssueSearchPage = {
 	issues: JiraIssue[];
 	mode: 'classic' | 'enhanced';
 	isLast?: boolean;
+	startAt?: number;
+	total?: number;
 	nextPageToken?: string;
 };
 
@@ -862,6 +922,8 @@ async function searchJiraIssuesPage(
 				issues: mapIssues(data, urlRoot),
 				mode: isEnhancedEndpoint ? 'enhanced' : 'classic',
 				isLast: typeof data?.isLast === 'boolean' ? data.isLast : undefined,
+				startAt: typeof data?.startAt === 'number' ? data.startAt : undefined,
+				total: typeof data?.total === 'number' ? data.total : undefined,
 				nextPageToken:
 					typeof data?.nextPageToken === 'string' && data.nextPageToken.trim().length > 0
 						? data.nextPageToken
@@ -876,13 +938,15 @@ async function searchJiraIssuesPage(
 
 			try {
 				const data = await tryGet();
-				return {
-					issues: mapIssues(data, urlRoot),
-					mode: isEnhancedEndpoint ? 'enhanced' : 'classic',
-					isLast: typeof data?.isLast === 'boolean' ? data.isLast : undefined,
-					nextPageToken:
-						typeof data?.nextPageToken === 'string' && data.nextPageToken.trim().length > 0
-							? data.nextPageToken
+					return {
+						issues: mapIssues(data, urlRoot),
+						mode: isEnhancedEndpoint ? 'enhanced' : 'classic',
+						isLast: typeof data?.isLast === 'boolean' ? data.isLast : undefined,
+						startAt: typeof data?.startAt === 'number' ? data.startAt : undefined,
+						total: typeof data?.total === 'number' ? data.total : undefined,
+						nextPageToken:
+							typeof data?.nextPageToken === 'string' && data.nextPageToken.trim().length > 0
+								? data.nextPageToken
 							: undefined,
 				};
 			} catch (getError) {

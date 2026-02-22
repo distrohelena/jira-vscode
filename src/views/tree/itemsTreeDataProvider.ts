@@ -4,13 +4,14 @@ import { JiraAuthManager } from '../../model/authManager';
 import { JiraFocusManager } from '../../model/focusManager';
 import { ProjectTransitionPrefetcher } from '../../model/projectTransitionPrefetcher';
 import {
+	ITEMS_LOAD_BATCH_SIZE,
 	ITEMS_GROUP_MODE_CONTEXT,
 	ITEMS_GROUP_MODE_KEY,
 	ITEMS_SEARCH_QUERY_KEY,
 	ITEMS_VIEW_MODE_CONTEXT,
 	ITEMS_VIEW_MODE_KEY,
 } from '../../model/constants';
-import { fetchProjectIssues } from '../../model/jiraApiClient';
+import { fetchProjectIssuesPage } from '../../model/jiraApiClient';
 import {
 	determineStatusCategory,
 	filterIssuesRelatedToUser,
@@ -27,10 +28,14 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private searchQuery: string;
 	private groupMode: ItemsGroupMode;
 	private forceRemoteReload = true;
+	private pendingLoadMore = false;
 	private issueCache?: {
 		projectKey: string;
 		viewMode: ItemsViewMode;
 		issues: JiraIssue[];
+		hasMore: boolean;
+		nextStartAt?: number;
+		nextPageToken?: string;
 	};
 
 	constructor(
@@ -63,6 +68,23 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 	async showUnassignedItems(): Promise<void> {
 		await this.setViewMode('unassigned');
+	}
+
+	async loadMoreItems(): Promise<void> {
+		const selectedProject = this.focusManager.getSelectedProject();
+		if (!selectedProject) {
+			return;
+		}
+		if (
+			!this.issueCache ||
+			this.issueCache.projectKey !== selectedProject.key ||
+			this.issueCache.viewMode !== this.viewMode ||
+			!this.issueCache.hasMore
+		) {
+			return;
+		}
+		this.pendingLoadMore = true;
+		this.refresh();
 	}
 
 	async setGroupMode(mode: ItemsGroupMode): Promise<void> {
@@ -132,6 +154,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		if (this.viewMode === mode) {
 			return;
 		}
+		this.pendingLoadMore = false;
 		this.viewMode = mode;
 		await this.extensionContext.workspaceState.update(ITEMS_VIEW_MODE_KEY, mode);
 		if (mode === 'all') {
@@ -151,22 +174,36 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	}
 
 	private refreshFromCache(): void {
+		this.pendingLoadMore = false;
 		this.forceRemoteReload = false;
 		super.refresh();
 	}
 
-	private getCachedIssues(projectKey: string, viewMode: ItemsViewMode): JiraIssue[] | undefined {
+	private getCacheEntry(
+		projectKey: string,
+		viewMode: ItemsViewMode
+	):
+		| {
+				projectKey: string;
+				viewMode: ItemsViewMode;
+				issues: JiraIssue[];
+				hasMore: boolean;
+				nextStartAt?: number;
+				nextPageToken?: string;
+		  }
+		| undefined {
 		if (!this.issueCache) {
 			return undefined;
 		}
 		return this.issueCache.projectKey === projectKey && this.issueCache.viewMode === viewMode
-			? this.issueCache.issues
+			? this.issueCache
 			: undefined;
 	}
 
 	private async loadItems(authInfo: JiraAuthInfo): Promise<JiraTreeItem[]> {
 		const token = await this.authManager.getToken();
 		if (!token) {
+			this.pendingLoadMore = false;
 			this.updateBadge();
 			this.updateDescription();
 			return [
@@ -180,6 +217,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 		const selectedProject = this.focusManager.getSelectedProject();
 		if (!selectedProject) {
+			this.pendingLoadMore = false;
 			this.updateBadge();
 			this.updateDescription('No project selected');
 			return [
@@ -203,23 +241,43 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			searchNode ? [searchNode, ...items] : items;
 
 		try {
-			const cachedIssues = this.getCachedIssues(selectedProject.key, this.viewMode);
-			const shouldUseCache = !this.forceRemoteReload && !!cachedIssues;
-			const issues =
-					shouldUseCache && cachedIssues
-						? cachedIssues
-						: await fetchProjectIssues(authInfo, token, selectedProject.key, {
-							onlyAssignedToCurrentUser: showingAssigned,
-							onlyUnassigned: showingUnassigned,
-					  });
-			if (!shouldUseCache) {
+			const cacheEntry = this.getCacheEntry(selectedProject.key, this.viewMode);
+			const shouldLoadMore = !!(this.pendingLoadMore && cacheEntry && cacheEntry.hasMore);
+			const shouldUseCache = !this.forceRemoteReload && !!cacheEntry && !shouldLoadMore;
+			let issues: JiraIssue[];
+			let hasMore = false;
+			let nextStartAt: number | undefined;
+			let nextPageToken: string | undefined;
+
+			if (shouldUseCache && cacheEntry) {
+				issues = cacheEntry.issues;
+				hasMore = cacheEntry.hasMore;
+				nextStartAt = cacheEntry.nextStartAt;
+				nextPageToken = cacheEntry.nextPageToken;
+			} else {
+				const page = await fetchProjectIssuesPage(authInfo, token, selectedProject.key, {
+					onlyAssignedToCurrentUser: showingAssigned,
+					onlyUnassigned: showingUnassigned,
+					maxResults: ITEMS_LOAD_BATCH_SIZE,
+					startAt: shouldLoadMore ? cacheEntry?.nextStartAt : undefined,
+					nextPageToken: shouldLoadMore ? cacheEntry?.nextPageToken : undefined,
+				});
+				issues = shouldLoadMore && cacheEntry ? [...cacheEntry.issues, ...page.issues] : page.issues;
+				hasMore = page.hasMore;
+				nextStartAt = page.nextStartAt;
+				nextPageToken = page.nextPageToken;
 				this.issueCache = {
 					projectKey: selectedProject.key,
 					viewMode: this.viewMode,
 					issues,
+					hasMore,
+					nextStartAt,
+					nextPageToken,
 				};
 			}
+			this.pendingLoadMore = false;
 			this.forceRemoteReload = false;
+			const loadMoreNode = hasMore ? this.createLoadMoreTreeItem(issues.length) : undefined;
 			const sortedIssues = sortIssuesByUpdatedDesc(issues);
 			const relevantIssues = showingAssigned
 				? filterIssuesRelatedToUser(sortedIssues, authInfo).filter(
@@ -248,9 +306,11 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 						: showingUnassigned
 						? 'No unassigned items in this project. Use Show All to list every issue.'
 						: 'No issues in this project.';
-				return prependSearchNode([
-					new JiraTreeItem('info', emptyMessage, vscode.TreeItemCollapsibleState.None),
-				]);
+				const nodes = [new JiraTreeItem('info', emptyMessage, vscode.TreeItemCollapsibleState.None)];
+				if (loadMoreNode) {
+					nodes.push(loadMoreNode);
+				}
+				return prependSearchNode(nodes);
 			}
 
 			this.transitionPrefetcher.prefetchIssues(selectedProject.key, relevantIssues);
@@ -272,12 +332,17 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 			if (displayedIssues.length === 0) {
 				const noMatchMessage = `No ${scopeLabel} items match "${this.searchQuery}". Clear or edit the filter to see more.`;
-				return prependSearchNode([
-					new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None),
-				]);
+				const nodes = [new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None)];
+				if (loadMoreNode) {
+					nodes.push(loadMoreNode);
+				}
+				return prependSearchNode(nodes);
 			}
 
 			const issueNodes = this.buildIssueNodes(displayedIssues);
+			if (loadMoreNode) {
+				issueNodes.push(loadMoreNode);
+			}
 			return prependSearchNode(issueNodes);
 		} catch (error) {
 			const message = deriveErrorMessage(error);
@@ -378,6 +443,23 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			? `Filtering ${scopeLabel} items${projectLabel ? ` in ${projectLabel}` : ''} by "${this.searchQuery}". Click to update or clear.`
 			: `Click to filter ${scopeLabel} items${projectLabel ? ` in ${projectLabel}` : ''}.`;
 		item.contextValue = 'jiraItemsSearch';
+		return item;
+	}
+
+	private createLoadMoreTreeItem(loadedCount: number): JiraTreeItem {
+		const item = new JiraTreeItem(
+			'info',
+			'Load More',
+			vscode.TreeItemCollapsibleState.None,
+			{
+				command: 'jira.loadMoreItems',
+				title: 'Load More Items',
+			}
+		);
+		item.iconPath = new vscode.ThemeIcon('chevron-down');
+		item.description = `${loadedCount} loaded`;
+		item.tooltip = `Load ${ITEMS_LOAD_BATCH_SIZE} more recent items.`;
+		item.contextValue = 'jiraItemsLoadMore';
 		return item;
 	}
 

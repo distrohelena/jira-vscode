@@ -135,6 +135,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('jira.searchItems', async () => {
 			await itemsProvider.openItemsFilter();
 		}),
+		vscode.commands.registerCommand('jira.loadMoreItems', async () => {
+			await itemsProvider.loadMoreItems();
+		}),
 		vscode.commands.registerCommand('jira.focusProject', async (project?: JiraProject) => {
 			const changed = await focusManager.focusProject(project);
 			const selected = focusManager.getSelectedProject();

@@ -179,6 +179,16 @@ export type JiraNodeKind =
 export type FetchProjectIssuesOptions = {
 	onlyAssignedToCurrentUser?: boolean;
 	onlyUnassigned?: boolean;
+	maxResults?: number;
+	startAt?: number;
+	nextPageToken?: string;
+};
+
+export type FetchProjectIssuesPage = {
+	issues: JiraIssue[];
+	hasMore: boolean;
+	nextStartAt?: number;
+	nextPageToken?: string;
 };
 
 export type JiraApiVersion = '3' | 'latest' | '2';

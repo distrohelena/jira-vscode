@@ -110,6 +110,11 @@
                 "icon": "$(filter)"
             },
             {
+                "command": "jira.loadMoreItems",
+                "title": "Jira: Load More Items",
+                "category": "Jira"
+            },
+            {
                 "command": "jira.createIssue",
                 "title": "+ Ticket"
             },

@@ -11,6 +11,7 @@ export const ITEMS_VIEW_MODE_CONTEXT = 'jiraItemsViewMode';
 export const ITEMS_SEARCH_QUERY_KEY = 'jira.itemsSearchQuery';
 export const ITEMS_GROUP_MODE_KEY = 'jira.itemsGroupMode';
 export const ITEMS_GROUP_MODE_CONTEXT = 'jiraItemsGroupMode';
+export const ITEMS_LOAD_BATCH_SIZE = 500;
 export const PROJECT_ISSUES_PAGE_SIZE = 100;
 export const COMMENT_FETCH_LIMIT = 50;
 
