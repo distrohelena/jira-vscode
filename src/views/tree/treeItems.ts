@@ -19,9 +19,10 @@ export class JiraTreeItem extends vscode.TreeItem {
 }
 
 export function createIssueTreeItem(issue: JiraIssue): JiraTreeItem {
+	const displaySummary = normalizeIssueSummaryForTree(issue.summary);
 	const item = new JiraTreeItem(
 		'issue',
-		`${issue.key} · ${issue.summary}`,
+		`${issue.key} · ${displaySummary}`,
 		vscode.TreeItemCollapsibleState.None,
 		undefined,
 		issue
@@ -33,7 +34,7 @@ export function createIssueTreeItem(issue: JiraIssue): JiraTreeItem {
 
 export function contextualizeIssue(item: JiraTreeItem, issue: JiraIssue) {
 	item.contextValue = 'jiraIssue';
-	item.description = issue.assigneeName ? `${issue.statusName} • ${issue.assigneeName}` : issue.statusName;
+	item.description = formatIssueDateForTree(issue.updated);
 	item.iconPath = deriveIssueIcon(issue.statusName);
 	if (issue.key) {
 		item.command = {
@@ -56,4 +57,24 @@ export function deriveIssueIcon(statusName?: string): vscode.ThemeIcon {
 		default:
 			return new vscode.ThemeIcon('issues');
 	}
+}
+
+function normalizeIssueSummaryForTree(summary: string | undefined): string {
+	if (!summary) {
+		return 'Untitled';
+	}
+	const withoutControls = summary.replace(/[\u0000-\u001F\u007F]/g, ' ');
+	const collapsed = withoutControls.replace(/\s+/g, ' ').trim();
+	return collapsed.length > 0 ? collapsed : 'Untitled';
+}
+
+function formatIssueDateForTree(updated: string | undefined): string {
+	if (!updated) {
+		return 'Unknown date';
+	}
+	const timestamp = Date.parse(updated);
+	if (Number.isNaN(timestamp)) {
+		return updated;
+	}
+	return new Date(timestamp).toLocaleString();
 }
