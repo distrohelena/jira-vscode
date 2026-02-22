@@ -158,13 +158,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 						issue: panelState.issue ?? { key: resolvedIssueKey },
 					});
 				} else if (message?.type === 'addComment' && typeof message.body === 'string') {
-					const format =
-						message.format === 'plain'
-							? 'plain'
-							: message.format === 'wiki'
-								? 'wiki'
-								: panelState.commentFormat;
-					await handleAddComment(message.body, format);
+					await handleAddComment(message.body);
 				} else if (message?.type === 'deleteComment' && typeof message.commentId === 'string') {
 					await handleDeleteComment(message.commentId);
 				} else if (message?.type === 'refreshComments') {
@@ -173,12 +167,6 @@ export function createIssueController(deps: IssueControllerDeps) {
 					panelState.commentDraft = message.value;
 					if (panelState.commentSubmitError) {
 						panelState.commentSubmitError = undefined;
-					}
-				} else if (message?.type === 'changeCommentFormat' && typeof message.format === 'string') {
-					const nextFormat: JiraCommentFormat = message.format === 'plain' ? 'plain' : 'wiki';
-					if (panelState.commentFormat !== nextFormat) {
-						panelState.commentFormat = nextFormat;
-						renderPanel();
 					}
 				}
 			}
@@ -519,7 +507,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			}
 		}
 
-		async function handleAddComment(body: string, format: JiraCommentFormat): Promise<void> {
+		async function handleAddComment(body: string): Promise<void> {
 			if (disposed) {
 				return;
 			}
@@ -538,13 +526,13 @@ export function createIssueController(deps: IssueControllerDeps) {
 			}
 
 			panelState.commentDraft = trimmedBody;
-			panelState.commentFormat = format;
+			panelState.commentFormat = 'wiki';
 			panelState.commentSubmitPending = true;
 			panelState.commentSubmitError = undefined;
 			renderPanel();
 
 			try {
-				await addIssueComment(authInfo, token, resolvedIssueKey, trimmedBody, format);
+				await addIssueComment(authInfo, token, resolvedIssueKey, trimmedBody, 'wiki');
 				panelState.commentDraft = '';
 				panelState.commentSubmitPending = false;
 				panelState.commentSubmitError = undefined;
