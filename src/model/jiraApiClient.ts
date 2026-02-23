@@ -19,6 +19,7 @@ import {
 	JiraProfileResponse,
 	JiraProject,
 	CreateIssueFormValues,
+	CreateIssueFieldDefinition,
 	JiraRelatedIssue,
 	JiraServerLabel,
 	JiraCommentFormat,
@@ -825,6 +826,21 @@ export async function createJiraIssue(
 			issuetype: { name: values.issueType?.trim() || 'Task' },
 		},
 	};
+	const customFields = values.customFields ?? {};
+	for (const [fieldId, rawValue] of Object.entries(customFields)) {
+		const normalizedFieldId = fieldId.trim();
+		if (!normalizedFieldId) {
+			continue;
+		}
+		const value = typeof rawValue === 'string' ? rawValue : '';
+		if (value.trim().length === 0) {
+			continue;
+		}
+		payload.fields = {
+			...payload.fields,
+			[normalizedFieldId]: value,
+		};
+	}
 	const assigneeIdentifier = values.assigneeAccountId?.trim();
 	if (assigneeIdentifier) {
 		payload.fields = {
@@ -861,6 +877,114 @@ export async function createJiraIssue(
 	}
 
 	throw lastError ?? new Error('Unable to create Jira issue.');
+}
+
+const RESERVED_CREATE_FIELD_IDS = new Set([
+	'project',
+	'summary',
+	'description',
+	'issuetype',
+	'assignee',
+	'reporter',
+	'priority',
+	'labels',
+	'components',
+	'fixVersions',
+	'versions',
+	'status',
+]);
+
+export async function fetchCreateIssueFields(
+	authInfo: JiraAuthInfo,
+	token: string,
+	projectKey: string,
+	issueTypeName?: string
+): Promise<CreateIssueFieldDefinition[]> {
+	const sanitizedProjectKey = projectKey?.trim();
+	if (!sanitizedProjectKey) {
+		return [];
+	}
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, 'issue/createmeta');
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			const response = await axios.get(endpoint, {
+				params: {
+					projectKeys: sanitizedProjectKey,
+					issuetypeNames: issueTypeName?.trim() || undefined,
+					expand: 'projects.issuetypes.fields',
+				},
+				auth: {
+					username: authInfo.username,
+					password: token,
+				},
+				headers: {
+					Accept: 'application/json',
+					'User-Agent': 'jira-vscode',
+				},
+			});
+			const projects = Array.isArray(response.data?.projects) ? response.data.projects : [];
+			const projectEntry =
+				projects.find(
+					(project: any) =>
+						typeof project?.key === 'string' &&
+						project.key.trim().toLowerCase() === sanitizedProjectKey.toLowerCase()
+				) ?? projects[0];
+			const issueTypes = Array.isArray(projectEntry?.issuetypes) ? projectEntry.issuetypes : [];
+			const selectedIssueType =
+				issueTypes.find(
+					(issueType: any) =>
+						typeof issueType?.name === 'string' &&
+						typeof issueTypeName === 'string' &&
+						issueType.name.trim().toLowerCase() === issueTypeName.trim().toLowerCase()
+				) ?? issueTypes[0];
+			const fields = selectedIssueType?.fields;
+			if (!fields || typeof fields !== 'object') {
+				return [];
+			}
+			const ordered = Object.entries(fields)
+				.map(([fieldId, value]) => mapCreateIssueFieldDefinition(fieldId, value))
+				.filter((field): field is CreateIssueFieldDefinition => !!field);
+			return ordered;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	if (lastError) {
+		throw lastError;
+	}
+	return [];
+}
+
+function mapCreateIssueFieldDefinition(fieldId: string, raw: any): CreateIssueFieldDefinition | undefined {
+	const normalizedId = fieldId?.trim();
+	if (!normalizedId || RESERVED_CREATE_FIELD_IDS.has(normalizedId)) {
+		return undefined;
+	}
+	const operations = Array.isArray(raw?.operations) ? raw.operations : [];
+	if (operations.length > 0 && !operations.includes('set')) {
+		return undefined;
+	}
+	const schemaType = typeof raw?.schema?.type === 'string' ? raw.schema.type.trim().toLowerCase() : '';
+	if (schemaType && schemaType !== 'string') {
+		return undefined;
+	}
+	const name = typeof raw?.name === 'string' ? raw.name.trim() : normalizedId;
+	if (!name) {
+		return undefined;
+	}
+	const customType =
+		typeof raw?.schema?.custom === 'string' ? raw.schema.custom.trim().toLowerCase() : '';
+	const multiline = customType.includes('textarea');
+	return {
+		id: normalizedId,
+		name,
+		required: !!raw?.required,
+		multiline,
+	};
 }
 
 export async function finalizeCreatedIssue(

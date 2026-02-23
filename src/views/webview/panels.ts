@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import {
+	CreateIssueFieldDefinition,
 	CreateIssueFormValues,
 	CreateIssuePanelState,
 	IssueAssignableUser,
@@ -125,7 +126,7 @@ function renderIssueDetailsHtml(
 	const summaryValue = issue.summary ?? '';
 	const summaryEditPending = options?.summaryEditPending ?? false;
 	const summaryEditError = options?.summaryEditError;
-	const summaryEditDisabled = isLoading || !!errorMessage || summaryEditPending;
+	const summaryEditDisabled = !!errorMessage || summaryEditPending || !issue.summary;
 	const summaryEditDisabledAttr = summaryEditDisabled ? 'disabled' : '';
 	const summaryBlockClasses = ['issue-summary-block'];
 	if (summaryEditPending) {
@@ -1345,6 +1346,7 @@ function renderCreateIssuePanelHtml(
 		: '';
 	const projectLabel = project.name ? `${project.name} (${project.key})` : project.key;
 	const assigneeSection = renderCreateAssigneeSection(state);
+	const additionalFieldsSection = renderCreateAdditionalFieldsSection(state, !!state.submitting);
 	const buttonLabel = state.submitting ? 'Creating…' : 'Create Ticket';
 	const statusNames = deriveStatusOptionNames(state.statusOptions);
 	const defaultStatus = pickPreferredInitialStatus(statusNames) ?? statusNames[0] ?? ISSUE_STATUS_OPTIONS[0];
@@ -1405,6 +1407,27 @@ function renderCreateIssuePanelHtml(
 \t\t\tflex-direction: column;
 \t\t\tgap: 6px;
 \t\t\tfont-weight: 600;
+\t\t}
+\t\t.create-additional-fields {
+\t\t\tdisplay: flex;
+\t\t\tflex-direction: column;
+\t\t\tgap: 10px;
+\t\t}
+\t\t.create-custom-field-label {
+\t\t\tdisplay: flex;
+\t\t\tflex-direction: column;
+\t\t\tgap: 6px;
+\t\t\tfont-weight: 600;
+\t\t}
+\t\t.create-custom-field-input {
+\t\t\twidth: 100%;
+\t\t}
+\t\ttextarea.create-custom-field-input {
+\t\t\tmin-height: 140px;
+\t\t\tresize: vertical;
+\t\t}
+\t\t.field-required {
+\t\t\tcolor: var(--vscode-errorForeground);
 \t\t}
 \t\tinput[type="text"],
 \t\ttextarea,
@@ -1621,6 +1644,7 @@ function renderCreateIssuePanelHtml(
 						})}
 \t\t\t\t\t</label>
 \t\t\t\t</div>
+\t\t\t\t${additionalFieldsSection}
 \t\t\t</div>
 \t\t\t<div class="issue-sidebar">
 \t\t\t\t<div class="meta-card">
@@ -1668,6 +1692,7 @@ function renderCreateIssuePanelHtml(
 \t\t\t${richTextEditorBootstrapScript}
 \t\t\tinitializeJiraRichTextEditors(document);
 \t\t\tconst form = document.getElementById('create-issue-form');
+\t\t\tconst issueTypeSelect = form ? form.querySelector('select[name="issueType"]') : null;
 \t\t\tconst searchInput = document.querySelector('.jira-create-assignee-search');
 \t\t\tconst select = document.querySelector('.jira-create-assignee-select');
 \t\t\tconst applyButton = document.querySelector('.jira-create-assignee-apply');
@@ -1684,17 +1709,28 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\t\tdescription: '',
 \t\t\t\t\t\tissueType: 'Task',
 \t\t\t\t\t\tstatus: '${defaultStatusAttr}',
+\t\t\t\t\t\tcustomFields: {},
 \t\t\t\t\t\tassigneeAccountId: '',
 \t\t\t\t\t\tassigneeDisplayName: '',
 \t\t\t\t\t\tassigneeAvatarUrl: '',
 \t\t\t\t\t};
 \t\t\t\t}
+\t\t\t\tconst customFields = {};
+\t\t\t\tform.querySelectorAll('[data-create-custom-field]').forEach((field) => {
+\t\t\t\t\tconst fieldId = field.getAttribute('data-create-custom-field');
+\t\t\t\t\tif (!fieldId) {
+\t\t\t\t\t\treturn;
+\t\t\t\t\t}
+\t\t\t\t\tconst value = typeof field.value === 'string' ? field.value : '';
+\t\t\t\t\tcustomFields[fieldId] = value;
+\t\t\t\t});
 \t\t\t\tconst formData = new FormData(form);
 \t\t\t\treturn {
 \t\t\t\t\tsummary: asString(formData.get('summary')),
 \t\t\t\t\tdescription: asString(formData.get('description')),
 \t\t\t\t\tissueType: asString(formData.get('issueType'), 'Task'),
 \t\t\t\t\tstatus: asString(formData.get('status'), '${defaultStatusAttr}'),
+\t\t\t\t\tcustomFields,
 \t\t\t\t\tassigneeAccountId: asString(formData.get('assigneeAccountId')),
 \t\t\t\t\tassigneeDisplayName: asString(formData.get('assigneeDisplayName')),
 \t\t\t\t\tassigneeAvatarUrl: asString(formData.get('assigneeAvatarUrl')),
@@ -1706,6 +1742,13 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\tevent.preventDefault();
 \t\t\t\t\tconst payload = buildFormPayload();
 \t\t\t\t\tvscode.postMessage({ type: 'createIssue', values: payload });
+\t\t\t\t});
+\t\t\t}
+
+\t\t\tif (issueTypeSelect) {
+\t\t\t\tissueTypeSelect.addEventListener('change', () => {
+\t\t\t\t\tconst payload = buildFormPayload();
+\t\t\t\t\tvscode.postMessage({ type: 'createIssueTypeChanged', values: payload });
 \t\t\t\t});
 \t\t\t}
 
@@ -1890,7 +1933,7 @@ function renderDescriptionSection(
 	const editableDescriptionHtml = deriveEditableDescriptionHtml(content, descriptionText);
 	const descriptionEditPending = options?.descriptionEditPending ?? false;
 	const descriptionEditError = options?.descriptionEditError;
-	const descriptionEditDisabled = isLoading || descriptionEditPending;
+	const descriptionEditDisabled = descriptionEditPending;
 	const descriptionEditDisabledAttr = descriptionEditDisabled ? 'disabled' : '';
 	const blockClasses = ['issue-description-block'];
 	if (descriptionEditPending) {
@@ -2407,6 +2450,56 @@ function renderIssueStatusOptions(selected: string, options?: IssueStatusOption[
 		.join('');
 }
 
+function renderCreateAdditionalFieldsSection(
+	state: CreateIssuePanelState,
+	disabled: boolean
+): string {
+	const fields = state.createFields ?? [];
+	const pending = state.createFieldsPending ?? false;
+	const error = state.createFieldsError;
+	if (!pending && !error && fields.length === 0) {
+		return '';
+	}
+
+	const disabledAttr = disabled ? 'disabled' : '';
+	const values = state.values.customFields ?? {};
+	const fieldRows = fields
+		.map((field) => renderCreateAdditionalFieldInput(field, values[field.id] ?? '', disabledAttr))
+		.join('');
+	const pendingMarkup = pending ? '<div class="muted status-helper">Loading additional fields…</div>' : '';
+	const errorMarkup = error ? `<div class="status-error">${escapeHtml(error)}</div>` : '';
+
+	return `<div class="form-field create-additional-fields">
+		<div class="section-title">Additional Fields</div>
+		${pendingMarkup}
+		${errorMarkup}
+		${fieldRows}
+	</div>`;
+}
+
+function renderCreateAdditionalFieldInput(
+	field: CreateIssueFieldDefinition,
+	value: string,
+	disabledAttr: string
+): string {
+	const requiredSuffix = field.required ? ' <span class="field-required">*</span>' : '';
+	const label = `${escapeHtml(field.name)}${requiredSuffix}`;
+	if (field.multiline) {
+		return `<label class="create-custom-field-label" for="${escapeAttribute(field.id)}">
+			<span>${label}</span>
+			<textarea id="${escapeAttribute(field.id)}" data-create-custom-field="${escapeAttribute(
+				field.id
+			)}" rows="6" class="create-custom-field-input" ${disabledAttr}>${escapeHtml(value)}</textarea>
+		</label>`;
+	}
+	return `<label class="create-custom-field-label" for="${escapeAttribute(field.id)}">
+		<span>${label}</span>
+		<input id="${escapeAttribute(field.id)}" type="text" data-create-custom-field="${escapeAttribute(
+			field.id
+		)}" value="${escapeAttribute(value)}" class="create-custom-field-input" ${disabledAttr} />
+	</label>`;
+}
+
 function renderCreateAssigneeSection(state: CreateIssuePanelState): string {
 	const pending = state.assigneePending ?? false;
 	const interactionDisabled = !!state.submitting || pending;
@@ -2670,6 +2763,7 @@ function sanitizeCreateIssueValues(
 	const statusRaw = typeof raw?.status === 'string' ? raw.status : fallback.status;
 	const normalizedStatus = statusRaw?.trim() || fallback.status;
 	const status = ISSUE_STATUS_OPTIONS.includes(normalizedStatus) ? normalizedStatus : fallback.status;
+	const customFields = sanitizeCreateCustomFields(raw?.customFields, fallback.customFields);
 	const assigneeAccountIdRaw =
 		typeof raw?.assigneeAccountId === 'string' ? raw.assigneeAccountId.trim() : undefined;
 	const fallbackAccountId = fallback.assigneeAccountId?.trim();
@@ -2691,10 +2785,36 @@ function sanitizeCreateIssueValues(
 		description,
 		issueType,
 		status,
+		customFields,
 		assigneeAccountId,
 		assigneeDisplayName,
 		assigneeAvatarUrl,
 	};
+}
+
+function sanitizeCreateCustomFields(
+	raw: any,
+	fallback?: Record<string, string>
+): Record<string, string> {
+	const result: Record<string, string> = {};
+	if (fallback && typeof fallback === 'object') {
+		for (const [key, value] of Object.entries(fallback)) {
+			if (!key.trim()) {
+				continue;
+			}
+			result[key] = typeof value === 'string' ? value : '';
+		}
+	}
+	if (!raw || typeof raw !== 'object') {
+		return result;
+	}
+	for (const [key, value] of Object.entries(raw)) {
+		if (!key.trim()) {
+			continue;
+		}
+		result[key] = typeof value === 'string' ? value : '';
+	}
+	return result;
 }
 
 function renderAssigneeAvatar(issue: JiraIssue): string {

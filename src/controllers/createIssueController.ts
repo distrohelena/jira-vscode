@@ -4,8 +4,9 @@ import { JiraAuthManager } from '../model/authManager';
 import { JiraFocusManager } from '../model/focusManager';
 import { ProjectStatusStore } from '../model/projectStatusStore';
 import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../model/constants';
-import { createJiraIssue, fetchAssignableUsers } from '../model/jiraApiClient';
+import { createJiraIssue, fetchAssignableUsers, fetchCreateIssueFields } from '../model/jiraApiClient';
 import {
+	CreateIssueFieldDefinition,
 	CreateIssueFormValues,
 	CreateIssuePanelState,
 	IssueAssignableUser,
@@ -55,7 +56,10 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 				description: '',
 				issueType: 'Task',
 				status: initialStatus,
+				customFields: {},
 			},
+			createFields: [],
+			createFieldsPending: true,
 			currentUser: {
 				accountId: authInfo.accountId ?? authInfo.username,
 				displayName: authInfo.displayName ?? authInfo.username,
@@ -82,6 +86,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 		if (!cachedStatuses) {
 			void loadProjectStatuses(project.key);
 		}
+		void loadCreateFields(state.values.issueType, state.values);
 
 		async function loadProjectStatuses(projectKey: string): Promise<void> {
 			try {
@@ -114,6 +119,35 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 				updatePanel({
 					statusPending: false,
 					statusError: `Failed to load project statuses: ${messageText}`,
+				});
+			}
+		}
+
+		async function loadCreateFields(
+			issueTypeName: string | undefined,
+			valuesForMerge?: CreateIssueFormValues
+		): Promise<void> {
+			const values = valuesForMerge ?? state.values;
+			updatePanel({
+				values,
+				createFieldsPending: true,
+				createFieldsError: undefined,
+			});
+			try {
+				const fields = await fetchCreateIssueFields(authInfo, token, project.key, issueTypeName);
+				const mergedValues = mergeCustomFieldsForDefinitions(values, fields);
+				updatePanel({
+					values: mergedValues,
+					createFields: fields,
+					createFieldsPending: false,
+					createFieldsError: undefined,
+				});
+			} catch (error) {
+				const messageText = deriveErrorMessage(error);
+				updatePanel({
+					createFields: [],
+					createFieldsPending: false,
+					createFieldsError: `Failed to load additional fields: ${messageText}`,
 				});
 			}
 		}
@@ -154,6 +188,13 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 							values,
 						});
 				}
+				return;
+			}
+
+			if (message.type === 'createIssueTypeChanged') {
+				const values = sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
+				updatePanel({ values });
+				void loadCreateFields(values.issueType, values);
 				return;
 			}
 
@@ -230,6 +271,7 @@ function sanitizeCreateIssueValues(
 		? fallback.status
 		: availableStatuses[0] ?? fallback.status;
 	const status = isStatusAllowed(normalizedStatus, availableStatuses) ? normalizedStatus : fallbackStatus;
+	const customFields = sanitizeCustomFields(raw?.customFields, fallback.customFields);
 	const assigneeAccountIdRaw =
 		typeof raw?.assigneeAccountId === 'string' ? raw.assigneeAccountId.trim() : undefined;
 	const fallbackAccountId = fallback.assigneeAccountId?.trim();
@@ -251,9 +293,51 @@ function sanitizeCreateIssueValues(
 		description,
 		issueType,
 		status,
+		customFields,
 		assigneeAccountId,
 		assigneeDisplayName,
 		assigneeAvatarUrl,
+	};
+}
+
+function sanitizeCustomFields(
+	raw: any,
+	fallback?: Record<string, string>
+): Record<string, string> {
+	const result: Record<string, string> = {};
+	if (fallback && typeof fallback === 'object') {
+		for (const [key, value] of Object.entries(fallback)) {
+			if (typeof key !== 'string' || key.trim().length === 0) {
+				continue;
+			}
+			result[key] = typeof value === 'string' ? value : '';
+		}
+	}
+	if (!raw || typeof raw !== 'object') {
+		return result;
+	}
+	for (const [key, value] of Object.entries(raw)) {
+		if (typeof key !== 'string' || key.trim().length === 0) {
+			continue;
+		}
+		result[key] = typeof value === 'string' ? value : '';
+	}
+	return result;
+}
+
+function mergeCustomFieldsForDefinitions(
+	values: CreateIssueFormValues,
+	definitions: CreateIssueFieldDefinition[]
+): CreateIssueFormValues {
+	const source = values.customFields ?? {};
+	const filtered: Record<string, string> = {};
+	for (const field of definitions) {
+		const existing = source[field.id];
+		filtered[field.id] = typeof existing === 'string' ? existing : '';
+	}
+	return {
+		...values,
+		customFields: filtered,
 	};
 }
 

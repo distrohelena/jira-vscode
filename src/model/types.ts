@@ -114,15 +114,26 @@ export type CreateIssueFormValues = {
 	description: string;
 	issueType: string;
 	status: string;
+	customFields?: Record<string, string>;
 	assigneeAccountId?: string;
 	assigneeDisplayName?: string;
 	assigneeAvatarUrl?: string;
+};
+
+export type CreateIssueFieldDefinition = {
+	id: string;
+	name: string;
+	required: boolean;
+	multiline: boolean;
 };
 
 export type CreateIssuePanelState = {
 	values: CreateIssueFormValues;
 	submitting?: boolean;
 	error?: string;
+	createFields?: CreateIssueFieldDefinition[];
+	createFieldsPending?: boolean;
+	createFieldsError?: string;
 	successIssue?: JiraIssue;
 	currentUser?: {
 		accountId?: string;
