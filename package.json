@@ -2,7 +2,7 @@
     "name": "helenofcode-jira-vscode",
     "displayName": "Jira VS Code",
     "description": "Open-source Jira integration for VS Code with reliable authentication for Jira Cloud and custom servers.",
-    "version": "1.0.25",
+    "version": "1.0.26",
     "publisher": "helenofcode",
     "repository": {
         "type": "git",
@@ -257,18 +257,8 @@
                     "group": "navigation@9"
                 },
                 {
-                    "submenu": "jiraItemsGroupBy",
-                    "when": "view == jiraItemsView && viewItem == view",
-                    "group": "navigation@9"
-                },
-                {
                     "submenu": "jiraItemsSortBy",
                     "when": "view == jiraItemsView",
-                    "group": "navigation@10"
-                },
-                {
-                    "submenu": "jiraItemsSortBy",
-                    "when": "view == jiraItemsView && viewItem == view",
                     "group": "navigation@10"
                 },
                 {

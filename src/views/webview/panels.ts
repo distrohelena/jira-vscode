@@ -460,11 +460,12 @@ function renderIssueDetailsHtml(
 		flex-wrap: wrap;
 		gap: 6px;
 	}
-	.jira-description-editor-input {
-		width: 100%;
-		min-height: 360px;
-		height: 360px;
-		resize: none;
+		.jira-description-editor-input {
+			width: 100%;
+			box-sizing: border-box;
+			min-height: 360px;
+			height: 360px;
+			resize: none;
 		overflow-y: auto;
 		background: var(--vscode-input-background);
 		color: var(--vscode-input-foreground);
@@ -665,6 +666,28 @@ function renderIssueDetailsHtml(
 			}
 			.assignee-search-row input {
 				flex: 1;
+				min-width: 0;
+				background: var(--vscode-input-background);
+				color: var(--vscode-input-foreground);
+				border: 1px solid var(--vscode-input-border);
+				border-radius: 4px;
+				padding: 4px 8px;
+				min-height: 28px;
+				box-sizing: border-box;
+				font-family: var(--vscode-font-family);
+				font-size: var(--vscode-font-size);
+			}
+			.assignee-search-row input::placeholder {
+				color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+			}
+			.assignee-search-row input:focus {
+				outline: none;
+				border-color: var(--vscode-focusBorder, var(--vscode-input-border));
+				box-shadow: 0 0 0 1px var(--vscode-focusBorder, transparent);
+			}
+			.assignee-search-row input:disabled {
+				opacity: 0.7;
+				cursor: not-allowed;
 			}
 			.assignee-select-row {
 				display: flex;
@@ -1606,6 +1629,27 @@ function renderCreateIssuePanelHtml(
 \t\t}
 \t\t.assignee-search-row input {
 \t\t\twidth: 100%;
+\t\t\tbackground: var(--vscode-input-background);
+\t\t\tcolor: var(--vscode-input-foreground);
+\t\t\tborder: 1px solid var(--vscode-input-border);
+\t\t\tborder-radius: 4px;
+\t\t\tpadding: 4px 8px;
+\t\t\tmin-height: 28px;
+\t\t\tbox-sizing: border-box;
+\t\t\tfont-family: var(--vscode-font-family);
+\t\t\tfont-size: var(--vscode-font-size);
+\t\t}
+\t\t.assignee-search-row input::placeholder {
+\t\t\tcolor: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+\t\t}
+\t\t.assignee-search-row input:focus {
+\t\t\toutline: none;
+\t\t\tborder-color: var(--vscode-focusBorder, var(--vscode-input-border));
+\t\t\tbox-shadow: 0 0 0 1px var(--vscode-focusBorder, transparent);
+\t\t}
+\t\t.assignee-search-row input:disabled {
+\t\t\topacity: 0.7;
+\t\t\tcursor: not-allowed;
 \t\t}
 \t\t.assignee-select-row {
 \t\t\tdisplay: flex;
