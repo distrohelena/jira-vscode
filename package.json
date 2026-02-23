@@ -355,12 +355,20 @@
         "bundle": "npx esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js",
         "compile": "npm run bundle",
         "watch": "npx esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js --watch",
+        "test": "npm run test:node && npm run test:dom && npm run test:smoke",
+        "test:node": "node --import tsx --test \"tests/node/**/*.test.ts\"",
+        "test:dom": "vitest run --config vitest.config.ts",
+        "test:dom:watch": "vitest --config vitest.config.ts",
+        "test:smoke": "node --check dist/extension.js",
         "package": "vsce package"
     },
     "devDependencies": {
         "@types/node": "^20.11.0",
         "@types/vscode": "^1.85.0",
         "esbuild": "^0.27.0",
+        "jsdom": "^26.1.0",
+        "tsx": "^4.20.5",
+        "vitest": "^3.2.4",
         "typescript": "^5.3.3"
     },
     "dependencies": {

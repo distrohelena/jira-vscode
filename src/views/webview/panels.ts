@@ -36,11 +36,28 @@ export function showIssueDetailsPanel(
 			vscode.commands.executeCommand('jira.openIssueDetails', message.key);
 			return;
 		}
+		if (message?.type === 'debugLog') {
+			const eventName = typeof message.event === 'string' ? message.event : 'unknown';
+			const details = formatDebugDetails(message.details);
+			console.log(`[jira.webview] ${eventName}${details}`);
+			return;
+		}
 		onMessage?.(message, panel);
 	});
 	const issueData = issue ?? createPlaceholderIssue(issueKey);
 	renderIssuePanelContent(panel, issueData, options);
 	return panel;
+}
+
+function formatDebugDetails(details: unknown): string {
+	if (details === undefined) {
+		return '';
+	}
+	try {
+		return ` ${JSON.stringify(details)}`;
+	} catch {
+		return ' [unserializable]';
+	}
 }
 
 export function renderIssuePanelContent(panel: vscode.WebviewPanel, issue: JiraIssue, options?: IssuePanelOptions) {
@@ -126,7 +143,7 @@ function renderIssueDetailsHtml(
 	const summaryValue = issue.summary ?? '';
 	const summaryEditPending = options?.summaryEditPending ?? false;
 	const summaryEditError = options?.summaryEditError;
-	const summaryEditDisabled = !!errorMessage || summaryEditPending || !issue.summary;
+	const summaryEditDisabled = summaryEditPending;
 	const summaryEditDisabledAttr = summaryEditDisabled ? 'disabled' : '';
 	const summaryBlockClasses = ['issue-summary-block'];
 	if (summaryEditPending) {
@@ -804,85 +821,114 @@ function renderIssueDetailsHtml(
 		</div>
 		${metadataPanel}
 	</div>
-		<script nonce="${nonce}">
-			(function () {
-				const vscode = acquireVsCodeApi();
-				${richTextEditorBootstrapScript}
-				initializeJiraRichTextEditors(document);
-				const summaryBlock = document.querySelector('.issue-summary-block');
-				if (summaryBlock) {
-					const summaryDisplay = summaryBlock.querySelector('.jira-summary-display');
-					const summaryEditor = summaryBlock.querySelector('.jira-summary-editor');
-					const summaryInput = summaryBlock.querySelector('.jira-summary-input');
-					const summaryCancel = summaryBlock.querySelector('.jira-summary-cancel');
-					const issueKey = summaryBlock.getAttribute('data-issue-key');
-					const editDisabled = summaryBlock.getAttribute('data-summary-edit-disabled') === 'true';
-					const openSummaryEditor = () => {
-						if (
-							editDisabled ||
-							!summaryEditor ||
-							!summaryInput ||
-							summaryBlock.classList.contains('summary-edit-pending')
-						) {
-							return;
+			<script nonce="${nonce}">
+				(function () {
+					const vscode = acquireVsCodeApi();
+					const logDebug = (event, details) => {
+						try {
+							vscode.postMessage({ type: 'debugLog', event, details });
+						} catch {
+							// Ignore logging failures to avoid impacting issue actions.
 						}
-						summaryBlock.classList.add('editor-open');
-						summaryInput.focus();
-						summaryInput.select();
 					};
-					const closeSummaryEditor = () => {
-						if (!summaryEditor || !summaryInput || !summaryDisplay) {
-							return;
-						}
-						summaryInput.value = summaryDisplay.textContent || '';
-						summaryBlock.classList.remove('editor-open');
-					};
-					if (summaryDisplay) {
-						summaryDisplay.addEventListener('click', () => {
-							openSummaryEditor();
-						});
-					}
-					if (summaryEditor && summaryInput && issueKey) {
-						summaryEditor.addEventListener('submit', (event) => {
-							event.preventDefault();
-							const nextSummary = summaryInput.value.trim();
-							if (!nextSummary) {
+					${richTextEditorBootstrapScript}
+					initializeJiraRichTextEditors(document);
+					const summaryBlock = document.querySelector('.issue-summary-block');
+					logDebug('issuePanel.init', {
+						hasSummaryBlock: !!summaryBlock,
+						hasDescriptionBlock: !!document.querySelector('.issue-description-block'),
+					});
+					if (summaryBlock) {
+						const summaryDisplay = summaryBlock.querySelector('.jira-summary-display');
+						const summaryEditor = summaryBlock.querySelector('.jira-summary-editor');
+						const summaryInput = summaryBlock.querySelector('.jira-summary-input');
+						const summaryCancel = summaryBlock.querySelector('.jira-summary-cancel');
+						const issueKey = summaryBlock.getAttribute('data-issue-key');
+						const openSummaryEditor = () => {
+							if (
+								!summaryEditor ||
+								!summaryInput ||
+								summaryBlock.classList.contains('summary-edit-pending')
+							) {
+								logDebug('summary.open.blocked', {
+									issueKey,
+									hasEditor: !!summaryEditor,
+									hasInput: !!summaryInput,
+									pending: summaryBlock.classList.contains('summary-edit-pending'),
+								});
 								return;
 							}
-							if (nextSummary === (summaryDisplay?.textContent || '').trim()) {
-								closeSummaryEditor();
+							summaryBlock.classList.add('editor-open');
+							logDebug('summary.open', { issueKey });
+							summaryInput.focus();
+							summaryInput.select();
+						};
+						const closeSummaryEditor = () => {
+							if (!summaryEditor || !summaryInput || !summaryDisplay) {
+								logDebug('summary.close.blocked', {
+									issueKey,
+									hasEditor: !!summaryEditor,
+									hasInput: !!summaryInput,
+									hasDisplay: !!summaryDisplay,
+								});
 								return;
 							}
-							summaryBlock.classList.add('summary-edit-pending');
-							const buttons = summaryEditor.querySelectorAll('button');
-							buttons.forEach((button) => {
-								button.disabled = true;
+							summaryInput.value = summaryDisplay.textContent || '';
+							summaryBlock.classList.remove('editor-open');
+							logDebug('summary.close', { issueKey });
+						};
+						if (summaryDisplay) {
+							summaryDisplay.addEventListener('click', () => {
+								logDebug('summary.click', { issueKey });
+								openSummaryEditor();
 							});
-							summaryInput.disabled = true;
-							vscode.postMessage({ type: 'updateSummary', issueKey, summary: nextSummary });
-						});
-					}
-					if (summaryCancel) {
-						summaryCancel.addEventListener('click', () => {
-							closeSummaryEditor();
-						});
-					}
-					if (summaryInput) {
-						summaryInput.addEventListener('keydown', (event) => {
-							if (event.key === 'Escape') {
+						}
+						if (summaryEditor && summaryInput && issueKey) {
+							summaryEditor.addEventListener('submit', (event) => {
 								event.preventDefault();
+								const nextSummary = summaryInput.value.trim();
+								if (!nextSummary) {
+									logDebug('summary.submit.ignoredEmpty', { issueKey });
+									return;
+								}
+								if (nextSummary === (summaryDisplay?.textContent || '').trim()) {
+									logDebug('summary.submit.unchanged', { issueKey });
+									closeSummaryEditor();
+									return;
+								}
+								summaryBlock.classList.add('summary-edit-pending');
+								const buttons = summaryEditor.querySelectorAll('button');
+								buttons.forEach((button) => {
+									button.disabled = true;
+								});
+								summaryInput.disabled = true;
+								logDebug('summary.submit', { issueKey, nextSummaryLength: nextSummary.length });
+								vscode.postMessage({ type: 'updateSummary', issueKey, summary: nextSummary });
+							});
+						}
+						if (summaryCancel) {
+							summaryCancel.addEventListener('click', () => {
+								logDebug('summary.cancel', { issueKey });
 								closeSummaryEditor();
-							}
-						});
+							});
+						}
+						if (summaryInput) {
+							summaryInput.addEventListener('keydown', (event) => {
+								if (event.key === 'Escape') {
+									event.preventDefault();
+									logDebug('summary.escape', { issueKey });
+									closeSummaryEditor();
+								}
+							});
+						}
 					}
-				}
 				const descriptionBlock = document.querySelector('.issue-description-block');
 				if (descriptionBlock) {
 					const normalizeDescriptionText = (value) => {
 						return (value || '')
-							.replace(/\r/g, '')
-							.replace(/[ \t]+\n/g, '\n')
-							.replace(/\n{3,}/g, '\n\n')
+							.replace(/\\r/g, '')
+							.replace(/[ \\t]+\\n/g, '\\n')
+							.replace(/\\n{3,}/g, '\\n\\n')
 							trim();
 					};
 					const serializeInlineNodeToWiki = (node) => {
@@ -918,7 +964,7 @@ function renderIssueDetailsHtml(
 								return href ? '[' + linkText + '|' + href + ']' : linkText;
 							}
 							case 'br':
-								return '\n';
+								return '\\n';
 							default:
 								return content;
 						}
@@ -954,7 +1000,7 @@ function renderIssueDetailsHtml(
 											.trim()
 									)
 									.filter((item) => item.length > 0);
-								return items.map((item) => '* ' + item).join('\n');
+								return items.map((item) => '* ' + item).join('\\n');
 							}
 							case 'ol': {
 								const items = Array.from(node.children)
@@ -966,11 +1012,11 @@ function renderIssueDetailsHtml(
 											.trim()
 									)
 									.filter((item) => item.length > 0);
-								return items.map((item) => '# ' + item).join('\n');
+								return items.map((item) => '# ' + item).join('\\n');
 							}
 							case 'pre': {
-								const codeContent = (node.textContent || '').replace(/\r/g, '').trimEnd();
-								return codeContent ? '{code}\n' + codeContent + '\n{code}' : '';
+								const codeContent = (node.textContent || '').replace(/\\r/g, '').trimEnd();
+								return codeContent ? '{code}\\n' + codeContent + '\\n{code}' : '';
 							}
 							case 'p':
 							case 'div':
@@ -990,7 +1036,7 @@ function renderIssueDetailsHtml(
 						if (blocks.length === 0) {
 							return '';
 						}
-						return normalizeDescriptionText(blocks.join('\n\n'));
+						return normalizeDescriptionText(blocks.join('\\n\\n'));
 					};
 					const applyDescriptionFormatting = (input, action) => {
 						if (!input || input.getAttribute('contenteditable') !== 'true') {
@@ -1073,37 +1119,46 @@ function renderIssueDetailsHtml(
 						descriptionBlock.querySelectorAll('.jira-description-editor-action')
 					);
 					const issueKey = descriptionBlock.getAttribute('data-issue-key');
-					const editDisabled = descriptionBlock.getAttribute('data-description-edit-disabled') === 'true';
 					const originalDescriptionHtml = descriptionInput ? descriptionInput.innerHTML : '';
-					const openDescriptionEditor = () => {
-						if (
-							editDisabled ||
-							!descriptionEditor ||
-							!descriptionInput ||
-							descriptionBlock.classList.contains('description-edit-pending')
-						) {
-							return;
+						const openDescriptionEditor = () => {
+							if (
+								!descriptionEditor ||
+								!descriptionInput ||
+								descriptionBlock.classList.contains('description-edit-pending')
+							) {
+								logDebug('description.open.blocked', {
+									issueKey,
+									hasEditor: !!descriptionEditor,
+									hasInput: !!descriptionInput,
+									pending: descriptionBlock.classList.contains('description-edit-pending'),
+								});
+								return;
+							}
+							descriptionBlock.classList.add('editor-open');
+							logDebug('description.open', { issueKey, initialHtmlLength: descriptionInput.innerHTML.length });
+							descriptionInput.focus();
+						};
+						const closeDescriptionEditor = () => {
+							if (!descriptionInput) {
+								logDebug('description.close.blocked', { issueKey, hasInput: !!descriptionInput });
+								return;
+							}
+							descriptionInput.innerHTML = originalDescriptionHtml;
+							descriptionBlock.classList.remove('editor-open');
+							logDebug('description.close', { issueKey });
+						};
+						if (descriptionDisplay) {
+							descriptionDisplay.addEventListener('click', () => {
+								logDebug('description.clickDisplay', { issueKey });
+								openDescriptionEditor();
+							});
 						}
-						descriptionBlock.classList.add('editor-open');
-						descriptionInput.focus();
-					};
-					const closeDescriptionEditor = () => {
-						if (!descriptionInput) {
-							return;
+						if (descriptionPreview) {
+							descriptionPreview.addEventListener('click', () => {
+								logDebug('description.clickPreview', { issueKey });
+								openDescriptionEditor();
+							});
 						}
-						descriptionInput.innerHTML = originalDescriptionHtml;
-						descriptionBlock.classList.remove('editor-open');
-					};
-					if (descriptionDisplay) {
-						descriptionDisplay.addEventListener('click', () => {
-							openDescriptionEditor();
-						});
-					}
-					if (descriptionPreview) {
-						descriptionPreview.addEventListener('click', () => {
-							openDescriptionEditor();
-						});
-					}
 					descriptionToolbarButtons.forEach((button) => {
 						button.addEventListener('click', () => {
 							if (!descriptionInput) {
@@ -1113,43 +1168,51 @@ function renderIssueDetailsHtml(
 							applyDescriptionFormatting(descriptionInput, action);
 						});
 					});
-					if (descriptionEditor && descriptionInput && issueKey) {
-						descriptionEditor.addEventListener('submit', (event) => {
-							event.preventDefault();
-							const currentDescription = normalizeDescriptionText(
-								descriptionBlock.getAttribute('data-description-plain') || ''
-							);
-							const nextDescription = serializeDescriptionHtmlToWiki(descriptionInput.innerHTML || '');
-							if (normalizeDescriptionText(nextDescription) === currentDescription) {
-								closeDescriptionEditor();
-								return;
-							}
-							descriptionBlock.classList.add('description-edit-pending');
-							const buttons = descriptionEditor.querySelectorAll('button');
-							buttons.forEach((button) => {
-								button.disabled = true;
-							});
-							descriptionInput.setAttribute('contenteditable', 'false');
-							vscode.postMessage({
-								type: 'updateDescription',
-								issueKey,
-								description: nextDescription,
-							});
-						});
-					}
-					if (descriptionCancel) {
-						descriptionCancel.addEventListener('click', () => {
-							closeDescriptionEditor();
-						});
-					}
-					if (descriptionInput) {
-						descriptionInput.addEventListener('keydown', (event) => {
-							if (event.key === 'Escape') {
+						if (descriptionEditor && descriptionInput && issueKey) {
+							descriptionEditor.addEventListener('submit', (event) => {
 								event.preventDefault();
+								const currentDescription = normalizeDescriptionText(
+									descriptionBlock.getAttribute('data-description-plain') || ''
+								);
+								const nextDescription = serializeDescriptionHtmlToWiki(descriptionInput.innerHTML || '');
+								if (normalizeDescriptionText(nextDescription) === currentDescription) {
+									logDebug('description.submit.unchanged', { issueKey });
+									closeDescriptionEditor();
+									return;
+								}
+								descriptionBlock.classList.add('description-edit-pending');
+							const buttons = descriptionEditor.querySelectorAll('button');
+								buttons.forEach((button) => {
+									button.disabled = true;
+								});
+								descriptionInput.setAttribute('contenteditable', 'false');
+								logDebug('description.submit', {
+									issueKey,
+									currentLength: currentDescription.length,
+									nextLength: nextDescription.length,
+								});
+								vscode.postMessage({
+									type: 'updateDescription',
+									issueKey,
+									description: nextDescription,
+								});
+							});
+						}
+						if (descriptionCancel) {
+							descriptionCancel.addEventListener('click', () => {
+								logDebug('description.cancel', { issueKey });
 								closeDescriptionEditor();
-							}
-						});
-					}
+							});
+						}
+						if (descriptionInput) {
+							descriptionInput.addEventListener('keydown', (event) => {
+								if (event.key === 'Escape') {
+									event.preventDefault();
+									logDebug('description.escape', { issueKey });
+									closeDescriptionEditor();
+								}
+							});
+						}
 				}
 				document.querySelectorAll('.issue-link').forEach((el) => {
 					el.addEventListener('click', () => {
@@ -2020,8 +2083,8 @@ function htmlToPlainText(html: string): string {
 		.split('\n')
 		.map((line) => line.trimEnd())
 		.join('\n')
-		replace(/\n{3,}/g, '\n\n')
-		trim();
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
 }
 
 function decodeHtmlEntities(text: string): string {
