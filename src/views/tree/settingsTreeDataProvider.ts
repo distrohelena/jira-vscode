@@ -15,18 +15,7 @@ export class JiraSettingsTreeDataProvider extends JiraTreeDataProvider {
 	protected async getSectionChildren(authInfo: JiraAuthInfo): Promise<JiraTreeItem[]> {
 		this.updateBadge();
 		this.updateDescription(extractHost(authInfo.baseUrl));
-
 		const nodes = buildAccountNodes(authInfo);
-		const token = await this.authManager.getToken();
-		if (!token) {
-			nodes.unshift(
-				new JiraTreeItem(
-					'info',
-					'Missing auth token. Please log in again.',
-					vscode.TreeItemCollapsibleState.None
-				)
-			);
-		}
 		return nodes;
 	}
 }
@@ -44,6 +33,14 @@ function buildAccountNodes(authInfo: JiraAuthInfo): JiraTreeItem[] {
 	const urlItem = new JiraTreeItem('info', authInfo.baseUrl, vscode.TreeItemCollapsibleState.None);
 	urlItem.iconPath = new vscode.ThemeIcon('globe');
 	nodes.push(urlItem);
+
+	const validateItem = new JiraTreeItem('info', 'Validate API Key', vscode.TreeItemCollapsibleState.None, {
+		command: 'jira.validateCredentials',
+		title: 'Validate API Key',
+	});
+	validateItem.iconPath = new vscode.ThemeIcon('shield');
+	validateItem.description = 'Check token';
+	nodes.push(validateItem);
 
 	const logoutItem = new JiraTreeItem('logout', 'Log out', vscode.TreeItemCollapsibleState.None, {
 		command: 'jira.logout',

@@ -36,6 +36,7 @@
         "onCommand:jira.openIssueDetails",
         "onCommand:jira.createIssue",
         "onCommand:jira.logout",
+        "onCommand:jira.validateCredentials",
         "onView:jiraProjectsView",
         "onView:jiraItemsView",
         "onView:jiraSettingsView"
@@ -50,6 +51,10 @@
             {
                 "command": "jira.focusProject",
                 "title": "Jira: Focus Project"
+            },
+            {
+                "command": "jira.validateCredentials",
+                "title": "Jira: Validate API Key"
             },
             {
                 "command": "jira.clearProjectFocus",
@@ -347,9 +352,9 @@
         }
     },
     "scripts": {
-        "bundle": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js",
+        "bundle": "npx esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js",
         "compile": "npm run bundle",
-        "watch": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js --watch",
+        "watch": "npx esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js --watch",
         "package": "vsce package"
     },
     "devDependencies": {

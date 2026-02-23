@@ -80,6 +80,10 @@ export async function activate(context: vscode.ExtensionContext) {
 		if (selected) {
 			warmProjectCaches(selected.key);
 		}
+		void authManager.ensureCredentialValidation(true);
+		refreshAll();
+	});
+	const credentialValidationDisposable = authManager.onDidChangeCredentialValidation(() => {
 		refreshAll();
 	});
 
@@ -87,10 +91,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	if (initiallySelectedProject) {
 		warmProjectCaches(initiallySelectedProject.key);
 	}
+	void authManager.ensureCredentialValidation(false);
 
 	context.subscriptions.push(
 		authManager,
 		authChangeDisposable,
+		credentialValidationDisposable,
 		projectsView,
 		itemsView,
 		settingsView,
@@ -100,6 +106,15 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 		vscode.commands.registerCommand('jira.logout', async () => {
 			await authManager.logout();
+			refreshAll();
+		}),
+		vscode.commands.registerCommand('jira.validateCredentials', async () => {
+			await authManager.validateStoredCredentials({
+				showSuccessMessage: true,
+				promptReLogin: true,
+				silent: false,
+				force: true,
+			});
 			refreshAll();
 		}),
 		vscode.commands.registerCommand('jira.showAllProjects', async () => {
