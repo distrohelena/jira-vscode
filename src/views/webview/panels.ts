@@ -616,9 +616,25 @@ function renderIssueDetailsHtml(
 			gap: 4px;
 		}
 			.assignee-card {
+				display: flex;
+				flex-direction: column;
+				gap: 8px;
+			}
+			.assignee-current-row {
+				display: flex;
 				flex-direction: row;
-				gap: 12px;
 				align-items: center;
+				gap: 12px;
+			}
+			.assignee-current-copy {
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+				min-width: 0;
+			}
+			.assignee-current-name {
+				font-weight: 600;
+				line-height: 1.2;
 			}
 			.assignee-control-details {
 				display: flex;
@@ -2567,9 +2583,14 @@ function renderAssigneeControl(
 			? assigneeError
 			: 'Search to load assignable users.';
 	return `<div class="assignee-card">
-		${renderAssigneeAvatar(issue)}
+		<div class="assignee-current-row">
+			${renderAssigneeAvatar(issue)}
+			<div class="assignee-current-copy">
+				<div class="muted">Current</div>
+				<div class="assignee-current-name">${escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
+			</div>
+		</div>
 		<div class="assignee-control-details">
-			<div class="muted">Current: ${escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
 			<div class="assignee-search-row">
 				<input type="text" class="jira-assignee-search" data-issue-key="${escapeAttribute(
 					issue.key
@@ -2607,9 +2628,14 @@ function renderAssigneeControl(
 	const disabledAttr = pending ? 'disabled' : '';
 
 	return `<div class="assignee-card">
-		${renderAssigneeAvatar(issue)}
+		<div class="assignee-current-row">
+			${renderAssigneeAvatar(issue)}
+			<div class="assignee-current-copy">
+				<div class="muted">Current</div>
+				<div class="assignee-current-name">${escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
+			</div>
+		</div>
 		<div class="assignee-control-details">
-			<div class="muted">Current: ${escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
 			<div class="assignee-search-row">
 				<input type="text" class="jira-assignee-search" data-issue-key="${escapeAttribute(
 					issue.key
