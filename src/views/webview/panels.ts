@@ -224,20 +224,6 @@ function renderIssueDetailsHtml(
 	.issue-summary-block:hover .jira-summary-display {
 		background: var(--vscode-editor-selectionBackground, rgba(127,127,127,0.24));
 	}
-	.jira-summary-preview {
-		display: none;
-		font-size: 0.85em;
-		color: var(--vscode-descriptionForeground);
-		padding: 3px 8px;
-		border: 1px dashed var(--vscode-panel-border, rgba(255,255,255,0.22));
-		border-radius: 4px;
-		width: fit-content;
-		user-select: none;
-		cursor: pointer;
-	}
-	.issue-summary-block:hover .jira-summary-preview {
-		display: inline-block;
-	}
 	.jira-summary-editor {
 		display: none;
 		flex-direction: column;
@@ -248,8 +234,7 @@ function renderIssueDetailsHtml(
 	.issue-summary-block.editor-open .jira-summary-editor {
 		display: flex;
 	}
-	.issue-summary-block.editor-open .jira-summary-display,
-	.issue-summary-block.editor-open .jira-summary-preview {
+	.issue-summary-block.editor-open .jira-summary-display {
 		display: none;
 	}
 	.jira-summary-input {
@@ -280,19 +265,6 @@ function renderIssueDetailsHtml(
 	.jira-summary-cancel:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
-	}
-	.summary-edit-pending .jira-summary-preview {
-		display: inline-block;
-	}
-	.summary-edit-disabled .jira-summary-preview,
-	.summary-edit-disabled:hover .jira-summary-preview {
-		display: none;
-	}
-	.summary-edit-pending .jira-summary-preview::before {
-		content: 'Saving title...';
-	}
-	.summary-edit-pending .jira-summary-preview span {
-		display: none;
 	}
 	.issue-summary-error {
 		margin-bottom: 10px;
@@ -460,9 +432,75 @@ function renderIssueDetailsHtml(
 	.issue-description-block.editor-open .jira-description-preview {
 		display: none;
 	}
-	.jira-description-editor .jira-rich-editor-input {
-		min-height: 180px;
-		resize: vertical;
+	.jira-description-visual-editor {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.jira-description-toolbar {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+	.jira-description-editor-input {
+		width: 100%;
+		min-height: 360px;
+		height: 360px;
+		resize: none;
+		overflow-y: auto;
+		background: var(--vscode-input-background);
+		color: var(--vscode-input-foreground);
+		border: 1px solid var(--vscode-input-border);
+		border-radius: 4px;
+		padding: 10px;
+		font-family: var(--vscode-font-family);
+		font-size: var(--vscode-font-size);
+		line-height: 1.45;
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+	.jira-description-editor-input[contenteditable='true']:focus {
+		outline: none;
+		border-color: var(--vscode-focusBorder, var(--vscode-input-border));
+		box-shadow: 0 0 0 1px var(--vscode-focusBorder, transparent);
+	}
+	.jira-description-editor-input[contenteditable='true']:empty::before {
+		content: attr(data-placeholder);
+		color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+		pointer-events: none;
+	}
+	.jira-description-editor-input h1,
+	.jira-description-editor-input h2,
+	.jira-description-editor-input h3,
+	.jira-description-editor-input h4,
+	.jira-description-editor-input h5,
+	.jira-description-editor-input h6 {
+		margin: 0.4em 0 0.3em 0;
+	}
+	.jira-description-editor-input p {
+		margin: 0 0 0.8em 0;
+	}
+	.jira-description-editor-input ul,
+	.jira-description-editor-input ol {
+		margin: 0 0 0.8em 1.2em;
+	}
+	.jira-description-editor-input blockquote {
+		margin: 0 0 0.8em 0;
+		padding-left: 10px;
+		border-left: 3px solid var(--vscode-panel-border, rgba(255,255,255,0.2));
+		color: var(--vscode-descriptionForeground);
+	}
+	.jira-description-editor-input pre {
+		background: var(--vscode-editor-background);
+		border: 1px solid var(--vscode-input-border);
+		border-radius: 4px;
+		padding: 8px;
+		overflow-x: auto;
+	}
+	.jira-description-editor-input code {
+		background: var(--vscode-editorWidget-background, rgba(255,255,255,0.04));
+		padding: 1px 4px;
+		border-radius: 3px;
 	}
 	.jira-description-actions {
 		display: flex;
@@ -721,7 +759,6 @@ function renderIssueDetailsHtml(
 							issue.key
 						)}" data-summary-edit-disabled="${summaryEditDisabled ? 'true' : 'false'}">
 							<p class="issue-summary jira-summary-display">${escapeHtml(summaryText)}</p>
-							<div class="jira-summary-preview" aria-hidden="true"></div>
 							<form class="jira-summary-editor">
 								<input type="text" class="jira-summary-input" value="${escapeAttribute(
 									summaryValue
@@ -758,7 +795,6 @@ function renderIssueDetailsHtml(
 				const summaryBlock = document.querySelector('.issue-summary-block');
 				if (summaryBlock) {
 					const summaryDisplay = summaryBlock.querySelector('.jira-summary-display');
-					const summaryPreview = summaryBlock.querySelector('.jira-summary-preview');
 					const summaryEditor = summaryBlock.querySelector('.jira-summary-editor');
 					const summaryInput = summaryBlock.querySelector('.jira-summary-input');
 					const summaryCancel = summaryBlock.querySelector('.jira-summary-cancel');
@@ -786,11 +822,6 @@ function renderIssueDetailsHtml(
 					};
 					if (summaryDisplay) {
 						summaryDisplay.addEventListener('click', () => {
-							openSummaryEditor();
-						});
-					}
-					if (summaryPreview) {
-						summaryPreview.addEventListener('click', () => {
 							openSummaryEditor();
 						});
 					}
@@ -830,13 +861,203 @@ function renderIssueDetailsHtml(
 				}
 				const descriptionBlock = document.querySelector('.issue-description-block');
 				if (descriptionBlock) {
+					const normalizeDescriptionText = (value) => {
+						return (value || '')
+							.replace(/\r/g, '')
+							.replace(/[ \t]+\n/g, '\n')
+							.replace(/\n{3,}/g, '\n\n')
+							trim();
+					};
+					const serializeInlineNodeToWiki = (node) => {
+						if (!node) {
+							return '';
+						}
+						if (node.nodeType === Node.TEXT_NODE) {
+							return (node.textContent || '').replace(/\u00A0/g, ' ');
+						}
+						if (!(node instanceof HTMLElement)) {
+							return '';
+						}
+						const tag = node.tagName.toLowerCase();
+						const content = Array.from(node.childNodes).map(serializeInlineNodeToWiki).join('');
+						switch (tag) {
+							case 'strong':
+							case 'b':
+								return content ? '*' + content + '*' : '';
+							case 'em':
+							case 'i':
+								return content ? '_' + content + '_' : '';
+							case 'u':
+								return content ? '+' + content + '+' : '';
+							case 's':
+							case 'strike':
+							case 'del':
+								return content ? '-' + content + '-' : '';
+							case 'code':
+								return '{{' + (node.textContent || '') + '}}';
+							case 'a': {
+								const href = (node.getAttribute('href') || '').trim();
+								const linkText = content.trim() || href;
+								return href ? '[' + linkText + '|' + href + ']' : linkText;
+							}
+							case 'br':
+								return '\n';
+							default:
+								return content;
+						}
+					};
+					const serializeBlockNodeToWiki = (node) => {
+						if (!node) {
+							return '';
+						}
+						if (node.nodeType === Node.TEXT_NODE) {
+							return (node.textContent || '').trim();
+						}
+						if (!(node instanceof HTMLElement)) {
+							return '';
+						}
+						const tag = node.tagName.toLowerCase();
+						const inline = Array.from(node.childNodes).map(serializeInlineNodeToWiki).join('').trim();
+						switch (tag) {
+							case 'h2':
+								return inline ? 'h2. ' + inline : '';
+							case 'h3':
+								return inline ? 'h3. ' + inline : '';
+							case 'h4':
+								return inline ? 'h4. ' + inline : '';
+							case 'blockquote':
+								return inline ? 'bq. ' + inline : '';
+							case 'ul': {
+								const items = Array.from(node.children)
+									.filter((child) => child.tagName.toLowerCase() === 'li')
+									.map((item) =>
+										Array.from(item.childNodes)
+											.map(serializeInlineNodeToWiki)
+											.join('')
+											.trim()
+									)
+									.filter((item) => item.length > 0);
+								return items.map((item) => '* ' + item).join('\n');
+							}
+							case 'ol': {
+								const items = Array.from(node.children)
+									.filter((child) => child.tagName.toLowerCase() === 'li')
+									.map((item) =>
+										Array.from(item.childNodes)
+											.map(serializeInlineNodeToWiki)
+											.join('')
+											.trim()
+									)
+									.filter((item) => item.length > 0);
+								return items.map((item) => '# ' + item).join('\n');
+							}
+							case 'pre': {
+								const codeContent = (node.textContent || '').replace(/\r/g, '').trimEnd();
+								return codeContent ? '{code}\n' + codeContent + '\n{code}' : '';
+							}
+							case 'p':
+							case 'div':
+							case 'section':
+								return inline;
+							default:
+								return inline;
+						}
+					};
+					const serializeDescriptionHtmlToWiki = (html) => {
+						const container = document.createElement('div');
+						container.innerHTML = html || '';
+						const blocks = Array.from(container.childNodes)
+							.map(serializeBlockNodeToWiki)
+							.map((block) => block.trim())
+							.filter((block) => block.length > 0);
+						if (blocks.length === 0) {
+							return '';
+						}
+						return normalizeDescriptionText(blocks.join('\n\n'));
+					};
+					const applyDescriptionFormatting = (input, action) => {
+						if (!input || input.getAttribute('contenteditable') !== 'true') {
+							return;
+						}
+						input.focus();
+						switch (action) {
+							case 'bold':
+								document.execCommand('bold');
+								break;
+							case 'italic':
+								document.execCommand('italic');
+								break;
+							case 'underline':
+								document.execCommand('underline');
+								break;
+							case 'strike':
+								document.execCommand('strikeThrough');
+								break;
+							case 'h2':
+								document.execCommand('formatBlock', false, 'h2');
+								break;
+							case 'bullet':
+								document.execCommand('insertUnorderedList');
+								break;
+							case 'number':
+								document.execCommand('insertOrderedList');
+								break;
+							case 'quote':
+								document.execCommand('formatBlock', false, 'blockquote');
+								break;
+							case 'link': {
+								const url = window.prompt('Enter URL');
+								if (url && url.trim()) {
+									document.execCommand('createLink', false, url.trim());
+								}
+								break;
+							}
+							case 'code': {
+								const selection = window.getSelection();
+								if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+									document.execCommand('insertHTML', false, '<code>code</code>');
+								} else {
+									const range = selection.getRangeAt(0);
+									const code = document.createElement('code');
+									code.textContent = selection.toString();
+									range.deleteContents();
+									range.insertNode(code);
+									selection.removeAllRanges();
+									const nextRange = document.createRange();
+									nextRange.selectNodeContents(code);
+									selection.addRange(nextRange);
+								}
+								break;
+							}
+							case 'codeblock': {
+								const selection = window.getSelection();
+								const pre = document.createElement('pre');
+								if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+									pre.textContent = 'code';
+									document.execCommand('insertHTML', false, pre.outerHTML);
+								} else {
+									pre.textContent = selection.toString();
+									const range = selection.getRangeAt(0);
+									range.deleteContents();
+									range.insertNode(pre);
+								}
+								break;
+							}
+							default:
+								break;
+						}
+					};
 					const descriptionDisplay = descriptionBlock.querySelector('.jira-description-display');
 					const descriptionPreview = descriptionBlock.querySelector('.jira-description-preview');
 					const descriptionEditor = descriptionBlock.querySelector('.jira-description-editor');
-					const descriptionInput = descriptionBlock.querySelector('.issue-description-input');
+					const descriptionInput = descriptionBlock.querySelector('.jira-description-editor-input');
 					const descriptionCancel = descriptionBlock.querySelector('.jira-description-cancel');
+					const descriptionToolbarButtons = Array.from(
+						descriptionBlock.querySelectorAll('.jira-description-editor-action')
+					);
 					const issueKey = descriptionBlock.getAttribute('data-issue-key');
 					const editDisabled = descriptionBlock.getAttribute('data-description-edit-disabled') === 'true';
+					const originalDescriptionHtml = descriptionInput ? descriptionInput.innerHTML : '';
 					const openDescriptionEditor = () => {
 						if (
 							editDisabled ||
@@ -848,13 +1069,12 @@ function renderIssueDetailsHtml(
 						}
 						descriptionBlock.classList.add('editor-open');
 						descriptionInput.focus();
-						descriptionInput.select();
 					};
 					const closeDescriptionEditor = () => {
 						if (!descriptionInput) {
 							return;
 						}
-						descriptionInput.value = descriptionBlock.getAttribute('data-description-plain') || '';
+						descriptionInput.innerHTML = originalDescriptionHtml;
 						descriptionBlock.classList.remove('editor-open');
 					};
 					if (descriptionDisplay) {
@@ -867,12 +1087,23 @@ function renderIssueDetailsHtml(
 							openDescriptionEditor();
 						});
 					}
+					descriptionToolbarButtons.forEach((button) => {
+						button.addEventListener('click', () => {
+							if (!descriptionInput) {
+								return;
+							}
+							const action = button.getAttribute('data-action') || '';
+							applyDescriptionFormatting(descriptionInput, action);
+						});
+					});
 					if (descriptionEditor && descriptionInput && issueKey) {
 						descriptionEditor.addEventListener('submit', (event) => {
 							event.preventDefault();
-							const currentDescription = descriptionBlock.getAttribute('data-description-plain') || '';
-							const nextDescription = descriptionInput.value || '';
-							if (nextDescription === currentDescription) {
+							const currentDescription = normalizeDescriptionText(
+								descriptionBlock.getAttribute('data-description-plain') || ''
+							);
+							const nextDescription = serializeDescriptionHtmlToWiki(descriptionInput.innerHTML || '');
+							if (normalizeDescriptionText(nextDescription) === currentDescription) {
 								closeDescriptionEditor();
 								return;
 							}
@@ -881,7 +1112,7 @@ function renderIssueDetailsHtml(
 							buttons.forEach((button) => {
 								button.disabled = true;
 							});
-							descriptionInput.disabled = true;
+							descriptionInput.setAttribute('contenteditable', 'false');
 							vscode.postMessage({
 								type: 'updateDescription',
 								issueKey,
@@ -1640,6 +1871,7 @@ function renderDescriptionSection(
 		: undefined;
 	const content = descriptionHtml ?? fallbackHtml;
 	const descriptionText = deriveEditableDescriptionText(issue, content);
+	const editableDescriptionHtml = deriveEditableDescriptionHtml(content, descriptionText);
 	const descriptionEditPending = options?.descriptionEditPending ?? false;
 	const descriptionEditError = options?.descriptionEditError;
 	const descriptionEditDisabled = isLoading || descriptionEditPending;
@@ -1666,16 +1898,26 @@ function renderDescriptionSection(
 		)}">
 			${body}
 			<form class="jira-description-editor">
-				${renderRichTextEditor({
-					editorId: 'issue-description-input',
-					value: descriptionText,
-					placeholder: 'Add description...',
-					disabled: descriptionEditDisabled,
-					minRows: 10,
-					inputClassName: 'issue-description-input',
-					editorClassName: 'issue-description-editor-control',
-					ariaLabel: 'Description',
-				})}
+				<div class="jira-description-visual-editor">
+					<div class="jira-description-toolbar" role="toolbar" aria-label="Description formatting">
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="bold" ${descriptionEditDisabledAttr}><span class="fmt-bold">B</span></button>
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="italic" ${descriptionEditDisabledAttr}><span class="fmt-italic">I</span></button>
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="underline" ${descriptionEditDisabledAttr}><span class="fmt-underline">U</span></button>
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="strike" ${descriptionEditDisabledAttr}><span class="fmt-strike">S</span></button>
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="code" ${descriptionEditDisabledAttr}>{ }</button>
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="h2" ${descriptionEditDisabledAttr}>H2</button>
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="bullet" ${descriptionEditDisabledAttr}>• List</button>
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="number" ${descriptionEditDisabledAttr}>1. List</button>
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="quote" ${descriptionEditDisabledAttr}>Quote</button>
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="codeblock" ${descriptionEditDisabledAttr}>Code</button>
+						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="link" ${descriptionEditDisabledAttr}>Link</button>
+					</div>
+					<div
+						class="jira-description-editor-input"
+						contenteditable="${descriptionEditDisabled ? 'false' : 'true'}"
+						data-placeholder="Add description..."
+					>${editableDescriptionHtml}</div>
+				</div>
 				<div class="jira-description-actions">
 					<button type="submit" class="jira-description-save" ${descriptionEditDisabledAttr}>Save</button>
 					<button type="button" class="jira-description-cancel" ${descriptionEditDisabledAttr}>Cancel</button>
@@ -1695,6 +1937,16 @@ function deriveEditableDescriptionText(issue: JiraIssue, renderedContent?: strin
 		return '';
 	}
 	return htmlToPlainText(renderedContent);
+}
+
+function deriveEditableDescriptionHtml(renderedContent: string | undefined, fallbackText: string): string {
+	if (renderedContent && renderedContent.trim().length > 0) {
+		return renderedContent;
+	}
+	if (!fallbackText) {
+		return '';
+	}
+	return `<p>${escapeHtml(fallbackText).replace(/\r?\n/g, '<br />')}</p>`;
 }
 
 function htmlToPlainText(html: string): string {
