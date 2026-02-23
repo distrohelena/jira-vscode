@@ -13,3 +13,4 @@
 - Do not export empty functions or placeholders without a clear owning class/service; every export must have an explicit owner and real implementation.
 - Avoid half-measures that patch broken state; ensure systems are correctly initialized or fix the underlying cause instead of bolting on runtime fixes
 - Always implement API endpoints strictly from the official documentation, never from memory
+- Never add proactive UI/behavior changes without asking the user first and getting explicit approval.

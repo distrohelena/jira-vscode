@@ -32,6 +32,11 @@ export type JiraIssue = {
 	assigneeKey?: string;
 	assigneeAccountId?: string;
 	assigneeAvatarUrl?: string;
+	reporterName?: string;
+	reporterUsername?: string;
+	reporterKey?: string;
+	reporterAccountId?: string;
+	reporterAvatarUrl?: string;
 	description?: string;
 	descriptionHtml?: string;
 	url: string;

@@ -1082,6 +1082,7 @@ function mapIssues(data: any, urlRoot: string): JiraIssue[] {
 function mapIssue(issue: any, urlRoot: string): JiraIssue {
 	const fields = issue?.fields ?? {};
 	const avatarUrls = fields?.assignee?.avatarUrls ?? issue?.assignee?.avatarUrls ?? {};
+	const reporterAvatarUrls = fields?.reporter?.avatarUrls ?? issue?.reporter?.avatarUrls ?? {};
 	const renderedFields = issue?.renderedFields ?? {};
 	const rawDescription = fields?.description;
 	const renderedDescription = typeof renderedFields?.description === 'string' ? renderedFields.description : undefined;
@@ -1100,6 +1101,14 @@ function mapIssue(issue: any, urlRoot: string): JiraIssue {
 		avatarUrls['32x32'] ??
 		avatarUrls['24x24'] ??
 		avatarUrls['16x16'];
+	const reporterAvatarUrl =
+		reporterAvatarUrls['128x128'] ??
+		reporterAvatarUrls['96x96'] ??
+		reporterAvatarUrls['72x72'] ??
+		reporterAvatarUrls['48x48'] ??
+		reporterAvatarUrls['32x32'] ??
+		reporterAvatarUrls['24x24'] ??
+		reporterAvatarUrls['16x16'];
 
 	const issueType = fields?.issuetype ?? {};
 	const issueTypeId = issueType?.id ? String(issueType.id) : undefined;
@@ -1118,6 +1127,11 @@ function mapIssue(issue: any, urlRoot: string): JiraIssue {
 		assigneeKey: fields?.assignee?.key ?? undefined,
 		assigneeAccountId: fields?.assignee?.accountId ?? undefined,
 		assigneeAvatarUrl,
+		reporterName: fields?.reporter?.displayName ?? fields?.reporter?.name ?? undefined,
+		reporterUsername: fields?.reporter?.name ?? undefined,
+		reporterKey: fields?.reporter?.key ?? undefined,
+		reporterAccountId: fields?.reporter?.accountId ?? undefined,
+		reporterAvatarUrl,
 		description: descriptionText,
 		descriptionHtml,
 		url: `${urlRoot}/browse/${issue?.key}`,

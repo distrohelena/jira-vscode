@@ -86,6 +86,7 @@ function renderIssueDetailsHtml(
 ): string {
 	const updatedText = formatIssueUpdated(issue.updated);
 	const assignee = issue.assigneeName ?? 'Unassigned';
+	const reporter = issue.reporterName ?? 'Unknown';
 	const nonce = generateNonce();
 	const isLoading = options?.loading ?? false;
 	const errorMessage = options?.error;
@@ -93,7 +94,7 @@ function renderIssueDetailsHtml(
 	const parentSection = errorMessage ? '' : renderParentSection(issue);
 	const childrenSection = errorMessage ? '' : renderChildrenSection(issue);
 	const cspSource = webview.cspSource;
-	const metadataPanel = renderMetadataPanel(issue, assignee, updatedText, options);
+	const metadataPanel = renderMetadataPanel(issue, assignee, reporter, updatedText, options);
 	const issueTypeLabel = (issue.issueTypeName?.trim() || 'Issue').toUpperCase();
 	const statusIconMarkup = `<div class="ticket-icon-block">
 		${
@@ -720,7 +721,7 @@ function renderIssueDetailsHtml(
 							issue.key
 						)}" data-summary-edit-disabled="${summaryEditDisabled ? 'true' : 'false'}">
 							<p class="issue-summary jira-summary-display">${escapeHtml(summaryText)}</p>
-							<div class="jira-summary-preview"><span>Click to edit title</span></div>
+							<div class="jira-summary-preview" aria-hidden="true"></div>
 							<form class="jira-summary-editor">
 								<input type="text" class="jira-summary-input" value="${escapeAttribute(
 									summaryValue
@@ -1638,7 +1639,7 @@ function renderDescriptionSection(
 		? `<p>${escapeHtml(issue.description).replace(/\r?\n/g, '<br />')}</p>`
 		: undefined;
 	const content = descriptionHtml ?? fallbackHtml;
-	const descriptionText = issue.description ?? '';
+	const descriptionText = deriveEditableDescriptionText(issue, content);
 	const descriptionEditPending = options?.descriptionEditPending ?? false;
 	const descriptionEditError = options?.descriptionEditError;
 	const descriptionEditDisabled = isLoading || descriptionEditPending;
@@ -1664,7 +1665,6 @@ function renderDescriptionSection(
 			descriptionText
 		)}">
 			${body}
-			<div class="jira-description-preview"><span>Click to edit description</span></div>
 			<form class="jira-description-editor">
 				${renderRichTextEditor({
 					editorId: 'issue-description-input',
@@ -1684,6 +1684,47 @@ function renderDescriptionSection(
 			${errorMarkup}
 		</div>
 	</div>`;
+}
+
+function deriveEditableDescriptionText(issue: JiraIssue, renderedContent?: string): string {
+	const rawDescription = issue.description;
+	if (typeof rawDescription === 'string' && rawDescription.length > 0) {
+		return rawDescription;
+	}
+	if (!renderedContent) {
+		return '';
+	}
+	return htmlToPlainText(renderedContent);
+}
+
+function htmlToPlainText(html: string): string {
+	const withStructure = html
+		.replace(/<\s*br\s*\/?>/gi, '\n')
+		.replace(/<\/\s*(p|div|h1|h2|h3|h4|h5|h6)\s*>/gi, '\n')
+		.replace(/<\s*li[^>]*>/gi, '- ')
+		.replace(/<\/\s*li\s*>/gi, '\n');
+	const withoutTags = withStructure.replace(/<[^>]+>/g, '');
+	const decoded = decodeHtmlEntities(withoutTags);
+	return decoded
+		.split('\n')
+		.map((line) => line.trimEnd())
+		.join('\n')
+		replace(/\n{3,}/g, '\n\n')
+		trim();
+}
+
+function decodeHtmlEntities(text: string): string {
+	return text
+		.replace(/&nbsp;/gi, ' ')
+		.replace(/&amp;/gi, '&')
+		.replace(/&lt;/gi, '<')
+		.replace(/&gt;/gi, '>')
+		.replace(/&quot;/gi, '"')
+		.replace(/&#39;/gi, "'")
+		.replace(/&#(\d+);/g, (_match, value: string) => {
+			const code = Number.parseInt(value, 10);
+			return Number.isFinite(code) ? String.fromCodePoint(code) : _match;
+		});
 }
 
 type RichTextEditorRenderOptions = {
@@ -2021,6 +2062,7 @@ function renderRelatedIssueButton(issue: JiraRelatedIssue): string {
 function renderMetadataPanel(
 	issue: JiraIssue,
 	assignee: string,
+	reporter: string,
 	updatedText: string,
 	options?: IssuePanelOptions
 ): string {
@@ -2035,6 +2077,10 @@ function renderMetadataPanel(
 			<div class="meta-section">
 				<div class="section-title">Assignee</div>
 				${assigneeControl}
+			</div>
+			<div class="meta-section">
+				<div class="section-title">Reporter</div>
+				<div>${escapeHtml(reporter)}</div>
 			</div>
 			<div class="meta-section">
 				<div class="section-title">Last Updated</div>

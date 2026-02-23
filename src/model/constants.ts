@@ -24,6 +24,7 @@ export const ISSUE_DETAIL_FIELDS = [
 	'status',
 	'issuetype',
 	'assignee',
+	'reporter',
 	'updated',
 	'parent',
 	'subtasks',
