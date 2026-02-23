@@ -10,6 +10,7 @@ import {
 	fetchIssueDetails,
 	fetchIssueTransitions,
 	transitionIssueStatus,
+	updateIssueDescription,
 	updateIssueSummary,
 } from '../model/jiraApiClient';
 import {
@@ -102,6 +103,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 			commentDeletingId?: string;
 			summaryEditPending: boolean;
 			summaryEditError?: string;
+			descriptionEditPending: boolean;
+			descriptionEditError?: string;
 			loadingIssue: boolean;
 		} = {
 			issue: initialIssue ?? createPlaceholderIssue(resolvedIssueKey),
@@ -119,12 +122,16 @@ export function createIssueController(deps: IssueControllerDeps) {
 			commentDeletingId: undefined,
 			summaryEditPending: false,
 			summaryEditError: undefined,
+			descriptionEditPending: false,
+			descriptionEditError: undefined,
 			loadingIssue: true,
 		};
 
 		const buildCommentOptions = (): IssuePanelOptions => ({
 			summaryEditPending: panelState.summaryEditPending,
 			summaryEditError: panelState.summaryEditError,
+			descriptionEditPending: panelState.descriptionEditPending,
+			descriptionEditError: panelState.descriptionEditError,
 			comments: panelState.comments,
 			commentsError: panelState.commentsError,
 			commentsPending: panelState.commentsLoading,
@@ -172,6 +179,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 					await refreshComments(true);
 				} else if (message?.type === 'updateSummary' && typeof message.summary === 'string') {
 					await handleSummaryUpdate(message.summary);
+				} else if (message?.type === 'updateDescription' && typeof message.description === 'string') {
+					await handleDescriptionUpdate(message.description);
 				} else if (message?.type === 'commentDraftChanged' && typeof message.value === 'string') {
 					panelState.commentDraft = message.value;
 					if (panelState.commentSubmitError) {
@@ -287,6 +296,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 				panelState.loadingIssue = false;
 				panelState.summaryEditPending = false;
 				panelState.summaryEditError = undefined;
+				panelState.descriptionEditPending = false;
+				panelState.descriptionEditError = undefined;
 				renderPanel({
 					statusOptions: panelState.transitions ?? panelState.statusPrefill,
 					statusPending: false,
@@ -532,6 +543,55 @@ export function createIssueController(deps: IssueControllerDeps) {
 					renderPanel();
 				}
 				await vscode.window.showErrorMessage(`Failed to update title: ${message}`);
+			}
+		}
+
+		async function handleDescriptionUpdate(description: string): Promise<void> {
+			if (disposed) {
+				return;
+			}
+
+			const currentDescription = panelState.issue.description ?? '';
+			if (description === currentDescription) {
+				panelState.descriptionEditError = undefined;
+				renderPanel();
+				return;
+			}
+
+			const authInfo = await authManager.getAuthInfo();
+			const token = await authManager.getToken();
+			if (!authInfo || !token) {
+				await vscode.window.showInformationMessage('Log in to Jira to update issue description.');
+				return;
+			}
+
+			panelState.descriptionEditPending = true;
+			panelState.descriptionEditError = undefined;
+			renderPanel();
+
+			try {
+				await updateIssueDescription(authInfo, token, resolvedIssueKey, description);
+				const updatedIssue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				if (disposed) {
+					return;
+				}
+				panelState.issue = updatedIssue;
+				panelState.descriptionEditPending = false;
+				panelState.descriptionEditError = undefined;
+				renderPanel({
+					statusOptions: panelState.transitions ?? panelState.statusPrefill,
+					assigneeOptions: panelState.assignableUsers,
+					assigneeQuery: panelState.assigneeQuery,
+				});
+				refreshAll();
+			} catch (error) {
+				const message = deriveErrorMessage(error);
+				if (!disposed) {
+					panelState.descriptionEditPending = false;
+					panelState.descriptionEditError = `Failed to update description: ${message}`;
+					renderPanel();
+				}
+				await vscode.window.showErrorMessage(`Failed to update description: ${message}`);
 			}
 		}
 

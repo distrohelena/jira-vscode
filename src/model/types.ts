@@ -84,6 +84,8 @@ export type IssuePanelOptions = {
 	error?: string;
 	summaryEditPending?: boolean;
 	summaryEditError?: string;
+	descriptionEditPending?: boolean;
+	descriptionEditError?: string;
 	statusOptions?: IssueStatusOption[];
 	statusPending?: boolean;
 	statusError?: string;

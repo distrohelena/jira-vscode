@@ -534,6 +534,54 @@ export async function updateIssueSummary(
 	throw lastError ?? new Error('Unable to update issue title.');
 }
 
+export async function updateIssueDescription(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string,
+	description: string
+): Promise<void> {
+	const sanitizedKey = issueKey?.trim();
+	if (!sanitizedKey) {
+		throw new Error('Issue key is required.');
+	}
+	const nextDescription = typeof description === 'string' ? description : '';
+	const descriptionValue = nextDescription.trim().length > 0 ? nextDescription : null;
+
+	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(sanitizedKey)}`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			await axios.put(
+				endpoint,
+				{
+					fields: {
+						description: descriptionValue,
+					},
+				},
+				{
+					auth: {
+						username: authInfo.username,
+						password: token,
+					},
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+						'User-Agent': 'jira-vscode',
+					},
+				}
+			);
+			return;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to update issue description.');
+}
+
 export async function fetchIssueComments(
 	authInfo: JiraAuthInfo,
 	token: string,

@@ -89,7 +89,7 @@ function renderIssueDetailsHtml(
 	const nonce = generateNonce();
 	const isLoading = options?.loading ?? false;
 	const errorMessage = options?.error;
-	const descriptionSection = errorMessage ? '' : renderDescriptionSection(issue);
+	const descriptionSection = errorMessage ? '' : renderDescriptionSection(issue, options, isLoading);
 	const parentSection = errorMessage ? '' : renderParentSection(issue);
 	const childrenSection = errorMessage ? '' : renderChildrenSection(issue);
 	const cspSource = webview.cspSource;
@@ -167,6 +167,10 @@ function renderIssueDetailsHtml(
 		align-items: flex-start;
 		flex: 1;
 	}
+	.issue-header-copy {
+		flex: 1;
+		min-width: 0;
+	}
 	.status-icon {
 		width: 56px;
 		height: 56px;
@@ -203,20 +207,20 @@ function renderIssueDetailsHtml(
 	}
 	.issue-summary-block {
 		position: relative;
-		max-width: 100%;
+		width: 100%;
 	}
 	.issue-summary-block .issue-summary {
 		margin-bottom: 6px;
 	}
 	.issue-summary-block .jira-summary-display {
-		cursor: text;
+		cursor: pointer;
 		border-radius: 4px;
 		padding: 2px 4px;
 		margin-left: -4px;
 		margin-right: -4px;
 		transition: background-color 120ms ease-in-out;
 	}
-	.issue-summary-block.selection-ready .jira-summary-display {
+	.issue-summary-block:hover .jira-summary-display {
 		background: var(--vscode-editor-selectionBackground, rgba(127,127,127,0.24));
 	}
 	.jira-summary-preview {
@@ -230,7 +234,7 @@ function renderIssueDetailsHtml(
 		user-select: none;
 		cursor: pointer;
 	}
-	.issue-summary-block.selection-ready .jira-summary-preview {
+	.issue-summary-block:hover .jira-summary-preview {
 		display: inline-block;
 	}
 	.jira-summary-editor {
@@ -238,6 +242,7 @@ function renderIssueDetailsHtml(
 		flex-direction: column;
 		gap: 8px;
 		margin-bottom: 12px;
+		width: 100%;
 	}
 	.issue-summary-block.editor-open .jira-summary-editor {
 		display: flex;
@@ -247,6 +252,7 @@ function renderIssueDetailsHtml(
 		display: none;
 	}
 	.jira-summary-input {
+		display: block;
 		width: 100%;
 		background: var(--vscode-input-background);
 		color: var(--vscode-input-foreground);
@@ -276,6 +282,10 @@ function renderIssueDetailsHtml(
 	}
 	.summary-edit-pending .jira-summary-preview {
 		display: inline-block;
+	}
+	.summary-edit-disabled .jira-summary-preview,
+	.summary-edit-disabled:hover .jira-summary-preview {
+		display: none;
 	}
 	.summary-edit-pending .jira-summary-preview::before {
 		content: 'Saving title...';
@@ -408,6 +418,85 @@ function renderIssueDetailsHtml(
 		border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
 		border-radius: 6px;
 		padding: 16px;
+	}
+	.issue-description-block {
+		position: relative;
+		width: 100%;
+	}
+	.jira-description-display {
+		cursor: pointer;
+		margin-top: 8px;
+	}
+	.jira-description-preview {
+		display: none;
+		margin-top: 8px;
+		font-size: 0.85em;
+		color: var(--vscode-descriptionForeground);
+		padding: 3px 8px;
+		border: 1px dashed var(--vscode-panel-border, rgba(255,255,255,0.22));
+		border-radius: 4px;
+		width: fit-content;
+		user-select: none;
+		cursor: pointer;
+	}
+	.issue-description-block:hover .jira-description-preview {
+		display: inline-block;
+	}
+	.issue-description-block:hover .jira-description-display {
+		border-color: var(--vscode-textLink-foreground);
+	}
+	.jira-description-editor {
+		display: none;
+		flex-direction: column;
+		gap: 8px;
+		margin-top: 8px;
+		width: 100%;
+	}
+	.issue-description-block.editor-open .jira-description-editor {
+		display: flex;
+	}
+	.issue-description-block.editor-open .jira-description-display,
+	.issue-description-block.editor-open .jira-description-preview {
+		display: none;
+	}
+	.jira-description-editor .jira-rich-editor-input {
+		min-height: 180px;
+		resize: vertical;
+	}
+	.jira-description-actions {
+		display: flex;
+		gap: 8px;
+	}
+	.jira-description-save,
+	.jira-description-cancel {
+		border-radius: 4px;
+		border: 1px solid var(--vscode-button-secondaryBorder, transparent);
+		background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+		color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+		padding: 6px 12px;
+		cursor: pointer;
+		font-size: 0.9em;
+	}
+	.jira-description-save:disabled,
+	.jira-description-cancel:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+	.description-edit-pending .jira-description-preview {
+		display: inline-block;
+	}
+	.description-edit-pending .jira-description-preview::before {
+		content: 'Saving description...';
+	}
+	.description-edit-pending .jira-description-preview span {
+		display: none;
+	}
+	.description-edit-disabled .jira-description-preview,
+	.description-edit-disabled:hover .jira-description-preview {
+		display: none;
+	}
+	.issue-description-error {
+		margin-top: 8px;
 	}
 	.comment-message {
 		margin-top: 16px;
@@ -625,13 +714,13 @@ function renderIssueDetailsHtml(
 			<div class="issue-header">
 				<div class="issue-header-main">
 					${statusIconMarkup}
-					<div>
+					<div class="issue-header-copy">
 						<h1>${escapeHtml(issue.key)}</h1>
 						<div class="${summaryBlockClasses.join(' ')}" data-issue-key="${escapeAttribute(
 							issue.key
 						)}" data-summary-edit-disabled="${summaryEditDisabled ? 'true' : 'false'}">
 							<p class="issue-summary jira-summary-display">${escapeHtml(summaryText)}</p>
-							<div class="jira-summary-preview"><span>Select title text, then click to edit</span></div>
+							<div class="jira-summary-preview"><span>Click to edit title</span></div>
 							<form class="jira-summary-editor">
 								<input type="text" class="jira-summary-input" value="${escapeAttribute(
 									summaryValue
@@ -684,7 +773,6 @@ function renderIssueDetailsHtml(
 							return;
 						}
 						summaryBlock.classList.add('editor-open');
-						summaryBlock.classList.remove('selection-ready');
 						summaryInput.focus();
 						summaryInput.select();
 					};
@@ -695,35 +783,9 @@ function renderIssueDetailsHtml(
 						summaryInput.value = summaryDisplay.textContent || '';
 						summaryBlock.classList.remove('editor-open');
 					};
-					const updateSelectionPreview = () => {
-						if (
-							!summaryDisplay ||
-							!summaryPreview ||
-							editDisabled ||
-							summaryBlock.classList.contains('editor-open')
-						) {
-							return;
-						}
-						const selection = window.getSelection();
-						const selectedText = selection ? selection.toString().trim() : '';
-						const anchorInside =
-							!!selection?.anchorNode && summaryDisplay.contains(selection.anchorNode);
-						const focusInside =
-							!!selection?.focusNode && summaryDisplay.contains(selection.focusNode);
-						const selectionInsideSummary = selectedText.length > 0 && anchorInside && focusInside;
-						summaryBlock.classList.toggle('selection-ready', selectionInsideSummary);
-					};
 					if (summaryDisplay) {
-						summaryDisplay.addEventListener('mousedown', (event) => {
-							if (summaryBlock.classList.contains('selection-ready')) {
-								event.preventDefault();
-								openSummaryEditor();
-							}
-						});
 						summaryDisplay.addEventListener('click', () => {
-							if (summaryBlock.classList.contains('selection-ready')) {
-								openSummaryEditor();
-							}
+							openSummaryEditor();
 						});
 					}
 					if (summaryPreview) {
@@ -731,7 +793,6 @@ function renderIssueDetailsHtml(
 							openSummaryEditor();
 						});
 					}
-					document.addEventListener('selectionchange', updateSelectionPreview);
 					if (summaryEditor && summaryInput && issueKey) {
 						summaryEditor.addEventListener('submit', (event) => {
 							event.preventDefault();
@@ -743,7 +804,6 @@ function renderIssueDetailsHtml(
 								closeSummaryEditor();
 								return;
 							}
-							summaryBlock.classList.remove('selection-ready');
 							summaryBlock.classList.add('summary-edit-pending');
 							const buttons = summaryEditor.querySelectorAll('button');
 							buttons.forEach((button) => {
@@ -763,6 +823,81 @@ function renderIssueDetailsHtml(
 							if (event.key === 'Escape') {
 								event.preventDefault();
 								closeSummaryEditor();
+							}
+						});
+					}
+				}
+				const descriptionBlock = document.querySelector('.issue-description-block');
+				if (descriptionBlock) {
+					const descriptionDisplay = descriptionBlock.querySelector('.jira-description-display');
+					const descriptionPreview = descriptionBlock.querySelector('.jira-description-preview');
+					const descriptionEditor = descriptionBlock.querySelector('.jira-description-editor');
+					const descriptionInput = descriptionBlock.querySelector('.issue-description-input');
+					const descriptionCancel = descriptionBlock.querySelector('.jira-description-cancel');
+					const issueKey = descriptionBlock.getAttribute('data-issue-key');
+					const editDisabled = descriptionBlock.getAttribute('data-description-edit-disabled') === 'true';
+					const openDescriptionEditor = () => {
+						if (
+							editDisabled ||
+							!descriptionEditor ||
+							!descriptionInput ||
+							descriptionBlock.classList.contains('description-edit-pending')
+						) {
+							return;
+						}
+						descriptionBlock.classList.add('editor-open');
+						descriptionInput.focus();
+						descriptionInput.select();
+					};
+					const closeDescriptionEditor = () => {
+						if (!descriptionInput) {
+							return;
+						}
+						descriptionInput.value = descriptionBlock.getAttribute('data-description-plain') || '';
+						descriptionBlock.classList.remove('editor-open');
+					};
+					if (descriptionDisplay) {
+						descriptionDisplay.addEventListener('click', () => {
+							openDescriptionEditor();
+						});
+					}
+					if (descriptionPreview) {
+						descriptionPreview.addEventListener('click', () => {
+							openDescriptionEditor();
+						});
+					}
+					if (descriptionEditor && descriptionInput && issueKey) {
+						descriptionEditor.addEventListener('submit', (event) => {
+							event.preventDefault();
+							const currentDescription = descriptionBlock.getAttribute('data-description-plain') || '';
+							const nextDescription = descriptionInput.value || '';
+							if (nextDescription === currentDescription) {
+								closeDescriptionEditor();
+								return;
+							}
+							descriptionBlock.classList.add('description-edit-pending');
+							const buttons = descriptionEditor.querySelectorAll('button');
+							buttons.forEach((button) => {
+								button.disabled = true;
+							});
+							descriptionInput.disabled = true;
+							vscode.postMessage({
+								type: 'updateDescription',
+								issueKey,
+								description: nextDescription,
+							});
+						});
+					}
+					if (descriptionCancel) {
+						descriptionCancel.addEventListener('click', () => {
+							closeDescriptionEditor();
+						});
+					}
+					if (descriptionInput) {
+						descriptionInput.addEventListener('keydown', (event) => {
+							if (event.key === 'Escape') {
+								event.preventDefault();
+								closeDescriptionEditor();
 							}
 						});
 					}
@@ -1493,18 +1628,61 @@ function renderChildrenSection(issue: JiraIssue): string {
 	</div>`;
 }
 
-function renderDescriptionSection(issue: JiraIssue): string {
+function renderDescriptionSection(
+	issue: JiraIssue,
+	options?: IssuePanelOptions,
+	isLoading = false
+): string {
 	const descriptionHtml = issue.descriptionHtml;
 	const fallbackHtml = issue.description
 		? `<p>${escapeHtml(issue.description).replace(/\r?\n/g, '<br />')}</p>`
 		: undefined;
 	const content = descriptionHtml ?? fallbackHtml;
+	const descriptionText = issue.description ?? '';
+	const descriptionEditPending = options?.descriptionEditPending ?? false;
+	const descriptionEditError = options?.descriptionEditError;
+	const descriptionEditDisabled = isLoading || descriptionEditPending;
+	const descriptionEditDisabledAttr = descriptionEditDisabled ? 'disabled' : '';
+	const blockClasses = ['issue-description-block'];
+	if (descriptionEditPending) {
+		blockClasses.push('description-edit-pending');
+	}
+	if (descriptionEditDisabled) {
+		blockClasses.push('description-edit-disabled');
+	}
 	const body = content
-		? `<div class="description-body rich-text-block">${content}</div>`
-		: '<div class="muted">No description provided.</div>';
+		? `<div class="description-body rich-text-block jira-description-display">${content}</div>`
+		: '<div class="description-body rich-text-block jira-description-display muted">No description provided. Click to add one.</div>';
+	const errorMarkup = descriptionEditError
+		? `<div class="status-error issue-description-error">${escapeHtml(descriptionEditError)}</div>`
+		: '';
 	return `<div class="section description-card">
 		<div class="section-title">Description</div>
-		${body}
+		<div class="${blockClasses.join(' ')}" data-issue-key="${escapeAttribute(
+			issue.key
+		)}" data-description-edit-disabled="${descriptionEditDisabled ? 'true' : 'false'}" data-description-plain="${escapeAttribute(
+			descriptionText
+		)}">
+			${body}
+			<div class="jira-description-preview"><span>Click to edit description</span></div>
+			<form class="jira-description-editor">
+				${renderRichTextEditor({
+					editorId: 'issue-description-input',
+					value: descriptionText,
+					placeholder: 'Add description...',
+					disabled: descriptionEditDisabled,
+					minRows: 10,
+					inputClassName: 'issue-description-input',
+					editorClassName: 'issue-description-editor-control',
+					ariaLabel: 'Description',
+				})}
+				<div class="jira-description-actions">
+					<button type="submit" class="jira-description-save" ${descriptionEditDisabledAttr}>Save</button>
+					<button type="button" class="jira-description-cancel" ${descriptionEditDisabledAttr}>Cancel</button>
+				</div>
+			</form>
+			${errorMarkup}
+		</div>
 	</div>`;
 }
 
@@ -1535,9 +1713,10 @@ function renderRichTextEditor(options: RichTextEditorRenderOptions): string {
 	const label = options.ariaLabel ?? 'Rich text input';
 	return `<div class="${wrapperClasses.join(' ')}" data-disabled="${options.disabled ? 'true' : 'false'}">
 		<div class="jira-rich-editor-toolbar" role="toolbar" aria-label="${escapeAttribute(label)} formatting">
-			<button type="button" class="jira-rich-editor-action" data-action="bold" title="Bold (*text*)" ${disabledAttr}>B</button>
-			<button type="button" class="jira-rich-editor-action" data-action="italic" title="Italic (_text_)" ${disabledAttr}>I</button>
-			<button type="button" class="jira-rich-editor-action" data-action="strike" title="Strike (-text-)" ${disabledAttr}>S</button>
+			<button type="button" class="jira-rich-editor-action" data-action="bold" title="Bold (*text*)" ${disabledAttr}><span class="fmt-bold">B</span></button>
+			<button type="button" class="jira-rich-editor-action" data-action="italic" title="Italic (_text_)" ${disabledAttr}><span class="fmt-italic">I</span></button>
+			<button type="button" class="jira-rich-editor-action" data-action="underline" title="Underline (+text+)" ${disabledAttr}><span class="fmt-underline">U</span></button>
+			<button type="button" class="jira-rich-editor-action" data-action="strike" title="Strike (-text-)" ${disabledAttr}><span class="fmt-strike">S</span></button>
 			<button type="button" class="jira-rich-editor-action" data-action="code" title="Inline code ({{code}})" ${disabledAttr}>{ }</button>
 			<button type="button" class="jira-rich-editor-action" data-action="h2" title="Heading (h2.)" ${disabledAttr}>H2</button>
 			<button type="button" class="jira-rich-editor-action" data-action="bullet" title="Bulleted list (* )" ${disabledAttr}>• List</button>
@@ -1581,8 +1760,50 @@ function renderRichTextEditorStyles(): string {
 		opacity: 0.6;
 		cursor: not-allowed;
 	}
+	.jira-rich-editor-action .fmt-bold {
+		font-weight: 700;
+	}
+	.jira-rich-editor-action .fmt-italic {
+		font-style: italic;
+	}
+	.jira-rich-editor-action .fmt-underline {
+		text-decoration: underline;
+		text-decoration-thickness: 2px;
+	}
+	.jira-rich-editor-action .fmt-strike {
+		text-decoration: line-through;
+		text-decoration-thickness: 2px;
+	}
 	.jira-rich-editor-input {
 		width: 100%;
+		background: var(--vscode-input-background);
+		color: var(--vscode-input-foreground);
+		border: 1px solid var(--vscode-input-border);
+		border-radius: 4px;
+		padding: 8px;
+		font-family: var(--vscode-font-family);
+		font-size: var(--vscode-font-size);
+		font-weight: normal;
+		font-style: normal;
+		line-height: 1.45;
+		caret-color: var(--vscode-input-foreground);
+	}
+	.jira-rich-editor-input::placeholder {
+		color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+		font-family: var(--vscode-font-family);
+		font-size: var(--vscode-font-size);
+		font-weight: normal;
+		font-style: normal;
+		opacity: 1;
+	}
+	.jira-rich-editor-input:focus {
+		outline: none;
+		border-color: var(--vscode-focusBorder, var(--vscode-input-border));
+		box-shadow: 0 0 0 1px var(--vscode-focusBorder, transparent);
+	}
+	.jira-rich-editor-input:disabled {
+		opacity: 0.7;
+		cursor: not-allowed;
 	}
 	`;
 }
@@ -1654,6 +1875,7 @@ function renderRichTextEditorBootstrapScript(): string {
 				const editorActionHandlers = {
 					bold: (input) => wrapEditorSelection(input, '*', '*', 'bold text'),
 					italic: (input) => wrapEditorSelection(input, '_', '_', 'italic text'),
+					underline: (input) => wrapEditorSelection(input, '+', '+', 'underlined text'),
 					strike: (input) => wrapEditorSelection(input, '-', '-', 'struck text'),
 					code: (input) => wrapEditorSelection(input, '{{', '}}', 'code'),
 					h2: (input) => prefixEditorLines(input, 'h2. ', 'Heading'),
@@ -1713,7 +1935,6 @@ function renderCommentsSection(options?: IssuePanelOptions): string {
 		<div class="comments-header">
 			<div>
 				<div class="section-title">Comments</div>
-				<div class="muted">Use Jira wiki formatting to access every supported style.</div>
 			</div>
 			<button type="button" class="comment-refresh" ${refreshDisabledAttr}>${escapeHtml(refreshLabel)}</button>
 		</div>
