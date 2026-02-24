@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { escapeAttribute, escapeHtml, sanitizeRenderedHtml } from '../../src/shared/html';
+import { escapeAttribute, escapeHtml, sanitizeRenderedHtml } from '../../src/shared/html.helper';
 
 test('escapeHtml encodes reserved characters', () => {
 	const input = `<div class="x">it's & done</div>`;

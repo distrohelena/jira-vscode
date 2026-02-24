@@ -11,11 +11,11 @@ import {
 	JiraIssueComment,
 	JiraRelatedIssue,
 	SelectedProjectInfo,
-} from '../../model/types';
-import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../../model/constants';
-import { createPlaceholderIssue, determineStatusCategory, formatIssueUpdated } from '../../model/issueModel';
-import { escapeAttribute, escapeHtml } from '../../shared/html';
-import { getItemsIconPath, getStatusIconPath, getStatusIconWebviewSrc } from '../resources';
+} from '../../model/jira.type';
+import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../../model/jira.constant';
+import { createPlaceholderIssue, determineStatusCategory, formatIssueUpdated } from '../../model/issue.model';
+import { escapeAttribute, escapeHtml } from '../../shared/html.helper';
+import { getItemsIconPath, getStatusIconPath, getStatusIconWebviewSrc } from '../view.resource';
 
 export function showIssueDetailsPanel(
 	issueKey: string,

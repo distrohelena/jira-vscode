@@ -1,6 +1,6 @@
-import { JiraAuthManager } from './authManager';
-import { fetchProjectStatuses } from './jiraApiClient';
-import { IssueStatusOption, ProjectIssueTypeStatuses, ProjectStatusesResponse } from './types';
+import { JiraAuthManager } from './auth.manager';
+import { jiraApiClient } from '../jiraApi';
+import { IssueStatusOption, ProjectIssueTypeStatuses, ProjectStatusesResponse } from './jira.type';
 
 type CachedProjectStatuses = {
 	allStatuses: IssueStatusOption[];
@@ -108,7 +108,7 @@ export class ProjectStatusStore {
 		if (!authInfo || !token) {
 			return undefined;
 		}
-		const response = await fetchProjectStatuses(authInfo, token, key);
+		const response = await jiraApiClient.fetchProjectStatuses(authInfo, token, key);
 		const entry = buildCacheEntry(response);
 		this.cache.set(key, entry);
 		this.primeIssueTypeCache(key, entry.issueTypeStatuses);

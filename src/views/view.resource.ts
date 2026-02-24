@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 
-import { getExtensionUri } from '../environment';
-import { STATUS_ICON_FILES } from '../model/constants';
-import { IssueStatusCategory } from '../model/types';
+import { getExtensionUri } from '../environment.runtime';
+import { STATUS_ICON_FILES } from '../model/jira.constant';
+import { IssueStatusCategory } from '../model/jira.type';
 
 export function getStatusIconPath(category: IssueStatusCategory): vscode.Uri | undefined {
 	const extensionUri = getExtensionUri();

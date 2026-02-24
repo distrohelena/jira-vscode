@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 
-import { JiraAuthManager } from './authManager';
-import { fetchAccessibleProjects } from './jiraApiClient';
-import { SELECTED_PROJECT_KEY } from './constants';
-import { deriveErrorMessage } from '../shared/errors';
-import { JiraAuthInfo, JiraProject, SelectedProjectInfo } from './types';
+import { JiraAuthManager } from './auth.manager';
+import { jiraApiClient } from '../jiraApi';
+import { SELECTED_PROJECT_KEY } from './jira.constant';
+import { deriveErrorMessage } from '../shared/error.helper';
+import { JiraAuthInfo, JiraProject, SelectedProjectInfo } from './jira.type';
 
 export class JiraFocusManager {
 	constructor(private readonly context: vscode.ExtensionContext, private readonly authManager: JiraAuthManager) {}
@@ -54,7 +54,7 @@ export class JiraFocusManager {
 		}
 
 		try {
-			const projects = await fetchAccessibleProjects(authInfo, token);
+			const projects = await jiraApiClient.fetchAccessibleProjects(authInfo, token);
 			if (projects.length === 0) {
 				await vscode.window.showInformationMessage('No projects available to select.');
 				return false;

@@ -1,4 +1,4 @@
-import { IssueStatusCategory } from './types';
+import { IssueStatusCategory } from './jira.type';
 
 export const AUTH_STATE_KEY = 'jira.authInfo';
 export const SECRET_PREFIX = 'jira-token';

@@ -8,8 +8,8 @@ import {
 	getIssueUpdatedTimestamp,
 	groupIssuesByStatus,
 	sortIssuesByUpdatedDesc,
-} from '../../src/model/issueModel';
-import { JiraAuthInfo, JiraIssue } from '../../src/model/types';
+} from '../../src/model/issue.model';
+import { JiraAuthInfo, JiraIssue } from '../../src/model/jira.type';
 
 function createIssue(overrides: Partial<JiraIssue>): JiraIssue {
 	return {

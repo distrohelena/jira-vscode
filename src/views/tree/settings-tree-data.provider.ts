@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 
-import { JiraAuthManager } from '../../model/authManager';
-import { JiraFocusManager } from '../../model/focusManager';
-import { JiraAuthInfo } from '../../model/types';
-import { extractHost } from '../../shared/urlUtils';
-import { JiraTreeItem } from './treeItems';
-import { JiraTreeDataProvider } from './baseTreeDataProvider';
+import { JiraAuthManager } from '../../model/auth.manager';
+import { JiraFocusManager } from '../../model/focus.manager';
+import { JiraAuthInfo } from '../../model/jira.type';
+import { extractHost } from '../../shared/url.helper';
+import { JiraTreeItem } from './tree-item.view';
+import { JiraTreeDataProvider } from './base-tree-data.provider';
 
 export class JiraSettingsTreeDataProvider extends JiraTreeDataProvider {
 	constructor(authManager: JiraAuthManager, focusManager: JiraFocusManager) {

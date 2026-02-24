@@ -1,4 +1,4 @@
-import { IssueStatusOption } from './types';
+import { IssueStatusOption } from './jira.type';
 
 type TransitionKeyParts = {
 	projectKey?: string;

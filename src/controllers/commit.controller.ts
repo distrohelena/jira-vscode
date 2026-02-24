@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
-import { GitExtensionExports, JiraIssue } from '../model/types';
-import { JiraTreeItem } from '../views/tree/treeItems';
+import { GitExtensionExports, JiraIssue } from '../model/jira.type';
+import { JiraTreeItem } from '../views/tree/tree-item.view';
 
 export async function commitFromIssue(node?: JiraTreeItem): Promise<void> {
 	const issue = node?.issue;

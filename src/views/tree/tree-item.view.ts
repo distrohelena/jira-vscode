@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
-import { JiraIssue, JiraNodeKind, JiraProject } from '../../model/types';
-import { determineStatusCategory } from '../../model/issueModel';
+import { JiraIssue, JiraNodeKind, JiraProject } from '../../model/jira.type';
+import { determineStatusCategory } from '../../model/issue.model';
 
 export class JiraTreeItem extends vscode.TreeItem {
 	project?: JiraProject;

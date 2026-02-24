@@ -1,14 +1,14 @@
 import * as vscode from 'vscode';
 
-import { JiraAuthManager } from '../../model/authManager';
-import { JiraFocusManager } from '../../model/focusManager';
-import { PROJECT_FAVORITES_KEY, PROJECTS_VIEW_MODE_CONTEXT, PROJECTS_VIEW_MODE_KEY } from '../../model/constants';
-import { fetchAccessibleProjects, fetchRecentProjects } from '../../model/jiraApiClient';
-import { JiraAuthInfo, JiraProject, ProjectsViewMode } from '../../model/types';
-import { deriveErrorMessage } from '../../shared/errors';
-import { extractHost } from '../../shared/urlUtils';
-import { JiraTreeItem } from './treeItems';
-import { JiraTreeDataProvider } from './baseTreeDataProvider';
+import { JiraAuthManager } from '../../model/auth.manager';
+import { JiraFocusManager } from '../../model/focus.manager';
+import { PROJECT_FAVORITES_KEY, PROJECTS_VIEW_MODE_CONTEXT, PROJECTS_VIEW_MODE_KEY } from '../../model/jira.constant';
+import { jiraApiClient } from '../../jiraApi';
+import { JiraAuthInfo, JiraProject, ProjectsViewMode } from '../../model/jira.type';
+import { deriveErrorMessage } from '../../shared/error.helper';
+import { extractHost } from '../../shared/url.helper';
+import { JiraTreeItem } from './tree-item.view';
+import { JiraTreeDataProvider } from './base-tree-data.provider';
 
 export class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
 	private viewMode: ProjectsViewMode;
@@ -154,9 +154,9 @@ export class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
 			if (showingFavorites) {
 				projects = this.getFavoriteProjectList();
 			} else if (showingRecent) {
-				projects = await fetchRecentProjects(authInfo, token!);
+				projects = await jiraApiClient.fetchRecentProjects(authInfo, token!);
 			} else {
-				projects = await fetchAccessibleProjects(authInfo, token!);
+				projects = await jiraApiClient.fetchAccessibleProjects(authInfo, token!);
 			}
 
 			if (!showingFavorites) {

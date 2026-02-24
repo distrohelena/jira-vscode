@@ -2,9 +2,9 @@ import { JSDOM, VirtualConsole } from 'jsdom';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
-import { initializeEnvironment } from '../../src/environment';
-import { JiraIssue, IssuePanelOptions } from '../../src/model/types';
-import { renderIssuePanelContent } from '../../src/views/webview/panels';
+import { initializeEnvironment } from '../../src/environment.runtime';
+import { JiraIssue, IssuePanelOptions } from '../../src/model/jira.type';
+import { renderIssuePanelContent } from '../../src/views/webview/webview.panel';
 import { Uri } from 'vscode';
 
 type RenderedDom = {

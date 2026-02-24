@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 
-import { JiraAuthManager } from '../../model/authManager';
-import { JiraFocusManager } from '../../model/focusManager';
-import { ProjectTransitionPrefetcher } from '../../model/projectTransitionPrefetcher';
+import { JiraAuthManager } from '../../model/auth.manager';
+import { JiraFocusManager } from '../../model/focus.manager';
+import { ProjectTransitionPrefetcher } from '../../model/project-transition.prefetcher';
 import {
 	ITEMS_LOAD_BATCH_SIZE,
 	ITEMS_GROUP_MODE_CONTEXT,
@@ -13,17 +13,17 @@ import {
 	ITEMS_SORT_MODE_KEY,
 	ITEMS_VIEW_MODE_CONTEXT,
 	ITEMS_VIEW_MODE_KEY,
-} from '../../model/constants';
-import { fetchProjectIssuesPage } from '../../model/jiraApiClient';
+} from '../../model/jira.constant';
+import { jiraApiClient } from '../../jiraApi';
 import {
 	determineStatusCategory,
 	filterIssuesRelatedToUser,
 	groupIssuesByStatus,
-} from '../../model/issueModel';
-import { JiraAuthInfo, JiraIssue, ItemsGroupMode, ItemsSortMode, ItemsViewMode } from '../../model/types';
-import { deriveErrorMessage } from '../../shared/errors';
-import { JiraTreeDataProvider } from './baseTreeDataProvider';
-import { JiraTreeItem, createIssueTreeItem, deriveIssueIcon } from './treeItems';
+} from '../../model/issue.model';
+import { JiraAuthInfo, JiraIssue, ItemsGroupMode, ItemsSortMode, ItemsViewMode } from '../../model/jira.type';
+import { deriveErrorMessage } from '../../shared/error.helper';
+import { JiraTreeDataProvider } from './base-tree-data.provider';
+import { JiraTreeItem, createIssueTreeItem, deriveIssueIcon } from './tree-item.view';
 
 export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private viewMode: ItemsViewMode;
@@ -319,7 +319,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				nextStartAt = cacheEntry.nextStartAt;
 				nextPageToken = cacheEntry.nextPageToken;
 			} else {
-				const page = await fetchProjectIssuesPage(authInfo, token, selectedProject.key, {
+				const page = await jiraApiClient.fetchProjectIssuesPage(authInfo, token, selectedProject.key, {
 					onlyAssignedToCurrentUser: showingAssigned,
 					onlyUnassigned: showingUnassigned,
 					searchQuery: this.remoteSearchQuery || undefined,

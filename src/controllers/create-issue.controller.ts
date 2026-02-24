@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 
-import { JiraAuthManager } from '../model/authManager';
-import { JiraFocusManager } from '../model/focusManager';
-import { ProjectStatusStore } from '../model/projectStatusStore';
-import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../model/constants';
-import { createJiraIssue, fetchAssignableUsers, fetchCreateIssueFields } from '../model/jiraApiClient';
+import { JiraAuthManager } from '../model/auth.manager';
+import { JiraFocusManager } from '../model/focus.manager';
+import { ProjectStatusStore } from '../model/project-status.store';
+import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../model/jira.constant';
+import { jiraApiClient } from '../jiraApi';
 import {
 	CreateIssueFieldDefinition,
 	CreateIssueFormValues,
@@ -13,9 +13,9 @@ import {
 	IssueStatusOption,
 	JiraIssue,
 	SelectedProjectInfo,
-} from '../model/types';
-import { deriveErrorMessage } from '../shared/errors';
-import { renderCreateIssuePanel, showCreateIssuePanel } from '../views/webview/panels';
+} from '../model/jira.type';
+import { deriveErrorMessage } from '../shared/error.helper';
+import { renderCreateIssuePanel, showCreateIssuePanel } from '../views/webview/webview.panel';
 
 export type CreateIssueControllerDeps = {
 	authManager: JiraAuthManager;
@@ -134,7 +134,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 				createFieldsError: undefined,
 			});
 			try {
-				const fields = await fetchCreateIssueFields(authInfo, token, project.key, issueTypeName);
+				const fields = await jiraApiClient.fetchCreateIssueFields(authInfo, token, project.key, issueTypeName);
 				const mergedValues = mergeCustomFieldsForDefinitions(values, fields);
 				updatePanel({
 					values: mergedValues,
@@ -167,7 +167,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 						values,
 					});
 				try {
-					const users = await fetchAssignableUsers(
+					const users = await jiraApiClient.fetchAssignableUsers(
 						authInfo,
 						token,
 						{ projectKey: project.key },
@@ -231,7 +231,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 
 			updatePanel({ submitting: true, error: undefined, successIssue: undefined, values });
 			try {
-				const createdIssue = await createJiraIssue(authInfo, token, project.key, values);
+				const createdIssue = await jiraApiClient.createIssue(authInfo, token, project.key, values);
 				refreshItemsView();
 				panel.dispose();
 				try {

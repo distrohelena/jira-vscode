@@ -1,19 +1,19 @@
 import * as vscode from 'vscode';
 
-import { initializeEnvironment } from './environment';
-import { JiraAuthManager } from './model/authManager';
-import { JiraFocusManager } from './model/focusManager';
-import { ProjectStatusStore } from './model/projectStatusStore';
-import { IssueTransitionStore } from './model/issueTransitionStore';
-import { ProjectTransitionPrefetcher } from './model/projectTransitionPrefetcher';
-import { createIssueController } from './controllers/issueController';
-import { createCreateIssueController } from './controllers/createIssueController';
-import { commitFromIssue } from './controllers/commitController';
-import { JiraItemsTreeDataProvider } from './views/tree/itemsTreeDataProvider';
-import { JiraProjectsTreeDataProvider } from './views/tree/projectsTreeDataProvider';
-import { JiraSettingsTreeDataProvider } from './views/tree/settingsTreeDataProvider';
-import { JiraIssue, JiraProject } from './model/types';
-import { JiraTreeItem } from './views/tree/treeItems';
+import { initializeEnvironment } from './environment.runtime';
+import { JiraAuthManager } from './model/auth.manager';
+import { JiraFocusManager } from './model/focus.manager';
+import { ProjectStatusStore } from './model/project-status.store';
+import { IssueTransitionStore } from './model/issue-transition.store';
+import { ProjectTransitionPrefetcher } from './model/project-transition.prefetcher';
+import { createIssueController } from './controllers/issue.controller';
+import { createCreateIssueController } from './controllers/create-issue.controller';
+import { commitFromIssue } from './controllers/commit.controller';
+import { JiraItemsTreeDataProvider } from './views/tree/items-tree-data.provider';
+import { JiraProjectsTreeDataProvider } from './views/tree/projects-tree-data.provider';
+import { JiraSettingsTreeDataProvider } from './views/tree/settings-tree-data.provider';
+import { JiraIssue, JiraProject } from './model/jira.type';
+import { JiraTreeItem } from './views/tree/tree-item.view';
 
 export async function activate(context: vscode.ExtensionContext) {
 	initializeEnvironment(context.extensionUri);

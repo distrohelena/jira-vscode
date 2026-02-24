@@ -1,4 +1,4 @@
-import { IssueStatusCategory, JiraAuthInfo, JiraIssue } from './types';
+import { IssueStatusCategory, JiraAuthInfo, JiraIssue } from './jira.type';
 
 export type IssueStatusGroup = {
 	statusName: string;

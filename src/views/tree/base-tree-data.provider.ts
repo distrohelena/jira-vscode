@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 
-import { JiraAuthManager } from '../../model/authManager';
-import { JiraFocusManager } from '../../model/focusManager';
-import { JiraAuthInfo } from '../../model/types';
-import { JiraTreeItem } from './treeItems';
+import { JiraAuthManager } from '../../model/auth.manager';
+import { JiraFocusManager } from '../../model/focus.manager';
+import { JiraAuthInfo } from '../../model/jira.type';
+import { JiraTreeItem } from './tree-item.view';
 
 export abstract class JiraTreeDataProvider implements vscode.TreeDataProvider<JiraTreeItem> {
 	private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<JiraTreeItem | undefined | null | void>();

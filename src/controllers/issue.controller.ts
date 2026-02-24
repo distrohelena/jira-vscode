@@ -1,18 +1,7 @@
 import * as vscode from 'vscode';
 
-import { JiraAuthManager } from '../model/authManager';
-import {
-	addIssueComment,
-	assignIssue,
-	deleteIssueComment,
-	fetchAssignableUsers,
-	fetchIssueComments,
-	fetchIssueDetails,
-	fetchIssueTransitions,
-	transitionIssueStatus,
-	updateIssueDescription,
-	updateIssueSummary,
-} from '../model/jiraApiClient';
+import { JiraAuthManager } from '../model/auth.manager';
+import { jiraApiClient } from '../jiraApi';
 import {
 	IssueAssignableUser,
 	IssuePanelOptions,
@@ -21,13 +10,13 @@ import {
 	JiraIssue,
 	JiraIssueComment,
 	JiraAuthInfo,
-} from '../model/types';
-import { ProjectStatusStore } from '../model/projectStatusStore';
-import { IssueTransitionStore } from '../model/issueTransitionStore';
-import { ProjectTransitionPrefetcher } from '../model/projectTransitionPrefetcher';
-import { createPlaceholderIssue } from '../model/issueModel';
-import { deriveErrorMessage } from '../shared/errors';
-import { renderIssuePanelContent, showIssueDetailsPanel } from '../views/webview/panels';
+} from '../model/jira.type';
+import { ProjectStatusStore } from '../model/project-status.store';
+import { IssueTransitionStore } from '../model/issue-transition.store';
+import { ProjectTransitionPrefetcher } from '../model/project-transition.prefetcher';
+import { createPlaceholderIssue } from '../model/issue.model';
+import { deriveErrorMessage } from '../shared/error.helper';
+import { renderIssuePanelContent, showIssueDetailsPanel } from '../views/webview/webview.panel';
 
 export type IssueControllerDeps = {
 	authManager: JiraAuthManager;
@@ -264,7 +253,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			}
 
 			try {
-				const issue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const issue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
 				const issueProjectKeyResolved = deriveProjectKeyFromIssueKey(issue.key);
 				if (issueProjectKeyResolved) {
 					void projectStatusStore.ensure(issueProjectKeyResolved);
@@ -340,8 +329,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 			});
 
 			try {
-				await transitionIssueStatus(authInfo, token, resolvedIssueKey, transitionId);
-				const updatedIssue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				await jiraApiClient.transitionIssueStatus(authInfo, token, resolvedIssueKey, transitionId);
+				const updatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
 				const updatedProjectKey = deriveProjectKeyFromIssueKey(updatedIssue.key);
 				if (updatedProjectKey) {
 					void projectStatusStore.ensure(updatedProjectKey);
@@ -413,8 +402,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 			});
 
 			try {
-				await assignIssue(authInfo, token, resolvedIssueKey, accountId);
-				const updatedIssue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				await jiraApiClient.assignIssue(authInfo, token, resolvedIssueKey, accountId);
+				const updatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
 				if (disposed) {
 					return;
 				}
@@ -464,7 +453,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			});
 
 			try {
-				const users = await fetchAssignableUsers(authInfo, token, resolvedIssueKey, normalizedQuery);
+				const users = await jiraApiClient.fetchAssignableUsers(authInfo, token, resolvedIssueKey, normalizedQuery);
 				if (disposed) {
 					return;
 				}
@@ -521,8 +510,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 			renderPanel();
 
 			try {
-				await updateIssueSummary(authInfo, token, resolvedIssueKey, trimmed);
-				const updatedIssue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				await jiraApiClient.updateIssueSummary(authInfo, token, resolvedIssueKey, trimmed);
+				const updatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
 				if (disposed) {
 					return;
 				}
@@ -570,8 +559,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 			renderPanel();
 
 			try {
-				await updateIssueDescription(authInfo, token, resolvedIssueKey, description);
-				const updatedIssue = await fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				await jiraApiClient.updateIssueDescription(authInfo, token, resolvedIssueKey, description);
+				const updatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
 				if (disposed) {
 					return;
 				}
@@ -614,7 +603,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			renderPanel();
 
 			try {
-				const comments = await fetchIssueComments(authInfo, token, resolvedIssueKey);
+				const comments = await jiraApiClient.fetchIssueComments(authInfo, token, resolvedIssueKey);
 				if (disposed) {
 					return;
 				}
@@ -658,7 +647,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			renderPanel();
 
 			try {
-				await addIssueComment(authInfo, token, resolvedIssueKey, trimmedBody, 'wiki');
+				await jiraApiClient.addIssueComment(authInfo, token, resolvedIssueKey, trimmedBody, 'wiki');
 				panelState.commentDraft = '';
 				panelState.commentSubmitPending = false;
 				panelState.commentSubmitError = undefined;
@@ -696,7 +685,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			panelState.commentDeletingId = commentId;
 			renderPanel();
 			try {
-				await deleteIssueComment(authInfo, token, resolvedIssueKey, commentId);
+				await jiraApiClient.deleteIssueComment(authInfo, token, resolvedIssueKey, commentId);
 				panelState.commentDeletingId = undefined;
 				renderPanel();
 				await refreshComments(true);
@@ -732,7 +721,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 		}
 
 		try {
-			const fetchedTransitions = await fetchIssueTransitions(authInfo, token, targetIssue.key);
+			const fetchedTransitions = await jiraApiClient.fetchIssueTransitions(authInfo, token, targetIssue.key);
 			if (fetchedTransitions && fetchedTransitions.length > 0) {
 				transitionStore.remember(cacheKey, fetchedTransitions);
 			}

@@ -1,8 +1,8 @@
-import { JiraAuthManager } from './authManager';
-import { ProjectStatusStore } from './projectStatusStore';
-import { IssueTransitionStore } from './issueTransitionStore';
-import { ProjectIssueTypeStatuses, IssueStatusOption, JiraAuthInfo, JiraIssue } from './types';
-import { fetchIssueTransitions, searchJiraIssues } from './jiraApiClient';
+import { JiraAuthManager } from './auth.manager';
+import { ProjectStatusStore } from './project-status.store';
+import { IssueTransitionStore } from './issue-transition.store';
+import { ProjectIssueTypeStatuses, IssueStatusOption, JiraAuthInfo, JiraIssue } from './jira.type';
+import { jiraApiClient } from '../jiraApi';
 
 type PrefetchKey = {
 	projectKey: string;
@@ -120,7 +120,7 @@ export class ProjectTransitionPrefetcher {
 		}
 
 		try {
-			const transitions = await fetchIssueTransitions(authInfo, token, representativeIssue.key);
+			const transitions = await jiraApiClient.fetchIssueTransitions(authInfo, token, representativeIssue.key);
 			if (transitions && transitions.length > 0) {
 				this.transitionStore.remember(
 					{
@@ -186,7 +186,7 @@ export class ProjectTransitionPrefetcher {
 			return;
 		}
 		try {
-			const transitions = await fetchIssueTransitions(authInfo, token, issue.key);
+			const transitions = await jiraApiClient.fetchIssueTransitions(authInfo, token, issue.key);
 			if (transitions && transitions.length > 0) {
 				this.transitionStore.remember(
 					{
@@ -217,7 +217,7 @@ export class ProjectTransitionPrefetcher {
 		}
 		const jql = `${clauses.join(' AND ')} ORDER BY updated DESC`;
 		try {
-			const matches = await searchJiraIssues(authInfo, token, { jql, maxResults: 1 });
+			const matches = await jiraApiClient.searchIssues(authInfo, token, { jql, maxResults: 1 });
 			return matches[0];
 		} catch {
 			return undefined;

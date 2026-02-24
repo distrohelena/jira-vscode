@@ -1,12 +1,12 @@
 import axios from 'axios';
 
-import { normalizeBaseUrl } from '../shared/urlUtils';
-import { escapeHtml, sanitizeRenderedHtml } from '../shared/html';
+import { normalizeBaseUrl } from '../shared/url.helper';
+import { escapeHtml, sanitizeRenderedHtml } from '../shared/html.helper';
 import {
 	COMMENT_FETCH_LIMIT,
 	ISSUE_DETAIL_FIELDS,
 	PROJECT_ISSUES_PAGE_SIZE,
-} from './constants';
+} from './jira.constant';
 import {
 	FetchProjectIssuesOptions,
 	FetchProjectIssuesPage,
@@ -25,8 +25,8 @@ import {
 	JiraCommentFormat,
 	ProjectStatusesResponse,
 	ProjectIssueTypeStatuses,
-} from './types';
-import { determineStatusCategory } from './issueModel';
+} from './jira.type';
+import { determineStatusCategory } from './issue.model';
 
 export async function verifyCredentials(
 	baseUrl: string,

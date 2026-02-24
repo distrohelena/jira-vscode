@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 
-import { AUTH_STATE_KEY, SECRET_PREFIX } from './constants';
-import { deriveErrorMessage, isJiraCredentialError } from '../shared/errors';
-import { normalizeBaseUrl } from '../shared/urlUtils';
-import { inferServerLabelFromProfile, verifyCredentials } from './jiraApiClient';
-import { JiraAuthInfo, JiraServerLabel } from './types';
+import { AUTH_STATE_KEY, SECRET_PREFIX } from './jira.constant';
+import { deriveErrorMessage, isJiraCredentialError } from '../shared/error.helper';
+import { normalizeBaseUrl } from '../shared/url.helper';
+import { jiraApiClient } from '../jiraApi';
+import { JiraAuthInfo, JiraServerLabel } from './jira.type';
 
 export type JiraCredentialValidationState = 'unknown' | 'checking' | 'valid' | 'invalid' | 'error';
 
@@ -119,8 +119,8 @@ export class JiraAuthManager implements vscode.Disposable {
 		const accountKey = buildAccountKey(normalizedBaseUrl, username);
 
 		try {
-			const profile = await verifyCredentials(normalizedBaseUrl, username, token, selection.value);
-			const serverLabel = inferServerLabelFromProfile(profile) ?? selection.value;
+			const profile = await jiraApiClient.verifyCredentials(normalizedBaseUrl, username, token, selection.value);
+			const serverLabel = jiraApiClient.inferServerLabelFromProfile(profile) ?? selection.value;
 			await this.context.secrets.store(buildSecretKey(accountKey), token);
 			await this.saveAuthInfo({
 				baseUrl: normalizedBaseUrl,
@@ -257,7 +257,12 @@ export class JiraAuthManager implements vscode.Disposable {
 		options: { showSuccessMessage: boolean; promptReLogin: boolean; silent: boolean }
 	): Promise<JiraCredentialValidation> {
 		try {
-			const profile = await verifyCredentials(authInfo.baseUrl, authInfo.username, token, authInfo.serverLabel);
+			const profile = await jiraApiClient.verifyCredentials(
+				authInfo.baseUrl,
+				authInfo.username,
+				token,
+				authInfo.serverLabel
+			);
 			const nextInfo: JiraAuthInfo = {
 				...authInfo,
 				displayName: profile.displayName ?? profile.name ?? authInfo.username,

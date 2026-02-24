@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { deriveErrorMessage, isJiraCredentialError } from '../../src/shared/errors';
+import { deriveErrorMessage, isJiraCredentialError } from '../../src/shared/error.helper';
 
 function createAxiosLikeError(options: {
 	status?: number;
