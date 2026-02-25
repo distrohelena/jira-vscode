@@ -4,7 +4,7 @@ import { JiraAuthManager } from '../model/auth.manager';
 import { JiraFocusManager } from '../model/focus.manager';
 import { ProjectStatusStore } from '../model/project-status.store';
 import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../model/jira.constant';
-import { jiraApiClient } from '../jiraApi';
+import { jiraApiClient } from '../jira-api';
 import {
 	CreateIssueFieldDefinition,
 	CreateIssueFormValues,

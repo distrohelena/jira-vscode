@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 import { JiraAuthManager } from '../model/auth.manager';
-import { jiraApiClient } from '../jiraApi';
+import { jiraApiClient } from '../jira-api';
 import {
 	IssueAssignableUser,
 	IssuePanelOptions,

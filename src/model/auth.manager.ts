@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { AUTH_STATE_KEY, SECRET_PREFIX } from './jira.constant';
 import { ErrorHelper } from '../shared/error.helper';
 import { UrlHelper } from '../shared/url.helper';
-import { jiraApiClient } from '../jiraApi';
+import { jiraApiClient } from '../jira-api';
 import { JiraAuthInfo, JiraServerLabel } from './jira.type';
 
 export type JiraCredentialValidationState = 'unknown' | 'checking' | 'valid' | 'invalid' | 'error';

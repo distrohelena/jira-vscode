@@ -13,7 +13,7 @@ This module provides a stable service contract (`IJiraApiClient`) and default im
 
 ## Current Public Surface
 
-- Entry point: `src/jiraApi/index.ts`
+- Entry point: `src/jira-api/index.ts`
 - Default singleton: `jiraApiClient`
 - Contract: `IJiraApiClient`
 - Implementation: `JiraApiClient`
@@ -75,7 +75,7 @@ This module provides a stable service contract (`IJiraApiClient`) and default im
 ## Usage
 
 ```ts
-import { jiraApiClient } from '../jiraApi';
+import { jiraApiClient } from '../jira-api';
 
 const projects = await jiraApiClient.fetchAccessibleProjects(authInfo, token);
 const issue = await jiraApiClient.fetchIssueDetails(authInfo, token, 'PROJ-123');
@@ -84,7 +84,7 @@ const issue = await jiraApiClient.fetchIssueDetails(authInfo, token, 'PROJ-123')
 Use contract-driven dependency injection when composing higher-level services:
 
 ```ts
-import type { IJiraApiClient } from '../jiraApi';
+import type { IJiraApiClient } from '../jira-api';
 
 class IssueApplicationService {
 	constructor(private readonly jiraClient: IJiraApiClient) {}

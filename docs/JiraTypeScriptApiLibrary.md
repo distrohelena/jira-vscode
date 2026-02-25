@@ -2,7 +2,7 @@
 
 ## Status
 - **Name:** `JiraApiClient`
-- **Namespace:** `src/jiraApi`
+- **Namespace:** `src/jira-api`
 - **Scope:** Shared Jira REST client for extension features and future external consumers
 - **Design style:** C#-inspired service contract (`IJiraApiClient`) and implementation (`JiraApiClient`)
 
@@ -12,17 +12,17 @@
 ## Public Surface
 
 ### Contract
-- `IJiraApiClient` (`src/jiraApi/contracts/jira-api.client.contract.ts`)
+- `IJiraApiClient` (`src/jira-api/contracts/jira-api.client.contract.ts`)
 
 ### Default Instance
-- `jiraApiClient` (`src/jiraApi/default-jira-api.client.ts`)
+- `jiraApiClient` (`src/jira-api/default-jira-api.client.ts`)
 
 ### Implementation
-- `JiraApiClient` (`src/jiraApi/services/jira-api.client.ts`)
+- `JiraApiClient` (`src/jira-api/services/jira-api.client.ts`)
 
 ### Shared Request Types
-- `JiraIssueSearchRequest` (`src/jiraApi/types/jira-issue-search-request.type.ts`)
-- `JiraAssignableUserScope` (`src/jiraApi/types/jira-assignable-user-scope.type.ts`)
+- `JiraIssueSearchRequest` (`src/jira-api/types/jira-issue-search-request.type.ts`)
+- `JiraAssignableUserScope` (`src/jira-api/types/jira-assignable-user-scope.type.ts`)
 
 ## Supported Features (Current)
 
@@ -116,7 +116,7 @@ The extension now routes Jira interaction call sites through `jiraApiClient`, in
 
 ## Usage Example
 ```ts
-import { jiraApiClient } from '../src/jiraApi';
+import { jiraApiClient } from '../src/jira-api';
 
 const issues = await jiraApiClient.fetchProjectIssuesPage(authInfo, token, 'ABC', {
   onlyAssignedToCurrentUser: true,

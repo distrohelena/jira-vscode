@@ -14,7 +14,7 @@ import {
 	ITEMS_VIEW_MODE_CONTEXT,
 	ITEMS_VIEW_MODE_KEY,
 } from '../../model/jira.constant';
-import { jiraApiClient } from '../../jiraApi';
+import { jiraApiClient } from '../../jira-api';
 import {
 	IssueModel,
 } from '../../model/issue.model';

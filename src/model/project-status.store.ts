@@ -1,5 +1,5 @@
 import { JiraAuthManager } from './auth.manager';
-import { jiraApiClient } from '../jiraApi';
+import { jiraApiClient } from '../jira-api';
 import { IssueStatusOption, ProjectIssueTypeStatuses, ProjectStatusesResponse } from './jira.type';
 
 type CachedProjectStatuses = {

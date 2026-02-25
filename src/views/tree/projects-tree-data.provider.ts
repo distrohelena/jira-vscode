@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { JiraAuthManager } from '../../model/auth.manager';
 import { JiraFocusManager } from '../../model/focus.manager';
 import { PROJECT_FAVORITES_KEY, PROJECTS_VIEW_MODE_CONTEXT, PROJECTS_VIEW_MODE_KEY } from '../../model/jira.constant';
-import { jiraApiClient } from '../../jiraApi';
+import { jiraApiClient } from '../../jira-api';
 import { JiraAuthInfo, JiraProject, ProjectsViewMode } from '../../model/jira.type';
 import { ErrorHelper } from '../../shared/error.helper';
 import { UrlHelper } from '../../shared/url.helper';

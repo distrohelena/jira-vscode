@@ -2,7 +2,7 @@ import { JiraAuthManager } from './auth.manager';
 import { ProjectStatusStore } from './project-status.store';
 import { IssueTransitionStore } from './issue-transition.store';
 import { ProjectIssueTypeStatuses, IssueStatusOption, JiraAuthInfo, JiraIssue } from './jira.type';
-import { jiraApiClient } from '../jiraApi';
+import { jiraApiClient } from '../jira-api';
 
 type PrefetchKey = {
 	projectKey: string;

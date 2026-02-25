@@ -103,13 +103,13 @@ Following this checklist ensures new users authenticate, focus a project, and st
 This extension is written in TypeScript. Key entry points:
 
 - `src/extension.entrypoint.ts` – Activation, tree providers, commands, and webview wiring.
-- `src/jiraApi/` – Reusable Jira API library (shared `IJiraApiClient` contract and `JiraApiClient` implementation).
+- `src/jira-api/` – Reusable Jira API library (shared `IJiraApiClient` contract and `JiraApiClient` implementation).
 - `dist/extension.js` – Compiled output loaded by VS Code (generated via `npm run compile`).
 
 ### Jira API Library
 
 - Formal library documentation: [`docs/JiraTypeScriptApiLibrary.md`](docs/JiraTypeScriptApiLibrary.md)
-- Shared instance used by the extension: `src/jiraApi/default-jira-api.client.ts` (`jiraApiClient`)
+- Shared instance used by the extension: `src/jira-api/default-jira-api.client.ts` (`jiraApiClient`)
 
 When contributing:
 1. Make sure to run `npm run compile`.

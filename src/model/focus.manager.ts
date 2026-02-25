@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 import { JiraAuthManager } from './auth.manager';
-import { jiraApiClient } from '../jiraApi';
+import { jiraApiClient } from '../jira-api';
 import { SELECTED_PROJECT_KEY } from './jira.constant';
 import { ErrorHelper } from '../shared/error.helper';
 import { JiraAuthInfo, JiraProject, SelectedProjectInfo } from './jira.type';
