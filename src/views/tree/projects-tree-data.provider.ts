@@ -163,20 +163,20 @@ export class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
 				this.refreshFavoriteMetadata(projects);
 			}
 
-			this.updateBadge();
-			const host = UrlHelper.extractHost(authInfo.baseUrl);
-			const description = host
-				? showingRecent
-					? `${host} • recent`
+				this.updateBadge();
+				const host = UrlHelper.extractHost(authInfo.baseUrl);
+				const description = host
+					? showingRecent
+						? `${host} • recent`
+						: showingFavorites
+						? `${host} • favorites`
+						: `${host} • all`
+					: showingRecent
+					? 'recent projects'
 					: showingFavorites
-					? `${host} • favorites`
-					: host
-				: showingRecent
-				? 'recent projects'
-				: showingFavorites
-				? 'favorite projects'
-				: undefined;
-			this.updateDescription(description);
+					? 'favorite projects'
+					: 'all projects';
+				this.updateDescription(description);
 
 			if (projects.length === 0) {
 				return [

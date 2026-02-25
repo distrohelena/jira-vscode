@@ -349,17 +349,17 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				: showingUnassigned
 				? issues.filter((issue) => this.isUnassignedIssue(issue))
 				: issues;
-			const relevantIssues = this.sortIssuesForDisplay(scopedIssues);
-			if (relevantIssues.length === 0) {
-				const baseDescription = showingAssigned
-					? `${projectLabel} • assigned to me`
-					: showingUnassigned
-					? `${projectLabel} • unassigned`
-					: projectLabel;
-				const filtered = showingScopedItems && this.searchQuery.length > 0;
-				const tooltip = this.buildInProgressTooltip(0, filtered || hasRemoteSearch, this.viewMode);
-				this.updateBadge(0, tooltip);
-				this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
+				const relevantIssues = this.sortIssuesForDisplay(scopedIssues);
+				if (relevantIssues.length === 0) {
+					const baseDescription = showingAssigned
+						? `${projectLabel} • assigned to me`
+						: showingUnassigned
+						? `${projectLabel} • unassigned`
+						: `${projectLabel} • all`;
+					const filtered = showingScopedItems && this.searchQuery.length > 0;
+					const tooltip = this.buildInProgressTooltip(0, filtered || hasRemoteSearch, this.viewMode);
+					this.updateBadge(0, tooltip);
+					this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
 				const emptyMessage =
 					hasRemoteSearch
 						? `No items found for "${this.remoteSearchQuery}". Clear or refine the search.`
@@ -388,15 +388,16 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				this.viewMode
 			);
 			this.updateBadge(inProgressCount, tooltip);
-			if (showingAssigned) {
-				const baseDescription = `${projectLabel} • assigned to me`;
-				this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
-			} else if (showingUnassigned) {
-				const baseDescription = `${projectLabel} • unassigned`;
-				this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
-			} else {
-				this.updateDescription(this.composeItemsDescription(projectLabel, false, hasRemoteSearch));
-			}
+				if (showingAssigned) {
+					const baseDescription = `${projectLabel} • assigned to me`;
+					this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
+				} else if (showingUnassigned) {
+					const baseDescription = `${projectLabel} • unassigned`;
+					this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
+				} else {
+					const baseDescription = `${projectLabel} • all`;
+					this.updateDescription(this.composeItemsDescription(baseDescription, false, hasRemoteSearch));
+				}
 
 			if (displayedIssues.length === 0) {
 				const noMatchMessage = `No ${scopeLabel} items match "${this.searchQuery}". Clear or edit the filter to see more.`;
