@@ -1,25 +1,5 @@
 import {
-	addIssueComment,
-	assignIssue,
-	createJiraIssue,
-	deleteIssueComment,
-	fetchAccessibleProjects,
-	fetchAssignableUsers,
-	fetchCreateIssueFields,
-	fetchIssueComments,
-	fetchIssueDetails,
-	fetchIssueTransitions,
-	fetchProjectIssues,
-	fetchProjectIssuesPage,
-	fetchProjectStatuses,
-	fetchRecentProjects,
-	finalizeCreatedIssue,
-	inferServerLabelFromProfile,
-	searchJiraIssues,
-	transitionIssueStatus,
-	updateIssueDescription,
-	updateIssueSummary,
-	verifyCredentials,
+	JiraApiTransport,
 } from '../../model/jira-api.client';
 import {
 	CreateIssueFieldDefinition,
@@ -54,28 +34,28 @@ export class JiraApiClient implements IJiraApiClient {
 		token: string,
 		serverLabel: JiraServerLabel
 	): Promise<JiraProfileResponse> {
-		return verifyCredentials(baseUrl, username, token, serverLabel);
+		return JiraApiTransport.verifyCredentials(baseUrl, username, token, serverLabel);
 	}
 
 	/**
 	 * Infers deployment type by inspecting profile response data.
 	 */
 	inferServerLabelFromProfile(profile: JiraProfileResponse | undefined): JiraServerLabel | undefined {
-		return inferServerLabelFromProfile(profile);
+		return JiraApiTransport.inferServerLabelFromProfile(profile);
 	}
 
 	/**
 	 * Loads recently visited projects for the authenticated account.
 	 */
 	async fetchRecentProjects(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
-		return fetchRecentProjects(authInfo, token);
+		return JiraApiTransport.fetchRecentProjects(authInfo, token);
 	}
 
 	/**
 	 * Loads all accessible projects available to the authenticated account.
 	 */
 	async fetchAccessibleProjects(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
-		return fetchAccessibleProjects(authInfo, token);
+		return JiraApiTransport.fetchAccessibleProjects(authInfo, token);
 	}
 
 	/**
@@ -87,7 +67,7 @@ export class JiraApiClient implements IJiraApiClient {
 		projectKey: string,
 		options?: FetchProjectIssuesOptions
 	): Promise<JiraIssue[]> {
-		return fetchProjectIssues(authInfo, token, projectKey, options);
+		return JiraApiTransport.fetchProjectIssues(authInfo, token, projectKey, options);
 	}
 
 	/**
@@ -99,35 +79,35 @@ export class JiraApiClient implements IJiraApiClient {
 		projectKey: string,
 		options?: FetchProjectIssuesOptions
 	): Promise<FetchProjectIssuesPage> {
-		return fetchProjectIssuesPage(authInfo, token, projectKey, options);
+		return JiraApiTransport.fetchProjectIssuesPage(authInfo, token, projectKey, options);
 	}
 
 	/**
 	 * Executes a JQL search request.
 	 */
 	async searchIssues(authInfo: JiraAuthInfo, token: string, options: JiraIssueSearchRequest): Promise<JiraIssue[]> {
-		return searchJiraIssues(authInfo, token, options);
+		return JiraApiTransport.searchIssues(authInfo, token, options);
 	}
 
 	/**
 	 * Loads issue details including rendered fields.
 	 */
 	async fetchIssueDetails(authInfo: JiraAuthInfo, token: string, issueKey: string): Promise<JiraIssue> {
-		return fetchIssueDetails(authInfo, token, issueKey);
+		return JiraApiTransport.fetchIssueDetails(authInfo, token, issueKey);
 	}
 
 	/**
 	 * Loads available transition options for an issue.
 	 */
 	async fetchIssueTransitions(authInfo: JiraAuthInfo, token: string, issueKey: string): Promise<IssueStatusOption[]> {
-		return fetchIssueTransitions(authInfo, token, issueKey);
+		return JiraApiTransport.fetchIssueTransitions(authInfo, token, issueKey);
 	}
 
 	/**
 	 * Loads project status metadata grouped by issue type.
 	 */
 	async fetchProjectStatuses(authInfo: JiraAuthInfo, token: string, projectKey: string): Promise<ProjectStatusesResponse> {
-		return fetchProjectStatuses(authInfo, token, projectKey);
+		return JiraApiTransport.fetchProjectStatuses(authInfo, token, projectKey);
 	}
 
 	/**
@@ -139,7 +119,7 @@ export class JiraApiClient implements IJiraApiClient {
 		issueKey: string,
 		transitionId: string
 	): Promise<void> {
-		return transitionIssueStatus(authInfo, token, issueKey, transitionId);
+		return JiraApiTransport.transitionIssueStatus(authInfo, token, issueKey, transitionId);
 	}
 
 	/**
@@ -152,21 +132,21 @@ export class JiraApiClient implements IJiraApiClient {
 		query?: string,
 		maxResults?: number
 	): Promise<IssueAssignableUser[]> {
-		return fetchAssignableUsers(authInfo, token, scopeOrIssueKey, query, maxResults);
+		return JiraApiTransport.fetchAssignableUsers(authInfo, token, scopeOrIssueKey, query, maxResults);
 	}
 
 	/**
 	 * Assigns an issue to a Jira user account.
 	 */
 	async assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, accountId: string): Promise<void> {
-		return assignIssue(authInfo, token, issueKey, accountId);
+		return JiraApiTransport.assignIssue(authInfo, token, issueKey, accountId);
 	}
 
 	/**
 	 * Updates issue summary text.
 	 */
 	async updateIssueSummary(authInfo: JiraAuthInfo, token: string, issueKey: string, summary: string): Promise<void> {
-		return updateIssueSummary(authInfo, token, issueKey, summary);
+		return JiraApiTransport.updateIssueSummary(authInfo, token, issueKey, summary);
 	}
 
 	/**
@@ -178,7 +158,7 @@ export class JiraApiClient implements IJiraApiClient {
 		issueKey: string,
 		description: string
 	): Promise<void> {
-		return updateIssueDescription(authInfo, token, issueKey, description);
+		return JiraApiTransport.updateIssueDescription(authInfo, token, issueKey, description);
 	}
 
 	/**
@@ -190,7 +170,7 @@ export class JiraApiClient implements IJiraApiClient {
 		issueKey: string,
 		maxResults?: number
 	): Promise<JiraIssueComment[]> {
-		return fetchIssueComments(authInfo, token, issueKey, maxResults);
+		return JiraApiTransport.fetchIssueComments(authInfo, token, issueKey, maxResults);
 	}
 
 	/**
@@ -203,7 +183,7 @@ export class JiraApiClient implements IJiraApiClient {
 		body: string,
 		format: JiraCommentFormat
 	): Promise<JiraIssueComment> {
-		return addIssueComment(authInfo, token, issueKey, body, format);
+		return JiraApiTransport.addIssueComment(authInfo, token, issueKey, body, format);
 	}
 
 	/**
@@ -215,7 +195,7 @@ export class JiraApiClient implements IJiraApiClient {
 		issueKey: string,
 		commentId: string
 	): Promise<void> {
-		return deleteIssueComment(authInfo, token, issueKey, commentId);
+		return JiraApiTransport.deleteIssueComment(authInfo, token, issueKey, commentId);
 	}
 
 	/**
@@ -227,7 +207,7 @@ export class JiraApiClient implements IJiraApiClient {
 		projectKey: string,
 		values: CreateIssueFormValues
 	): Promise<JiraIssue> {
-		return createJiraIssue(authInfo, token, projectKey, values);
+		return JiraApiTransport.createIssue(authInfo, token, projectKey, values);
 	}
 
 	/**
@@ -239,7 +219,7 @@ export class JiraApiClient implements IJiraApiClient {
 		projectKey: string,
 		issueTypeName?: string
 	): Promise<CreateIssueFieldDefinition[]> {
-		return fetchCreateIssueFields(authInfo, token, projectKey, issueTypeName);
+		return JiraApiTransport.fetchCreateIssueFields(authInfo, token, projectKey, issueTypeName);
 	}
 
 	/**
@@ -251,6 +231,6 @@ export class JiraApiClient implements IJiraApiClient {
 		issueKey: string,
 		desiredStatus?: string
 	): Promise<JiraIssue> {
-		return finalizeCreatedIssue(authInfo, token, issueKey, desiredStatus);
+		return JiraApiTransport.finalizeCreatedIssue(authInfo, token, issueKey, desiredStatus);
 	}
 }

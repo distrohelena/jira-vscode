@@ -1,42 +1,37 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-	createPlaceholderIssue,
-	determineStatusCategory,
-	filterIssuesRelatedToUser,
-	getIssueUpdatedTimestamp,
-	groupIssuesByStatus,
-	sortIssuesByUpdatedDesc,
-} from '../../src/model/issue.model';
+import { IssueModel } from '../../src/model/issue.model';
 import { JiraAuthInfo, JiraIssue } from '../../src/model/jira.type';
 
-function createIssue(overrides: Partial<JiraIssue>): JiraIssue {
-	return {
-		id: overrides.id ?? '1',
-		key: overrides.key ?? 'PROJ-1',
-		summary: overrides.summary ?? 'Issue summary',
-		statusName: overrides.statusName ?? 'To Do',
-		url: overrides.url ?? 'https://jira.example.test/browse/PROJ-1',
-		updated: overrides.updated ?? '2026-02-23T00:00:00.000Z',
-		created: overrides.created,
-		issueTypeId: overrides.issueTypeId,
-		issueTypeName: overrides.issueTypeName,
-		assigneeName: overrides.assigneeName,
-		assigneeUsername: overrides.assigneeUsername,
-		assigneeKey: overrides.assigneeKey,
-		assigneeAccountId: overrides.assigneeAccountId,
-		assigneeAvatarUrl: overrides.assigneeAvatarUrl,
-		reporterName: overrides.reporterName,
-		reporterUsername: overrides.reporterUsername,
-		reporterKey: overrides.reporterKey,
-		reporterAccountId: overrides.reporterAccountId,
-		reporterAvatarUrl: overrides.reporterAvatarUrl,
-		description: overrides.description,
-		descriptionHtml: overrides.descriptionHtml,
-		parent: overrides.parent,
-		children: overrides.children,
-	};
+class IssueModelTestData {
+	static createIssue(overrides: Partial<JiraIssue>): JiraIssue {
+		return {
+			id: overrides.id ?? '1',
+			key: overrides.key ?? 'PROJ-1',
+			summary: overrides.summary ?? 'Issue summary',
+			statusName: overrides.statusName ?? 'To Do',
+			url: overrides.url ?? 'https://jira.example.test/browse/PROJ-1',
+			updated: overrides.updated ?? '2026-02-23T00:00:00.000Z',
+			created: overrides.created,
+			issueTypeId: overrides.issueTypeId,
+			issueTypeName: overrides.issueTypeName,
+			assigneeName: overrides.assigneeName,
+			assigneeUsername: overrides.assigneeUsername,
+			assigneeKey: overrides.assigneeKey,
+			assigneeAccountId: overrides.assigneeAccountId,
+			assigneeAvatarUrl: overrides.assigneeAvatarUrl,
+			reporterName: overrides.reporterName,
+			reporterUsername: overrides.reporterUsername,
+			reporterKey: overrides.reporterKey,
+			reporterAccountId: overrides.reporterAccountId,
+			reporterAvatarUrl: overrides.reporterAvatarUrl,
+			description: overrides.description,
+			descriptionHtml: overrides.descriptionHtml,
+			parent: overrides.parent,
+			children: overrides.children,
+		};
+	}
 }
 
 const defaultAuth: JiraAuthInfo = {
@@ -48,25 +43,25 @@ const defaultAuth: JiraAuthInfo = {
 };
 
 test('createPlaceholderIssue creates loading issue shell', () => {
-	const placeholder = createPlaceholderIssue('PROJ-99');
+	const placeholder = IssueModel.createPlaceholderIssue('PROJ-99');
 	assert.equal(placeholder.key, 'PROJ-99');
 	assert.equal(placeholder.summary, 'Loading issue details…');
 	assert.equal(placeholder.statusName, 'Loading');
 });
 
 test('determineStatusCategory maps common statuses', () => {
-	assert.equal(determineStatusCategory('Done'), 'done');
-	assert.equal(determineStatusCategory('In Progress'), 'inProgress');
-	assert.equal(determineStatusCategory('To Do'), 'open');
-	assert.equal(determineStatusCategory('Needs Triage'), 'default');
+	assert.equal(IssueModel.determineStatusCategory('Done'), 'done');
+	assert.equal(IssueModel.determineStatusCategory('In Progress'), 'inProgress');
+	assert.equal(IssueModel.determineStatusCategory('To Do'), 'open');
+	assert.equal(IssueModel.determineStatusCategory('Needs Triage'), 'default');
 });
 
 test('filterIssuesRelatedToUser matches assigneeAccountId', () => {
 	const issues = [
-		createIssue({ key: 'PROJ-1', assigneeAccountId: 'acct-123' }),
-		createIssue({ key: 'PROJ-2', assigneeAccountId: 'acct-999' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-1', assigneeAccountId: 'acct-123' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-2', assigneeAccountId: 'acct-999' }),
 	];
-	const related = filterIssuesRelatedToUser(issues, defaultAuth);
+	const related = IssueModel.filterIssuesRelatedToUser(issues, defaultAuth);
 	assert.deepEqual(
 		related.map((issue) => issue.key),
 		['PROJ-1']
@@ -75,10 +70,10 @@ test('filterIssuesRelatedToUser matches assigneeAccountId', () => {
 
 test('filterIssuesRelatedToUser matches username without domain', () => {
 	const issues = [
-		createIssue({ key: 'PROJ-1', assigneeUsername: 'helen' }),
-		createIssue({ key: 'PROJ-2', assigneeUsername: 'other' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-1', assigneeUsername: 'helen' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-2', assigneeUsername: 'other' }),
 	];
-	const related = filterIssuesRelatedToUser(issues, defaultAuth);
+	const related = IssueModel.filterIssuesRelatedToUser(issues, defaultAuth);
 	assert.deepEqual(
 		related.map((issue) => issue.key),
 		['PROJ-1']
@@ -93,10 +88,10 @@ test('filterIssuesRelatedToUser falls back to displayName when account/username 
 		serverLabel: 'custom',
 	};
 	const issues = [
-		createIssue({ key: 'PROJ-1', assigneeName: 'Helena Assis' }),
-		createIssue({ key: 'PROJ-2', assigneeName: 'Someone Else' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-1', assigneeName: 'Helena Assis' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-2', assigneeName: 'Someone Else' }),
 	];
-	const related = filterIssuesRelatedToUser(issues, auth);
+	const related = IssueModel.filterIssuesRelatedToUser(issues, auth);
 	assert.deepEqual(
 		related.map((issue) => issue.key),
 		['PROJ-1']
@@ -105,11 +100,11 @@ test('filterIssuesRelatedToUser falls back to displayName when account/username 
 
 test('groupIssuesByStatus groups case-insensitively and sorts labels', () => {
 	const issues = [
-		createIssue({ key: 'PROJ-3', statusName: 'In Progress' }),
-		createIssue({ key: 'PROJ-2', statusName: 'done' }),
-		createIssue({ key: 'PROJ-1', statusName: 'in progress' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-3', statusName: 'In Progress' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-2', statusName: 'done' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-1', statusName: 'in progress' }),
 	];
-	const groups = groupIssuesByStatus(issues);
+	const groups = IssueModel.groupIssuesByStatus(issues);
 	assert.deepEqual(
 		groups.map((group) => group.statusName),
 		['done', 'In Progress']
@@ -119,11 +114,11 @@ test('groupIssuesByStatus groups case-insensitively and sorts labels', () => {
 
 test('sortIssuesByUpdatedDesc sorts latest timestamp first', () => {
 	const issues = [
-		createIssue({ key: 'PROJ-1', updated: '2026-01-01T00:00:00.000Z' }),
-		createIssue({ key: 'PROJ-3', updated: '2026-03-01T00:00:00.000Z' }),
-		createIssue({ key: 'PROJ-2', updated: '2026-02-01T00:00:00.000Z' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-1', updated: '2026-01-01T00:00:00.000Z' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-3', updated: '2026-03-01T00:00:00.000Z' }),
+			IssueModelTestData.createIssue({ key: 'PROJ-2', updated: '2026-02-01T00:00:00.000Z' }),
 	];
-	const sorted = sortIssuesByUpdatedDesc(issues);
+	const sorted = IssueModel.sortIssuesByUpdatedDesc(issues);
 	assert.deepEqual(
 		sorted.map((issue) => issue.key),
 		['PROJ-3', 'PROJ-2', 'PROJ-1']
@@ -131,7 +126,6 @@ test('sortIssuesByUpdatedDesc sorts latest timestamp first', () => {
 });
 
 test('getIssueUpdatedTimestamp returns 0 for invalid dates', () => {
-	const invalid = createIssue({ updated: 'not-a-date' });
-	assert.equal(getIssueUpdatedTimestamp(invalid), 0);
+	const invalid = IssueModelTestData.createIssue({ updated: 'not-a-date' });
+	assert.equal(IssueModel.getIssueUpdatedTimestamp(invalid), 0);
 });
-

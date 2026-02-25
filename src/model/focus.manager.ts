@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { JiraAuthManager } from './auth.manager';
 import { jiraApiClient } from '../jiraApi';
 import { SELECTED_PROJECT_KEY } from './jira.constant';
-import { deriveErrorMessage } from '../shared/error.helper';
+import { ErrorHelper } from '../shared/error.helper';
 import { JiraAuthInfo, JiraProject, SelectedProjectInfo } from './jira.type';
 
 export class JiraFocusManager {
@@ -96,7 +96,7 @@ export class JiraFocusManager {
 			const newKey = this.getSelectedProject()?.key;
 			return previousKey !== newKey;
 		} catch (error) {
-			const message = deriveErrorMessage(error);
+			const message = ErrorHelper.deriveErrorMessage(error);
 			await vscode.window.showErrorMessage(`Failed to load projects: ${message}`);
 			return false;
 		}

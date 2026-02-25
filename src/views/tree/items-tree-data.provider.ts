@@ -16,14 +16,12 @@ import {
 } from '../../model/jira.constant';
 import { jiraApiClient } from '../../jiraApi';
 import {
-	determineStatusCategory,
-	filterIssuesRelatedToUser,
-	groupIssuesByStatus,
+	IssueModel,
 } from '../../model/issue.model';
 import { JiraAuthInfo, JiraIssue, ItemsGroupMode, ItemsSortMode, ItemsViewMode } from '../../model/jira.type';
-import { deriveErrorMessage } from '../../shared/error.helper';
+import { ErrorHelper } from '../../shared/error.helper';
 import { JiraTreeDataProvider } from './base-tree-data.provider';
-import { JiraTreeItem, createIssueTreeItem, deriveIssueIcon } from './tree-item.view';
+import { JiraTreeItem } from './tree-item.view';
 
 export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private viewMode: ItemsViewMode;
@@ -345,8 +343,8 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			this.forceRemoteReload = false;
 			const loadMoreNode = hasMore ? this.createLoadMoreTreeItem(issues.length, hasRemoteSearch) : undefined;
 			const scopedIssues = showingAssigned
-				? filterIssuesRelatedToUser(issues, authInfo).filter(
-						(issue) => determineStatusCategory(issue.statusName) !== 'done'
+				? IssueModel.filterIssuesRelatedToUser(issues, authInfo).filter(
+						(issue) => IssueModel.determineStatusCategory(issue.statusName) !== 'done'
 				  )
 				: showingUnassigned
 				? issues.filter((issue) => this.isUnassignedIssue(issue))
@@ -415,7 +413,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			}
 			return prependSearchNode(issueNodes);
 		} catch (error) {
-			const message = deriveErrorMessage(error);
+			const message = ErrorHelper.deriveErrorMessage(error);
 			this.updateBadge();
 			return prependSearchNode([
 				new JiraTreeItem(
@@ -430,7 +428,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private buildIssueNodes(issues: JiraIssue[]): JiraTreeItem[] {
 		switch (this.groupMode) {
 			case 'none':
-				return issues.map((issue) => createIssueTreeItem(issue));
+				return issues.map((issue) => JiraTreeItem.createIssueTreeItem(issue));
 			case 'type':
 				return this.buildTypeGroupNodes(issues);
 			case 'status':
@@ -440,8 +438,8 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	}
 
 	private buildStatusGroupNodes(issues: JiraIssue[]): JiraTreeItem[] {
-		return groupIssuesByStatus(issues).map((group) => {
-			const childNodes = group.issues.map((issue) => createIssueTreeItem(issue));
+		return IssueModel.groupIssuesByStatus(issues).map((group) => {
+			const childNodes = group.issues.map((issue) => JiraTreeItem.createIssueTreeItem(issue));
 			const label = group.issues.length > 0 ? `${group.statusName} (${group.issues.length})` : group.statusName;
 			const groupItem = new JiraTreeItem(
 				'statusGroup',
@@ -451,7 +449,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				undefined,
 				childNodes
 			);
-			groupItem.iconPath = deriveIssueIcon(group.statusName);
+			groupItem.iconPath = JiraTreeItem.deriveIssueIcon(group.statusName);
 			groupItem.tooltip =
 				group.issues.length === 1
 					? `1 issue in ${group.statusName}`
@@ -462,7 +460,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 	private buildTypeGroupNodes(issues: JiraIssue[]): JiraTreeItem[] {
 		return this.groupIssuesByType(issues).map((group) => {
-			const childNodes = group.issues.map((issue) => createIssueTreeItem(issue));
+			const childNodes = group.issues.map((issue) => JiraTreeItem.createIssueTreeItem(issue));
 			const label = group.issues.length > 0 ? `${group.typeName} (${group.issues.length})` : group.typeName;
 			const groupItem = new JiraTreeItem(
 				'typeGroup',
@@ -572,7 +570,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 	private countInProgressIssues(issues: JiraIssue[]): number {
 		return issues.reduce((count, issue) => {
-			return determineStatusCategory(issue.statusName) === 'inProgress' ? count + 1 : count;
+			return IssueModel.determineStatusCategory(issue.statusName) === 'inProgress' ? count + 1 : count;
 		}, 0);
 	}
 

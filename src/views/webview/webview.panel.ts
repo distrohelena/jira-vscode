@@ -13,43 +13,92 @@ import {
 	SelectedProjectInfo,
 } from '../../model/jira.type';
 import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../../model/jira.constant';
-import { createPlaceholderIssue, determineStatusCategory, formatIssueUpdated } from '../../model/issue.model';
-import { escapeAttribute, escapeHtml } from '../../shared/html.helper';
-import { getItemsIconPath, getStatusIconPath, getStatusIconWebviewSrc } from '../view.resource';
+import { IssueModel } from '../../model/issue.model';
+import { HtmlHelper } from '../../shared/html.helper';
+import { ViewResource } from '../view.resource';
 
-export function showIssueDetailsPanel(
-	issueKey: string,
-	issue?: JiraIssue,
-	options?: IssuePanelOptions,
-	onMessage?: (message: any, panel: vscode.WebviewPanel) => void
-): vscode.WebviewPanel {
-	const panel = vscode.window.createWebviewPanel(
-		'jiraIssueDetails',
-		`${issueKey} – Jira`,
-		vscode.ViewColumn.Active,
-		{
-			enableScripts: true,
-		}
-	);
-	panel.webview.onDidReceiveMessage((message) => {
-		if (message?.type === 'openIssue' && typeof message.key === 'string') {
-			vscode.commands.executeCommand('jira.openIssueDetails', message.key);
-			return;
-		}
-		if (message?.type === 'debugLog') {
-			const eventName = typeof message.event === 'string' ? message.event : 'unknown';
-			const details = formatDebugDetails(message.details);
-			console.log(`[jira.webview] ${eventName}${details}`);
-			return;
-		}
-		onMessage?.(message, panel);
-	});
-	const issueData = issue ?? createPlaceholderIssue(issueKey);
-	renderIssuePanelContent(panel, issueData, options);
-	return panel;
-}
+type RichTextEditorRenderOptions = {
+	editorId: string;
+	name?: string;
+	value: string;
+	placeholder: string;
+	disabled?: boolean;
+	minRows?: number;
+	inputClassName?: string;
+	editorClassName?: string;
+	ariaLabel?: string;
+};
 
-function formatDebugDetails(details: unknown): string {
+export class JiraWebviewPanel {
+	static showIssueDetailsPanel(
+		issueKey: string,
+		issue?: JiraIssue,
+		options?: IssuePanelOptions,
+		onMessage?: (message: any, panel: vscode.WebviewPanel) => void
+	): vscode.WebviewPanel {
+		const panel = vscode.window.createWebviewPanel(
+			'jiraIssueDetails',
+			`${issueKey} – Jira`,
+			vscode.ViewColumn.Active,
+			{
+				enableScripts: true,
+			}
+		);
+		panel.webview.onDidReceiveMessage((message) => {
+			if (message?.type === 'openIssue' && typeof message.key === 'string') {
+				vscode.commands.executeCommand('jira.openIssueDetails', message.key);
+				return;
+			}
+			if (message?.type === 'debugLog') {
+				const eventName = typeof message.event === 'string' ? message.event : 'unknown';
+				const details = formatDebugDetails(message.details);
+				console.log(`[jira.webview] ${eventName}${details}`);
+				return;
+			}
+			onMessage?.(message, panel);
+		});
+		const issueData = issue ?? IssueModel.createPlaceholderIssue(issueKey);
+		JiraWebviewPanel.renderIssuePanelContent(panel, issueData, options);
+		return panel;
+	}
+
+	static renderIssuePanelContent(panel: vscode.WebviewPanel, issue: JiraIssue, options?: IssuePanelOptions): void {
+		const statusCategory = IssueModel.determineStatusCategory(issue.statusName);
+		const iconPath = ViewResource.getStatusIconPath(statusCategory);
+		if (iconPath) {
+			panel.iconPath = iconPath;
+		}
+		const statusIconSrc = ViewResource.getStatusIconWebviewSrc(panel.webview, statusCategory);
+		panel.webview.html = renderIssueDetailsHtml(panel.webview, issue, statusIconSrc, options);
+	}
+
+	static showCreateIssuePanel(project: SelectedProjectInfo, state: CreateIssuePanelState): vscode.WebviewPanel {
+		const panel = vscode.window.createWebviewPanel(
+			'jiraCreateIssue',
+			`New Ticket (${project.key})`,
+			vscode.ViewColumn.Active,
+			{
+				enableScripts: true,
+				retainContextWhenHidden: true,
+			}
+		);
+		const iconPath = ViewResource.getItemsIconPath();
+		if (iconPath) {
+			panel.iconPath = iconPath;
+		}
+		JiraWebviewPanel.renderCreateIssuePanel(panel, project, state);
+		return panel;
+	}
+
+	static renderCreateIssuePanel(
+		panel: vscode.WebviewPanel,
+		project: SelectedProjectInfo,
+		state: CreateIssuePanelState
+	): void {
+		panel.webview.html = renderCreateIssuePanelHtml(panel.webview, project, state);
+	}
+
+	static formatDebugDetails(details: unknown): string {
 	if (details === undefined) {
 		return '';
 	}
@@ -60,49 +109,13 @@ function formatDebugDetails(details: unknown): string {
 	}
 }
 
-export function renderIssuePanelContent(panel: vscode.WebviewPanel, issue: JiraIssue, options?: IssuePanelOptions) {
-	const statusCategory = determineStatusCategory(issue.statusName);
-	const iconPath = getStatusIconPath(statusCategory);
-	if (iconPath) {
-		panel.iconPath = iconPath;
-	}
-	const statusIconSrc = getStatusIconWebviewSrc(panel.webview, statusCategory);
-	panel.webview.html = renderIssueDetailsHtml(panel.webview, issue, statusIconSrc, options);
-}
-
-export function showCreateIssuePanel(project: SelectedProjectInfo, state: CreateIssuePanelState): vscode.WebviewPanel {
-	const panel = vscode.window.createWebviewPanel(
-		'jiraCreateIssue',
-		`New Ticket (${project.key})`,
-		vscode.ViewColumn.Active,
-		{
-			enableScripts: true,
-			retainContextWhenHidden: true,
-		}
-	);
-	const iconPath = getItemsIconPath();
-	if (iconPath) {
-		panel.iconPath = iconPath;
-	}
-	renderCreateIssuePanel(panel, project, state);
-	return panel;
-}
-
-export function renderCreateIssuePanel(
-	panel: vscode.WebviewPanel,
-	project: SelectedProjectInfo,
-	state: CreateIssuePanelState
-): void {
-	panel.webview.html = renderCreateIssuePanelHtml(panel.webview, project, state);
-}
-
-function renderIssueDetailsHtml(
+	static renderIssueDetailsHtml(
 	webview: vscode.Webview,
 	issue: JiraIssue,
 	statusIconSrc?: string,
 	options?: IssuePanelOptions
 ): string {
-	const updatedText = formatIssueUpdated(issue.updated);
+	const updatedText = IssueModel.formatIssueUpdated(issue.updated);
 	const assignee = issue.assigneeName ?? 'Unassigned';
 	const reporter = issue.reporterName ?? 'Unknown';
 	const nonce = generateNonce();
@@ -117,23 +130,23 @@ function renderIssueDetailsHtml(
 	const statusIconMarkup = `<div class="ticket-icon-block">
 		${
 			statusIconSrc
-				? `<img class="status-icon" src="${escapeAttribute(statusIconSrc)}" alt="${escapeHtml(
+				? `<img class="status-icon" src="${HtmlHelper.escapeAttribute(statusIconSrc)}" alt="${HtmlHelper.escapeHtml(
 						issue.statusName ?? 'Issue status'
-				  )} status icon" />`
+					)} status icon" />`
 				: ''
 		}
-		<div class="ticket-type-label">${escapeHtml(issueTypeLabel)}</div>
+		<div class="ticket-type-label">${HtmlHelper.escapeHtml(issueTypeLabel)}</div>
 	</div>`;
 	let messageBanner = '';
 	if (errorMessage) {
-		messageBanner = `<div class="section error-banner">${escapeHtml(errorMessage)}</div>`;
+		messageBanner = `<div class="section error-banner">${HtmlHelper.escapeHtml(errorMessage)}</div>`;
 	} else if (isLoading) {
 		messageBanner = `<div class="section loading-banner">Refreshing issue details…</div>`;
 	}
 	const linkSection =
 		issue.url && !errorMessage
 			? `<div class="section">
-		<a href="${escapeHtml(issue.url)}" target="_blank" rel="noreferrer noopener">Open in Jira</a>
+		<a href="${HtmlHelper.escapeHtml(issue.url)}" target="_blank" rel="noreferrer noopener">Open in Jira</a>
 	</div>`
 			: '';
 	const commentsSection = renderCommentsSection(options);
@@ -153,7 +166,7 @@ function renderIssueDetailsHtml(
 		summaryBlockClasses.push('summary-edit-disabled');
 	}
 	const summaryErrorMarkup = summaryEditError
-		? `<div class="status-error issue-summary-error">${escapeHtml(summaryEditError)}</div>`
+		? `<div class="status-error issue-summary-error">${HtmlHelper.escapeHtml(summaryEditError)}</div>`
 		: '';
 
 	return `<!DOCTYPE html>
@@ -161,7 +174,7 @@ function renderIssueDetailsHtml(
 <head>
 	<meta charset="UTF-8" />
 	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
-	<title>${escapeHtml(issue.key)}</title>
+	<title>${HtmlHelper.escapeHtml(issue.key)}</title>
 	<style>
 	body {
 		font-family: var(--vscode-font-family);
@@ -811,13 +824,13 @@ function renderIssueDetailsHtml(
 				<div class="issue-header-main">
 					${statusIconMarkup}
 					<div class="issue-header-copy">
-						<h1>${escapeHtml(issue.key)}</h1>
-						<div class="${summaryBlockClasses.join(' ')}" data-issue-key="${escapeAttribute(
+						<h1>${HtmlHelper.escapeHtml(issue.key)}</h1>
+						<div class="${summaryBlockClasses.join(' ')}" data-issue-key="${HtmlHelper.escapeAttribute(
 							issue.key
 						)}" data-summary-edit-disabled="${summaryEditDisabled ? 'true' : 'false'}">
-							<p class="issue-summary jira-summary-display">${escapeHtml(summaryText)}</p>
+							<p class="issue-summary jira-summary-display">${HtmlHelper.escapeHtml(summaryText)}</p>
 							<form class="jira-summary-editor">
-								<input type="text" class="jira-summary-input" value="${escapeAttribute(
+								<input type="text" class="jira-summary-input" value="${HtmlHelper.escapeAttribute(
 									summaryValue
 								)}" ${summaryEditDisabledAttr} />
 								<div class="jira-summary-actions">
@@ -830,7 +843,7 @@ function renderIssueDetailsHtml(
 					</div>
 				</div>
 				<div class="issue-actions">
-					<button type="button" class="issue-commit" data-issue-key="${escapeAttribute(
+					<button type="button" class="issue-commit" data-issue-key="${HtmlHelper.escapeAttribute(
 						issue.key
 					)}" ${isLoading ? 'disabled' : ''}>Commit from Issue</button>
 				</div>
@@ -1412,7 +1425,7 @@ function renderIssueDetailsHtml(
 </html>`;
 }
 
-function renderCreateIssuePanelHtml(
+	static renderCreateIssuePanelHtml(
 	webview: vscode.Webview,
 	project: SelectedProjectInfo,
 	state: CreateIssuePanelState
@@ -1422,12 +1435,12 @@ function renderCreateIssuePanelHtml(
 	const values = state.values;
 	const disabledAttr = state.submitting ? 'disabled' : '';
 	const errorBanner = state.error
-		? `<div class="section error-banner">${escapeHtml(state.error)}</div>`
+		? `<div class="section error-banner">${HtmlHelper.escapeHtml(state.error)}</div>`
 		: '';
 	const successBanner = state.successIssue
 		? `<div class="section success-banner">
-			Created ticket <strong>${escapeHtml(state.successIssue.key)}</strong>.
-			${state.successIssue.url ? `<a href="${escapeHtml(state.successIssue.url)}" target="_blank" rel="noreferrer noopener">Open in Jira</a>` : ''}
+			Created ticket <strong>${HtmlHelper.escapeHtml(state.successIssue.key)}</strong>.
+			${state.successIssue.url ? `<a href="${HtmlHelper.escapeHtml(state.successIssue.url)}" target="_blank" rel="noreferrer noopener">Open in Jira</a>` : ''}
 		</div>`
 		: '';
 	const projectLabel = project.name ? `${project.name} (${project.key})` : project.key;
@@ -1436,7 +1449,7 @@ function renderCreateIssuePanelHtml(
 	const buttonLabel = state.submitting ? 'Creating…' : 'Create Ticket';
 	const statusNames = deriveStatusOptionNames(state.statusOptions);
 	const defaultStatus = pickPreferredInitialStatus(statusNames) ?? statusNames[0] ?? ISSUE_STATUS_OPTIONS[0];
-	const defaultStatusAttr = escapeAttribute(defaultStatus);
+	const defaultStatusAttr = HtmlHelper.escapeAttribute(defaultStatus);
 	const statusPending = state.statusPending ?? false;
 	const statusError = state.statusError;
 	const richTextEditorStyles = renderRichTextEditorStyles();
@@ -1723,7 +1736,7 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t<div class="issue-header">
 \t\t\t\t\t<div>
 \t\t\t\t\t\t<h1>New Jira Ticket</h1>
-\t\t\t\t\t\t<p class="issue-summary">Project ${escapeHtml(projectLabel)}</p>
+\t\t\t\t\t\t<p class="issue-summary">Project ${HtmlHelper.escapeHtml(projectLabel)}</p>
 \t\t\t\t\t</div>
 \t\t\t\t</div>
 \t\t\t\t${errorBanner}
@@ -1731,7 +1744,7 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t<div class="form-field">
 \t\t\t\t\t<label>
 \t\t\t\t\t\t<span class="section-title">Summary</span>
-\t\t\t\t\t\t<input type="text" name="summary" value="${escapeAttribute(
+\t\t\t\t\t\t<input type="text" name="summary" value="${HtmlHelper.escapeAttribute(
 							values.summary
 						)}" placeholder="Ticket summary" ${disabledAttr} required />
 \t\t\t\t\t</label>
@@ -1757,7 +1770,7 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t<div class="meta-card">
 \t\t\t\t\t<div class="meta-section">
 \t\t\t\t\t\t<div class="section-title">Project</div>
-\t\t\t\t\t\t<div class="project-pill">${escapeHtml(projectLabel)}</div>
+\t\t\t\t\t\t<div class="project-pill">${HtmlHelper.escapeHtml(projectLabel)}</div>
 \t\t\t\t\t</div>
 \t\t\t\t\t<div class="meta-section">
 \t\t\t\t\t\t<div class="section-title">Issue Type</div>
@@ -1771,19 +1784,19 @@ function renderCreateIssuePanelHtml(
 \t\t\t\t\t\t\t${renderIssueStatusOptions(values.status, state.statusOptions)}
 \t\t\t\t\t\t</select>
 \t\t\t\t\t\t${statusPending ? '<div class="muted status-helper">Loading project statuses…</div>' : ''}
-\t\t\t\t\t\t${statusError ? `<div class="status-error">${escapeHtml(statusError)}</div>` : ''}
+\t\t\t\t\t\t${statusError ? `<div class="status-error">${HtmlHelper.escapeHtml(statusError)}</div>` : ''}
 \t\t\t\t\t</div>
 \t\t\t\t\t<div class="meta-section">
 \t\t\t\t\t\t<div class="section-title">Assignee</div>
 \t\t\t\t\t\t${assigneeSection}
 \t\t\t\t\t</div>
-\t\t\t\t\t<input type="hidden" name="assigneeAccountId" value="${escapeAttribute(
+\t\t\t\t\t<input type="hidden" name="assigneeAccountId" value="${HtmlHelper.escapeAttribute(
 						values.assigneeAccountId ?? ''
 					)}" />
-\t\t\t\t\t<input type="hidden" name="assigneeDisplayName" value="${escapeAttribute(
+\t\t\t\t\t<input type="hidden" name="assigneeDisplayName" value="${HtmlHelper.escapeAttribute(
 						values.assigneeDisplayName ?? ''
 					)}" />
-					<input type="hidden" name="assigneeAvatarUrl" value="${escapeAttribute(
+					<input type="hidden" name="assigneeAvatarUrl" value="${HtmlHelper.escapeAttribute(
 						values.assigneeAvatarUrl ?? ''
 					)}" />
 \t\t\t\t</div>
@@ -1996,7 +2009,7 @@ function renderCreateIssuePanelHtml(
 </html>`;
 }
 
-function renderParentSection(issue: JiraIssue): string {
+	static renderParentSection(issue: JiraIssue): string {
 	const parent = issue.parent;
 	const content = parent
 		? renderRelatedIssueButton(parent)
@@ -2007,7 +2020,7 @@ function renderParentSection(issue: JiraIssue): string {
 	</div>`;
 }
 
-function renderChildrenSection(issue: JiraIssue): string {
+	static renderChildrenSection(issue: JiraIssue): string {
 	const children = issue.children?.filter((child) => !!child) ?? [];
 	if (children.length === 0) {
 		return `<div class="section">
@@ -2026,14 +2039,14 @@ function renderChildrenSection(issue: JiraIssue): string {
 	</div>`;
 }
 
-function renderDescriptionSection(
+	static renderDescriptionSection(
 	issue: JiraIssue,
 	options?: IssuePanelOptions,
 	isLoading = false
 ): string {
 	const descriptionHtml = issue.descriptionHtml;
 	const fallbackHtml = issue.description
-		? `<p>${escapeHtml(issue.description).replace(/\r?\n/g, '<br />')}</p>`
+		? `<p>${HtmlHelper.escapeHtml(issue.description).replace(/\r?\n/g, '<br />')}</p>`
 		: undefined;
 	const content = descriptionHtml ?? fallbackHtml;
 	const descriptionText = deriveEditableDescriptionText(issue, content);
@@ -2053,13 +2066,13 @@ function renderDescriptionSection(
 		? `<div class="description-body rich-text-block jira-description-display">${content}</div>`
 		: '<div class="description-body rich-text-block jira-description-display muted">No description provided. Click to add one.</div>';
 	const errorMarkup = descriptionEditError
-		? `<div class="status-error issue-description-error">${escapeHtml(descriptionEditError)}</div>`
+		? `<div class="status-error issue-description-error">${HtmlHelper.escapeHtml(descriptionEditError)}</div>`
 		: '';
 	return `<div class="section description-card">
 		<div class="section-title">Description</div>
-		<div class="${blockClasses.join(' ')}" data-issue-key="${escapeAttribute(
+		<div class="${blockClasses.join(' ')}" data-issue-key="${HtmlHelper.escapeAttribute(
 			issue.key
-		)}" data-description-edit-disabled="${descriptionEditDisabled ? 'true' : 'false'}" data-description-plain="${escapeAttribute(
+		)}" data-description-edit-disabled="${descriptionEditDisabled ? 'true' : 'false'}" data-description-plain="${HtmlHelper.escapeAttribute(
 			descriptionText
 		)}">
 			${body}
@@ -2094,7 +2107,7 @@ function renderDescriptionSection(
 	</div>`;
 }
 
-function deriveEditableDescriptionText(issue: JiraIssue, renderedContent?: string): string {
+	static deriveEditableDescriptionText(issue: JiraIssue, renderedContent?: string): string {
 	const rawDescription = issue.description;
 	if (typeof rawDescription === 'string' && rawDescription.length > 0) {
 		return rawDescription;
@@ -2105,17 +2118,17 @@ function deriveEditableDescriptionText(issue: JiraIssue, renderedContent?: strin
 	return htmlToPlainText(renderedContent);
 }
 
-function deriveEditableDescriptionHtml(renderedContent: string | undefined, fallbackText: string): string {
+	static deriveEditableDescriptionHtml(renderedContent: string | undefined, fallbackText: string): string {
 	if (renderedContent && renderedContent.trim().length > 0) {
 		return renderedContent;
 	}
 	if (!fallbackText) {
 		return '';
 	}
-	return `<p>${escapeHtml(fallbackText).replace(/\r?\n/g, '<br />')}</p>`;
+	return `<p>${HtmlHelper.escapeHtml(fallbackText).replace(/\r?\n/g, '<br />')}</p>`;
 }
 
-function htmlToPlainText(html: string): string {
+	static htmlToPlainText(html: string): string {
 	const withStructure = html
 		.replace(/<\s*br\s*\/?>/gi, '\n')
 		.replace(/<\/\s*(p|div|h1|h2|h3|h4|h5|h6)\s*>/gi, '\n')
@@ -2131,7 +2144,7 @@ function htmlToPlainText(html: string): string {
 		.trim();
 }
 
-function decodeHtmlEntities(text: string): string {
+	static decodeHtmlEntities(text: string): string {
 	return text
 		.replace(/&nbsp;/gi, ' ')
 		.replace(/&amp;/gi, '&')
@@ -2145,19 +2158,7 @@ function decodeHtmlEntities(text: string): string {
 		});
 }
 
-type RichTextEditorRenderOptions = {
-	editorId: string;
-	name?: string;
-	value: string;
-	placeholder: string;
-	disabled?: boolean;
-	minRows?: number;
-	inputClassName?: string;
-	editorClassName?: string;
-	ariaLabel?: string;
-};
-
-function renderRichTextEditor(options: RichTextEditorRenderOptions): string {
+	static renderRichTextEditor(options: RichTextEditorRenderOptions): string {
 	const disabledAttr = options.disabled ? 'disabled' : '';
 	const wrapperClasses = ['jira-rich-editor'];
 	if (options.editorClassName) {
@@ -2167,11 +2168,11 @@ function renderRichTextEditor(options: RichTextEditorRenderOptions): string {
 	if (options.inputClassName) {
 		inputClasses.push(options.inputClassName);
 	}
-	const nameAttr = options.name ? `name="${escapeAttribute(options.name)}"` : '';
+	const nameAttr = options.name ? `name="${HtmlHelper.escapeAttribute(options.name)}"` : '';
 	const rows = Math.max(3, options.minRows ?? 6);
 	const label = options.ariaLabel ?? 'Rich text input';
 	return `<div class="${wrapperClasses.join(' ')}" data-disabled="${options.disabled ? 'true' : 'false'}">
-		<div class="jira-rich-editor-toolbar" role="toolbar" aria-label="${escapeAttribute(label)} formatting">
+		<div class="jira-rich-editor-toolbar" role="toolbar" aria-label="${HtmlHelper.escapeAttribute(label)} formatting">
 			<button type="button" class="jira-rich-editor-action" data-action="bold" title="Bold (*text*)" ${disabledAttr}><span class="fmt-bold">B</span></button>
 			<button type="button" class="jira-rich-editor-action" data-action="italic" title="Italic (_text_)" ${disabledAttr}><span class="fmt-italic">I</span></button>
 			<button type="button" class="jira-rich-editor-action" data-action="underline" title="Underline (+text+)" ${disabledAttr}><span class="fmt-underline">U</span></button>
@@ -2184,13 +2185,13 @@ function renderRichTextEditor(options: RichTextEditorRenderOptions): string {
 			<button type="button" class="jira-rich-editor-action" data-action="codeblock" title="Code block ({code})" ${disabledAttr}>Code</button>
 			<button type="button" class="jira-rich-editor-action" data-action="link" title="Link ([text|url])" ${disabledAttr}>Link</button>
 		</div>
-		<textarea id="${escapeAttribute(options.editorId)}" class="${inputClasses.join(' ')}" ${nameAttr} rows="${rows}" placeholder="${escapeAttribute(
+		<textarea id="${HtmlHelper.escapeAttribute(options.editorId)}" class="${inputClasses.join(' ')}" ${nameAttr} rows="${rows}" placeholder="${HtmlHelper.escapeAttribute(
 			options.placeholder
-		)}" ${disabledAttr}>${escapeHtml(options.value)}</textarea>
+		)}" ${disabledAttr}>${HtmlHelper.escapeHtml(options.value)}</textarea>
 	</div>`;
 }
 
-function renderRichTextEditorStyles(): string {
+	static renderRichTextEditorStyles(): string {
 	return `
 	.jira-rich-editor {
 		display: flex;
@@ -2267,7 +2268,7 @@ function renderRichTextEditorStyles(): string {
 	`;
 }
 
-function renderRichTextEditorBootstrapScript(): string {
+	static renderRichTextEditorBootstrapScript(): string {
 	return `
 				const wrapEditorSelection = (input, prefix, suffix, placeholder) => {
 					if (!input || input.disabled) {
@@ -2369,14 +2370,14 @@ function renderRichTextEditorBootstrapScript(): string {
 	`;
 }
 
-function renderCommentsSection(options?: IssuePanelOptions): string {
+	static renderCommentsSection(options?: IssuePanelOptions): string {
 	const comments = options?.comments ?? [];
 	const pending = options?.commentsPending ?? false;
 	const error = options?.commentsError;
 
 	let listContent = '';
 	if (error) {
-		listContent = `<div class="comment-message error">${escapeHtml(error)}</div>`;
+		listContent = `<div class="comment-message error">${HtmlHelper.escapeHtml(error)}</div>`;
 	} else if (comments.length === 0 && pending) {
 		listContent = '<div class="comment-message loading">Loading comments…</div>';
 	} else if (comments.length === 0) {
@@ -2395,26 +2396,26 @@ function renderCommentsSection(options?: IssuePanelOptions): string {
 			<div>
 				<div class="section-title">Comments</div>
 			</div>
-			<button type="button" class="comment-refresh" ${refreshDisabledAttr}>${escapeHtml(refreshLabel)}</button>
+			<button type="button" class="comment-refresh" ${refreshDisabledAttr}>${HtmlHelper.escapeHtml(refreshLabel)}</button>
 		</div>
 		${listContent}
 		${renderCommentForm(options)}
 	</div>`;
 }
 
-function renderCommentList(comments: JiraIssueComment[], options?: IssuePanelOptions): string {
+	static renderCommentList(comments: JiraIssueComment[], options?: IssuePanelOptions): string {
 	return comments.map((comment) => renderCommentItem(comment, options)).join('');
 }
 
-function renderCommentItem(comment: JiraIssueComment, options?: IssuePanelOptions): string {
+	static renderCommentItem(comment: JiraIssueComment, options?: IssuePanelOptions): string {
 	const timestamp = comment.updated ?? comment.created;
-	const timestampText = timestamp ? formatIssueUpdated(timestamp) : undefined;
-	const authorLabel = escapeHtml(comment.authorName ?? 'Unknown user');
+	const timestampText = timestamp ? IssueModel.formatIssueUpdated(timestamp) : undefined;
+	const authorLabel = HtmlHelper.escapeHtml(comment.authorName ?? 'Unknown user');
 	const isDeleting = options?.commentDeletingId === comment.id;
 	const deleteDisabled = isDeleting || (options?.commentsPending ?? false);
 	const deleteLabel = isDeleting ? 'Deleting…' : 'Delete';
 	const deleteButton = comment.id
-		? `<button type="button" class="comment-delete" data-comment-id="${escapeAttribute(comment.id)}" ${deleteDisabled ? 'disabled' : ''}>${escapeHtml(deleteLabel)}</button>`
+		? `<button type="button" class="comment-delete" data-comment-id="${HtmlHelper.escapeAttribute(comment.id)}" ${deleteDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(deleteLabel)}</button>`
 		: '';
 	const currentUserTag = comment.isCurrentUser ? '<span class="comment-author-self">You</span>' : '';
 	const bodyHtml = comment.renderedBody && comment.renderedBody.trim().length > 0
@@ -2426,22 +2427,22 @@ function renderCommentItem(comment: JiraIssueComment, options?: IssuePanelOption
 			<div class="comment-meta">
 				<span class="comment-author">${authorLabel}</span>
 				${currentUserTag}
-				${timestampText ? `<span class="comment-date">${escapeHtml(timestampText)}</span>` : ''}
+				${timestampText ? `<span class="comment-date">${HtmlHelper.escapeHtml(timestampText)}</span>` : ''}
 				${deleteButton}
 			</div>
-			<div class="comment-body rich-text-block" data-comment-id="${escapeAttribute(comment.id ?? '')}">${bodyHtml}</div>
+			<div class="comment-body rich-text-block" data-comment-id="${HtmlHelper.escapeAttribute(comment.id ?? '')}">${bodyHtml}</div>
 		</div>
 	</li>`;
 }
 
-function renderCommentForm(options?: IssuePanelOptions): string {
+	static renderCommentForm(options?: IssuePanelOptions): string {
 	const pending = options?.commentSubmitPending ?? false;
 	const draftValue = options?.commentDraft ?? '';
 	const hasText = draftValue.trim().length > 0;
 	const buttonDisabled = pending || !hasText;
 	const buttonLabel = pending ? 'Adding…' : 'Add comment';
 	const errorMarkup = options?.commentSubmitError
-		? `<div class="comment-error">${escapeHtml(options.commentSubmitError)}</div>`
+		? `<div class="comment-error">${HtmlHelper.escapeHtml(options.commentSubmitError)}</div>`
 		: '<div class="comment-error hidden"></div>';
 	return `<form class="comment-form" data-pending="${pending ? 'true' : 'false'}">
 		<label class="section-title" for="comment-input">Add a comment</label>
@@ -2456,28 +2457,28 @@ function renderCommentForm(options?: IssuePanelOptions): string {
 			ariaLabel: 'Comment',
 		})}
 		<div class="comment-controls">
-			<button type="submit" class="comment-submit" ${buttonDisabled ? 'disabled' : ''}>${escapeHtml(buttonLabel)}</button>
+			<button type="submit" class="comment-submit" ${buttonDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(buttonLabel)}</button>
 		</div>
 		${errorMarkup}
 	</form>`;
 }
 
-function renderCommentAvatar(comment: JiraIssueComment): string {
+	static renderCommentAvatar(comment: JiraIssueComment): string {
 	if (comment.authorAvatarUrl) {
-		return `<img class="comment-avatar" src="${escapeAttribute(comment.authorAvatarUrl)}" alt="${escapeAttribute(comment.authorName ?? 'Comment author')} avatar" />`;
+		return `<img class="comment-avatar" src="${HtmlHelper.escapeAttribute(comment.authorAvatarUrl)}" alt="${HtmlHelper.escapeAttribute(comment.authorName ?? 'Comment author')} avatar" />`;
 	}
-	return `<div class="comment-avatar fallback">${escapeHtml(getInitials(comment.authorName))}</div>`;
+	return `<div class="comment-avatar fallback">${HtmlHelper.escapeHtml(getInitials(comment.authorName))}</div>`;
 }
 
-function renderRelatedIssueButton(issue: JiraRelatedIssue): string {
-	const summaryText = issue.summary ? ` · ${escapeHtml(issue.summary)}` : '';
-	const statusText = issue.statusName ? ` — ${escapeHtml(issue.statusName)}` : '';
-	return `<button class="issue-link" data-issue-key="${escapeHtml(issue.key)}">
-		${escapeHtml(issue.key)}${summaryText}${statusText}
+	static renderRelatedIssueButton(issue: JiraRelatedIssue): string {
+	const summaryText = issue.summary ? ` · ${HtmlHelper.escapeHtml(issue.summary)}` : '';
+	const statusText = issue.statusName ? ` — ${HtmlHelper.escapeHtml(issue.statusName)}` : '';
+	return `<button class="issue-link" data-issue-key="${HtmlHelper.escapeHtml(issue.key)}">
+		${HtmlHelper.escapeHtml(issue.key)}${summaryText}${statusText}
 	</button>`;
 }
 
-function renderMetadataPanel(
+	static renderMetadataPanel(
 	issue: JiraIssue,
 	assignee: string,
 	reporter: string,
@@ -2498,17 +2499,17 @@ function renderMetadataPanel(
 			</div>
 			<div class="meta-section">
 				<div class="section-title">Reporter</div>
-				<div>${escapeHtml(reporter)}</div>
+				<div>${HtmlHelper.escapeHtml(reporter)}</div>
 			</div>
 			<div class="meta-section">
 				<div class="section-title">Last Updated</div>
-				<div>${escapeHtml(updatedText)}</div>
+				<div>${HtmlHelper.escapeHtml(updatedText)}</div>
 			</div>
 		</div>
 		</div>`;
 }
 
-function renderStatusControl(issue: JiraIssue, options?: IssuePanelOptions): string {
+	static renderStatusControl(issue: JiraIssue, options?: IssuePanelOptions): string {
 	const transitions = options?.statusOptions;
 	const pending = options?.statusPending;
 	const statusError = options?.statusError;
@@ -2519,45 +2520,45 @@ function renderStatusControl(issue: JiraIssue, options?: IssuePanelOptions): str
 			: options?.loading
 			? 'Loading available statuses…'
 			: 'No status transitions available.';
-		return `<div>${escapeHtml(issue.statusName)}</div>
-		<div class="muted">${escapeHtml(message)}</div>`;
+		return `<div>${HtmlHelper.escapeHtml(issue.statusName)}</div>
+		<div class="muted">${HtmlHelper.escapeHtml(message)}</div>`;
 	}
 
 	const selectOptions = transitions
 		.map(
 			(option) =>
-				`<option value="${escapeAttribute(option.id)}">${escapeHtml(option.name)}</option>`
+				`<option value="${HtmlHelper.escapeAttribute(option.id)}">${HtmlHelper.escapeHtml(option.name)}</option>`
 		)
 		.join('');
 	const disabledAttr = pending ? 'disabled' : '';
 
 	return `<div class="status-select-wrapper">
-		<select class="jira-status-select" data-issue-key="${escapeAttribute(issue.key)}" ${disabledAttr}>
-			<option value="" disabled selected>Current: ${escapeHtml(issue.statusName)}</option>
+		<select class="jira-status-select" data-issue-key="${HtmlHelper.escapeAttribute(issue.key)}" ${disabledAttr}>
+			<option value="" disabled selected>Current: ${HtmlHelper.escapeHtml(issue.statusName)}</option>
 			${selectOptions}
 		</select>
-		${statusError ? `<div class="status-error">${escapeHtml(statusError)}</div>` : ''}
+		${statusError ? `<div class="status-error">${HtmlHelper.escapeHtml(statusError)}</div>` : ''}
 	</div>`;
 }
 
-function renderIssueTypeOptions(selected: string): string {
+	static renderIssueTypeOptions(selected: string): string {
 	return ISSUE_TYPE_OPTIONS.map((option) => {
 		const isSelected = option === selected;
-		return `<option value="${escapeAttribute(option)}" ${isSelected ? 'selected' : ''}>${escapeHtml(option)}</option>`;
+		return `<option value="${HtmlHelper.escapeAttribute(option)}" ${isSelected ? 'selected' : ''}>${HtmlHelper.escapeHtml(option)}</option>`;
 	}).join('');
 }
 
-function renderIssueStatusOptions(selected: string, options?: IssueStatusOption[]): string {
+	static renderIssueStatusOptions(selected: string, options?: IssueStatusOption[]): string {
 	const names = deriveStatusOptionNames(options);
 	return names
 		.map((option) => {
 			const isSelected = option === selected;
-			return `<option value="${escapeAttribute(option)}" ${isSelected ? 'selected' : ''}>${escapeHtml(option)}</option>`;
+			return `<option value="${HtmlHelper.escapeAttribute(option)}" ${isSelected ? 'selected' : ''}>${HtmlHelper.escapeHtml(option)}</option>`;
 		})
 		.join('');
 }
 
-function renderCreateAdditionalFieldsSection(
+	static renderCreateAdditionalFieldsSection(
 	state: CreateIssuePanelState,
 	disabled: boolean
 ): string {
@@ -2574,7 +2575,7 @@ function renderCreateAdditionalFieldsSection(
 		.map((field) => renderCreateAdditionalFieldInput(field, values[field.id] ?? '', disabledAttr))
 		.join('');
 	const pendingMarkup = pending ? '<div class="muted status-helper">Loading additional fields…</div>' : '';
-	const errorMarkup = error ? `<div class="status-error">${escapeHtml(error)}</div>` : '';
+	const errorMarkup = error ? `<div class="status-error">${HtmlHelper.escapeHtml(error)}</div>` : '';
 
 	return `<div class="form-field create-additional-fields">
 		<div class="section-title">Additional Fields</div>
@@ -2584,30 +2585,30 @@ function renderCreateAdditionalFieldsSection(
 	</div>`;
 }
 
-function renderCreateAdditionalFieldInput(
+	static renderCreateAdditionalFieldInput(
 	field: CreateIssueFieldDefinition,
 	value: string,
 	disabledAttr: string
 ): string {
 	const requiredSuffix = field.required ? ' <span class="field-required">*</span>' : '';
-	const label = `${escapeHtml(field.name)}${requiredSuffix}`;
+	const label = `${HtmlHelper.escapeHtml(field.name)}${requiredSuffix}`;
 	if (field.multiline) {
-		return `<label class="create-custom-field-label" for="${escapeAttribute(field.id)}">
+		return `<label class="create-custom-field-label" for="${HtmlHelper.escapeAttribute(field.id)}">
 			<span>${label}</span>
-			<textarea id="${escapeAttribute(field.id)}" data-create-custom-field="${escapeAttribute(
+			<textarea id="${HtmlHelper.escapeAttribute(field.id)}" data-create-custom-field="${HtmlHelper.escapeAttribute(
 				field.id
-			)}" rows="6" class="create-custom-field-input" ${disabledAttr}>${escapeHtml(value)}</textarea>
+			)}" rows="6" class="create-custom-field-input" ${disabledAttr}>${HtmlHelper.escapeHtml(value)}</textarea>
 		</label>`;
 	}
-	return `<label class="create-custom-field-label" for="${escapeAttribute(field.id)}">
+	return `<label class="create-custom-field-label" for="${HtmlHelper.escapeAttribute(field.id)}">
 		<span>${label}</span>
-		<input id="${escapeAttribute(field.id)}" type="text" data-create-custom-field="${escapeAttribute(
+		<input id="${HtmlHelper.escapeAttribute(field.id)}" type="text" data-create-custom-field="${HtmlHelper.escapeAttribute(
 			field.id
-		)}" value="${escapeAttribute(value)}" class="create-custom-field-input" ${disabledAttr} />
+		)}" value="${HtmlHelper.escapeAttribute(value)}" class="create-custom-field-input" ${disabledAttr} />
 	</label>`;
 }
 
-function renderCreateAssigneeSection(state: CreateIssuePanelState): string {
+	static renderCreateAssigneeSection(state: CreateIssuePanelState): string {
 	const pending = state.assigneePending ?? false;
 	const interactionDisabled = !!state.submitting || pending;
 	const queryValue = state.assigneeQuery ?? '';
@@ -2627,7 +2628,7 @@ function renderCreateAssigneeSection(state: CreateIssuePanelState): string {
 		: 'Type a name, press Enter to search, then choose a person and press OK.';
 	const errorText =
 		!pending && state.assigneeError
-			? `<div class="status-error">${escapeHtml(state.assigneeError)}</div>`
+			? `<div class="status-error">${HtmlHelper.escapeHtml(state.assigneeError)}</div>`
 			: '';
 	const selectedLabel = selection.label ?? 'Unassigned (assign later)';
 	const selectDisabledAttr = interactionDisabled ? 'disabled' : '';
@@ -2635,11 +2636,11 @@ function renderCreateAssigneeSection(state: CreateIssuePanelState): string {
 	const assignMeButton =
 		state.currentUser?.accountId && state.currentUser.accountId.trim().length > 0
 			? `<div class="assignee-actions">
-				<button type="button" class="jira-create-assign-me" data-account-id="${escapeAttribute(
+				<button type="button" class="jira-create-assign-me" data-account-id="${HtmlHelper.escapeAttribute(
 					state.currentUser.accountId
-				)}" data-display-name="${escapeAttribute(
+				)}" data-display-name="${HtmlHelper.escapeAttribute(
 					state.currentUser.displayName ?? ''
-				)}" data-avatar-url="${escapeAttribute(
+				)}" data-avatar-url="${HtmlHelper.escapeAttribute(
 					state.currentUser.avatarUrl ?? ''
 				)}" ${interactionDisabled ? 'disabled' : ''}>Assign to Me</button>
 			</div>`
@@ -2649,34 +2650,34 @@ function renderCreateAssigneeSection(state: CreateIssuePanelState): string {
 			${renderCreateAssigneeAvatar(selection)}
 			<div class="assignee-selected-copy">
 				<div class="muted">Selected</div>
-				<div class="assignee-selected-name">${escapeHtml(selectedLabel)}</div>
+				<div class="assignee-selected-name">${HtmlHelper.escapeHtml(selectedLabel)}</div>
 			</div>
 		</div>
 		<div class="assignee-control-details">
 			<div class="assignee-search-row">
-				<input type="text" class="jira-create-assignee-search" value="${escapeAttribute(
+				<input type="text" class="jira-create-assignee-search" value="${HtmlHelper.escapeAttribute(
 					queryValue
 				)}" placeholder="Search people" ${searchDisabledAttr} />
 			</div>
 			<div class="assignee-select-row">
-				<select class="jira-create-assignee-select" data-loaded="${escapeAttribute(
+				<select class="jira-create-assignee-select" data-loaded="${HtmlHelper.escapeAttribute(
 					selectLoadState
-				)}" data-query="${escapeAttribute(queryValue)}" data-current-account-id="${escapeAttribute(
+				)}" data-query="${HtmlHelper.escapeAttribute(queryValue)}" data-current-account-id="${HtmlHelper.escapeAttribute(
 		state.values.assigneeAccountId ?? ''
 	)}" ${selectDisabledAttr}>
-					<option value="" data-avatar-url="">${escapeHtml(placeholderText)}</option>
+					<option value="" data-avatar-url="">${HtmlHelper.escapeHtml(placeholderText)}</option>
 					${selectOptions}
 				</select>
 				<button type="button" class="jira-create-assignee-apply" disabled>OK</button>
 			</div>
-			<div class="muted assignee-helper">${escapeHtml(helperText)}</div>
+			<div class="muted assignee-helper">${HtmlHelper.escapeHtml(helperText)}</div>
 			${errorText}
 			${assignMeButton}
 		</div>
 	</div>`;
 }
 
-function resolveCreateAssigneeSelection(state: CreateIssuePanelState) {
+	static resolveCreateAssigneeSelection(state: CreateIssuePanelState) {
 	const accountId = state.values.assigneeAccountId?.trim();
 	if (!accountId) {
 		return { label: undefined, avatarUrl: undefined, accountId: undefined };
@@ -2696,15 +2697,15 @@ function resolveCreateAssigneeSelection(state: CreateIssuePanelState) {
 	};
 }
 
-function renderCreateAssigneeAvatar(selection: { label?: string; avatarUrl?: string }): string {
+	static renderCreateAssigneeAvatar(selection: { label?: string; avatarUrl?: string }): string {
 	if (selection.avatarUrl) {
-		return `<img class="assignee-avatar" src="${escapeAttribute(selection.avatarUrl)}" alt="Selected assignee avatar" />`;
+		return `<img class="assignee-avatar" src="${HtmlHelper.escapeAttribute(selection.avatarUrl)}" alt="Selected assignee avatar" />`;
 	}
 	const initials = getInitials(selection.label);
-	return `<div class="assignee-avatar fallback">${escapeHtml(initials)}</div>`;
+	return `<div class="assignee-avatar fallback">${HtmlHelper.escapeHtml(initials)}</div>`;
 }
 
-function renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
+	static renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
 	const options = state.assigneeOptions ?? [];
 	if (options.length === 0) {
 		return '';
@@ -2717,23 +2718,23 @@ function renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
 			if (isSelected) {
 				hasCurrent = true;
 			}
-			return `<option value="${escapeAttribute(user.accountId)}" data-avatar-url="${escapeAttribute(
+			return `<option value="${HtmlHelper.escapeAttribute(user.accountId)}" data-avatar-url="${HtmlHelper.escapeAttribute(
 				user.avatarUrl ?? ''
 			)}" ${
 				isSelected ? 'selected' : ''
-			}>${escapeHtml(user.displayName)}</option>`;
+			}>${HtmlHelper.escapeHtml(user.displayName)}</option>`;
 		})
 		.join('');
 	if (currentId && !hasCurrent) {
 		const fallbackLabel = state.values.assigneeDisplayName ?? `Selected (${currentId})`;
-		return `<option value="${escapeAttribute(currentId)}" data-avatar-url="${escapeAttribute(
+		return `<option value="${HtmlHelper.escapeAttribute(currentId)}" data-avatar-url="${HtmlHelper.escapeAttribute(
 			state.values.assigneeAvatarUrl ?? ''
-		)}" selected>${escapeHtml(fallbackLabel)}</option>${rendered}`;
+		)}" selected>${HtmlHelper.escapeHtml(fallbackLabel)}</option>${rendered}`;
 	}
 	return rendered;
 }
 
-function deriveStatusOptionNames(options?: IssueStatusOption[]): string[] {
+	static deriveStatusOptionNames(options?: IssueStatusOption[]): string[] {
 	if (!options || options.length === 0) {
 		return ISSUE_STATUS_OPTIONS;
 	}
@@ -2753,7 +2754,7 @@ function deriveStatusOptionNames(options?: IssueStatusOption[]): string[] {
 	return names.length > 0 ? names : ISSUE_STATUS_OPTIONS;
 }
 
-function pickPreferredInitialStatus(names: string[]): string | undefined {
+	static pickPreferredInitialStatus(names: string[]): string | undefined {
 	const preferredOrder = ['To Do', 'Backlog'];
 	const lowerNames = names.map((name) => name.toLowerCase());
 	for (const target of preferredOrder) {
@@ -2766,7 +2767,7 @@ function pickPreferredInitialStatus(names: string[]): string | undefined {
 	return firstNonDone;
 }
 
-function renderAssigneeControl(
+	static renderAssigneeControl(
 	issue: JiraIssue,
 	currentAssigneeLabel: string,
 	options?: IssuePanelOptions
@@ -2787,26 +2788,26 @@ function renderAssigneeControl(
 			${renderAssigneeAvatar(issue)}
 			<div class="assignee-current-copy">
 				<div class="muted">Current</div>
-				<div class="assignee-current-name">${escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
+				<div class="assignee-current-name">${HtmlHelper.escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
 			</div>
 		</div>
 		<div class="assignee-control-details">
 			<div class="assignee-search-row">
-				<input type="text" class="jira-assignee-search" data-issue-key="${escapeAttribute(
+				<input type="text" class="jira-assignee-search" data-issue-key="${HtmlHelper.escapeAttribute(
 					issue.key
-				)}" data-query="${escapeAttribute(queryValue)}" value="${escapeAttribute(
+				)}" data-query="${HtmlHelper.escapeAttribute(queryValue)}" value="${HtmlHelper.escapeAttribute(
 					queryValue
 				)}" placeholder="Search people" ${searchDisabledAttr} />
 			</div>
 			<div class="assignee-select-row">
-				<select class="jira-assignee-select" data-issue-key="${escapeAttribute(
+				<select class="jira-assignee-select" data-issue-key="${HtmlHelper.escapeAttribute(
 					issue.key
-				)}" data-loaded="false" data-query="${escapeAttribute(queryValue)}" data-current-account-id="${escapeAttribute(
+				)}" data-loaded="false" data-query="${HtmlHelper.escapeAttribute(queryValue)}" data-current-account-id="${HtmlHelper.escapeAttribute(
 					currentAccountId ?? ''
 				)}" ${searchDisabledAttr}>
-					<option value="">${escapeHtml(message)}</option>
+					<option value="">${HtmlHelper.escapeHtml(message)}</option>
 				</select>
-				<button class="jira-assignee-apply" data-issue-key="${escapeAttribute(
+				<button class="jira-assignee-apply" data-issue-key="${HtmlHelper.escapeAttribute(
 					issue.key
 				)}" title="Apply assignee change" disabled>OK</button>
 			</div>
@@ -2820,9 +2821,9 @@ function renderAssigneeControl(
 			const isCurrent =
 				(currentAccountId && user.accountId === currentAccountId) ||
 				user.displayName === issue.assigneeName;
-			return `<option value="${escapeAttribute(user.accountId)}" ${
+			return `<option value="${HtmlHelper.escapeAttribute(user.accountId)}" ${
 				isCurrent ? 'selected' : ''
-			}>${escapeHtml(user.displayName)}</option>`;
+			}>${HtmlHelper.escapeHtml(user.displayName)}</option>`;
 		})
 		.join('');
 	const disabledAttr = pending ? 'disabled' : '';
@@ -2832,33 +2833,33 @@ function renderAssigneeControl(
 			${renderAssigneeAvatar(issue)}
 			<div class="assignee-current-copy">
 				<div class="muted">Current</div>
-				<div class="assignee-current-name">${escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
+				<div class="assignee-current-name">${HtmlHelper.escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
 			</div>
 		</div>
 		<div class="assignee-control-details">
 			<div class="assignee-search-row">
-				<input type="text" class="jira-assignee-search" data-issue-key="${escapeAttribute(
+				<input type="text" class="jira-assignee-search" data-issue-key="${HtmlHelper.escapeAttribute(
 					issue.key
-				)}" value="${escapeAttribute(queryValue)}" placeholder="Search people" ${searchDisabledAttr} />
+				)}" value="${HtmlHelper.escapeAttribute(queryValue)}" placeholder="Search people" ${searchDisabledAttr} />
 			</div>
 			<div class="assignee-select-row">
-				<select class="jira-assignee-select" data-issue-key="${escapeAttribute(
+				<select class="jira-assignee-select" data-issue-key="${HtmlHelper.escapeAttribute(
 					issue.key
-				)}" data-loaded="true" data-query="${escapeAttribute(queryValue)}" data-current-account-id="${escapeAttribute(
+				)}" data-loaded="true" data-query="${HtmlHelper.escapeAttribute(queryValue)}" data-current-account-id="${HtmlHelper.escapeAttribute(
 					currentAccountId ?? ''
 				)}" ${selectDisabledAttr}>
 					${selectOptions}
 				</select>
-				<button class="jira-assignee-apply" data-issue-key="${escapeAttribute(
+				<button class="jira-assignee-apply" data-issue-key="${HtmlHelper.escapeAttribute(
 					issue.key
 				)}" title="Apply assignee change" disabled>OK</button>
 			</div>
-			${assigneeError ? `<div class="status-error">${escapeHtml(assigneeError)}</div>` : ''}
+			${assigneeError ? `<div class="status-error">${HtmlHelper.escapeHtml(assigneeError)}</div>` : ''}
 		</div>
 	</div>`;
 }
 
-function sanitizeCreateIssueValues(
+	static sanitizeCreateIssueValues(
 	raw: any,
 	fallback: CreateIssueFormValues
 ): CreateIssueFormValues {
@@ -2899,7 +2900,7 @@ function sanitizeCreateIssueValues(
 	};
 }
 
-function sanitizeCreateCustomFields(
+	static sanitizeCreateCustomFields(
 	raw: any,
 	fallback?: Record<string, string>
 ): Record<string, string> {
@@ -2924,15 +2925,15 @@ function sanitizeCreateCustomFields(
 	return result;
 }
 
-function renderAssigneeAvatar(issue: JiraIssue): string {
+	static renderAssigneeAvatar(issue: JiraIssue): string {
 	if (issue.assigneeAvatarUrl) {
-		return `<img class="assignee-avatar" src="${escapeAttribute(issue.assigneeAvatarUrl)}" alt="Assignee avatar" />`;
+		return `<img class="assignee-avatar" src="${HtmlHelper.escapeAttribute(issue.assigneeAvatarUrl)}" alt="Assignee avatar" />`;
 	}
 	const initials = getInitials(issue.assigneeName);
-	return `<div class="assignee-avatar fallback">${escapeHtml(initials)}</div>`;
+	return `<div class="assignee-avatar fallback">${HtmlHelper.escapeHtml(initials)}</div>`;
 }
 
-function getInitials(name?: string): string {
+	static getInitials(name?: string): string {
 	if (!name) {
 		return '??';
 	}
@@ -2949,7 +2950,7 @@ function getInitials(name?: string): string {
 	return trimmed.slice(0, 2).toUpperCase() || '??';
 }
 
-function generateNonce(): string {
+	static generateNonce(): string {
 	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 	let result = '';
 	for (let i = 0; i < 32; i++) {
@@ -2957,3 +2958,42 @@ function generateNonce(): string {
 	}
 	return result;
 }
+}
+
+const formatDebugDetails = JiraWebviewPanel.formatDebugDetails;
+const renderIssueDetailsHtml = JiraWebviewPanel.renderIssueDetailsHtml;
+const renderCreateIssuePanelHtml = JiraWebviewPanel.renderCreateIssuePanelHtml;
+const renderParentSection = JiraWebviewPanel.renderParentSection;
+const renderChildrenSection = JiraWebviewPanel.renderChildrenSection;
+const renderDescriptionSection = JiraWebviewPanel.renderDescriptionSection;
+const deriveEditableDescriptionText = JiraWebviewPanel.deriveEditableDescriptionText;
+const deriveEditableDescriptionHtml = JiraWebviewPanel.deriveEditableDescriptionHtml;
+const htmlToPlainText = JiraWebviewPanel.htmlToPlainText;
+const decodeHtmlEntities = JiraWebviewPanel.decodeHtmlEntities;
+const renderRichTextEditor = JiraWebviewPanel.renderRichTextEditor;
+const renderRichTextEditorStyles = JiraWebviewPanel.renderRichTextEditorStyles;
+const renderRichTextEditorBootstrapScript = JiraWebviewPanel.renderRichTextEditorBootstrapScript;
+const renderCommentsSection = JiraWebviewPanel.renderCommentsSection;
+const renderCommentList = JiraWebviewPanel.renderCommentList;
+const renderCommentItem = JiraWebviewPanel.renderCommentItem;
+const renderCommentForm = JiraWebviewPanel.renderCommentForm;
+const renderCommentAvatar = JiraWebviewPanel.renderCommentAvatar;
+const renderRelatedIssueButton = JiraWebviewPanel.renderRelatedIssueButton;
+const renderMetadataPanel = JiraWebviewPanel.renderMetadataPanel;
+const renderStatusControl = JiraWebviewPanel.renderStatusControl;
+const renderIssueTypeOptions = JiraWebviewPanel.renderIssueTypeOptions;
+const renderIssueStatusOptions = JiraWebviewPanel.renderIssueStatusOptions;
+const renderCreateAdditionalFieldsSection = JiraWebviewPanel.renderCreateAdditionalFieldsSection;
+const renderCreateAdditionalFieldInput = JiraWebviewPanel.renderCreateAdditionalFieldInput;
+const renderCreateAssigneeSection = JiraWebviewPanel.renderCreateAssigneeSection;
+const resolveCreateAssigneeSelection = JiraWebviewPanel.resolveCreateAssigneeSelection;
+const renderCreateAssigneeAvatar = JiraWebviewPanel.renderCreateAssigneeAvatar;
+const renderCreateAssigneeOptions = JiraWebviewPanel.renderCreateAssigneeOptions;
+const deriveStatusOptionNames = JiraWebviewPanel.deriveStatusOptionNames;
+const pickPreferredInitialStatus = JiraWebviewPanel.pickPreferredInitialStatus;
+const renderAssigneeControl = JiraWebviewPanel.renderAssigneeControl;
+const sanitizeCreateIssueValues = JiraWebviewPanel.sanitizeCreateIssueValues;
+const sanitizeCreateCustomFields = JiraWebviewPanel.sanitizeCreateCustomFields;
+const renderAssigneeAvatar = JiraWebviewPanel.renderAssigneeAvatar;
+const getInitials = JiraWebviewPanel.getInitials;
+const generateNonce = JiraWebviewPanel.generateNonce;

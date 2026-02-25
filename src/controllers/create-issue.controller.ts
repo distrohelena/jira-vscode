@@ -14,8 +14,8 @@ import {
 	JiraIssue,
 	SelectedProjectInfo,
 } from '../model/jira.type';
-import { deriveErrorMessage } from '../shared/error.helper';
-import { renderCreateIssuePanel, showCreateIssuePanel } from '../views/webview/webview.panel';
+import { ErrorHelper } from '../shared/error.helper';
+import { JiraWebviewPanel } from '../views/webview/webview.panel';
 
 export type CreateIssueControllerDeps = {
 	authManager: JiraAuthManager;
@@ -25,7 +25,12 @@ export type CreateIssueControllerDeps = {
 	openIssueDetails: (issueOrKey?: JiraIssue | string) => Promise<void>;
 };
 
-export function createCreateIssueController(deps: CreateIssueControllerDeps) {
+export class CreateIssueControllerFactory {
+	static create(deps: CreateIssueControllerDeps) {
+		return CreateIssueControllerFactory.createCreateIssueControllerInternal(deps);
+	}
+
+	private static createCreateIssueControllerInternal(deps: CreateIssueControllerDeps) {
 	const { authManager, focusManager, projectStatusStore, refreshItemsView, openIssueDetails } = deps;
 
 	const createIssue = async (): Promise<void> => {
@@ -40,15 +45,18 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 			await vscode.window.showInformationMessage('Log in to Jira before creating a ticket.');
 			return;
 		}
+		const authenticatedInfo = authInfo;
+		const selectedProject = project;
 
 		const token = await authManager.getToken();
 		if (!token) {
 			await vscode.window.showInformationMessage('Missing auth token. Please log in again.');
 			return;
 		}
+		const authenticatedToken = token;
 
-		const cachedStatuses = projectStatusStore.get(project.key);
-		const initialStatus = deriveInitialStatusName(cachedStatuses);
+		const cachedStatuses = projectStatusStore.get(selectedProject.key);
+		const initialStatus = CreateIssueControllerFactory.deriveInitialStatusName(cachedStatuses);
 
 		let state: CreateIssuePanelState = {
 			values: {
@@ -69,7 +77,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 			statusPending: !cachedStatuses,
 		};
 
-		const panel = showCreateIssuePanel(project, state);
+		const panel = JiraWebviewPanel.showCreateIssuePanel(selectedProject, state);
 		let disposed = false;
 		panel.onDidDispose(() => {
 			disposed = true;
@@ -80,13 +88,13 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 				return;
 			}
 			state = { ...state, ...updates };
-			renderCreateIssuePanel(panel, project, state);
+			JiraWebviewPanel.renderCreateIssuePanel(panel, selectedProject, state);
 		};
 
-		if (!cachedStatuses) {
-			void loadProjectStatuses(project.key);
-		}
-		void loadCreateFields(state.values.issueType, state.values);
+			if (!cachedStatuses) {
+				void loadProjectStatuses(selectedProject.key);
+			}
+			void loadCreateFields(state.values.issueType, state.values);
 
 		async function loadProjectStatuses(projectKey: string): Promise<void> {
 			try {
@@ -99,7 +107,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 					});
 					return;
 				}
-				const availableNames = deriveStatusNameList(statuses);
+				const availableNames = CreateIssueControllerFactory.deriveStatusNameList(statuses);
 				const currentStatus = state.values.status?.trim().toLowerCase();
 				const hasCurrentSelection =
 					currentStatus && availableNames.some((name) => name.toLowerCase() === currentStatus);
@@ -115,7 +123,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 						  },
 				});
 			} catch (error) {
-				const messageText = deriveErrorMessage(error);
+				const messageText = ErrorHelper.deriveErrorMessage(error);
 				updatePanel({
 					statusPending: false,
 					statusError: `Failed to load project statuses: ${messageText}`,
@@ -134,8 +142,13 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 				createFieldsError: undefined,
 			});
 			try {
-				const fields = await jiraApiClient.fetchCreateIssueFields(authInfo, token, project.key, issueTypeName);
-				const mergedValues = mergeCustomFieldsForDefinitions(values, fields);
+					const fields = await jiraApiClient.fetchCreateIssueFields(
+						authenticatedInfo,
+						authenticatedToken,
+						selectedProject.key,
+						issueTypeName
+					);
+				const mergedValues = CreateIssueControllerFactory.mergeCustomFieldsForDefinitions(values, fields);
 				updatePanel({
 					values: mergedValues,
 					createFields: fields,
@@ -143,7 +156,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 					createFieldsError: undefined,
 				});
 			} catch (error) {
-				const messageText = deriveErrorMessage(error);
+				const messageText = ErrorHelper.deriveErrorMessage(error);
 				updatePanel({
 					createFields: [],
 					createFieldsPending: false,
@@ -157,7 +170,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 				return;
 			}
 			if (message.type === 'loadCreateAssignees') {
-				const values = sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
+				const values = CreateIssueControllerFactory.sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
 					const normalizedQuery =
 						typeof message.query === 'string' ? message.query.trim() : state.assigneeQuery?.trim() ?? '';
 					updatePanel({
@@ -167,12 +180,12 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 						values,
 					});
 				try {
-					const users = await jiraApiClient.fetchAssignableUsers(
-						authInfo,
-						token,
-						{ projectKey: project.key },
-						normalizedQuery
-					);
+						const users = await jiraApiClient.fetchAssignableUsers(
+							authenticatedInfo,
+							authenticatedToken,
+							{ projectKey: selectedProject.key },
+							normalizedQuery
+						);
 						updatePanel({
 							assigneePending: false,
 							assigneeOptions: users,
@@ -180,7 +193,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 							values,
 						});
 				} catch (error) {
-					const messageText = deriveErrorMessage(error);
+					const messageText = ErrorHelper.deriveErrorMessage(error);
 						updatePanel({
 							assigneePending: false,
 							assigneeError: `Failed to load assignable users: ${messageText}`,
@@ -192,14 +205,14 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 			}
 
 			if (message.type === 'createIssueTypeChanged') {
-				const values = sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
+				const values = CreateIssueControllerFactory.sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
 				updatePanel({ values });
 				void loadCreateFields(values.issueType, values);
 				return;
 			}
 
 			if (message.type === 'selectCreateAssignee') {
-				const values = sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
+				const values = CreateIssueControllerFactory.sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
 				const accountIdRaw =
 					typeof message.accountId === 'string' ? message.accountId.trim() : undefined;
 				const accountId = accountIdRaw || values.assigneeAccountId || undefined;
@@ -223,7 +236,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 				return;
 			}
 
-			const values = sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
+			const values = CreateIssueControllerFactory.sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
 			if (!values.summary.trim()) {
 				updatePanel({ error: 'Summary is required.', values });
 				return;
@@ -231,19 +244,24 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 
 			updatePanel({ submitting: true, error: undefined, successIssue: undefined, values });
 			try {
-				const createdIssue = await jiraApiClient.createIssue(authInfo, token, project.key, values);
+				const createdIssue = await jiraApiClient.createIssue(
+					authenticatedInfo,
+					authenticatedToken,
+					selectedProject.key,
+					values
+				);
 				refreshItemsView();
 				panel.dispose();
 				try {
 					await openIssueDetails(createdIssue);
 				} catch (error) {
-					const messageText = deriveErrorMessage(error);
+					const messageText = ErrorHelper.deriveErrorMessage(error);
 					void vscode.window.showErrorMessage(
 						`Created ${createdIssue.key} but failed to open details: ${messageText}`
 					);
 				}
 			} catch (error) {
-				const messageText = deriveErrorMessage(error);
+				const messageText = ErrorHelper.deriveErrorMessage(error);
 				updatePanel({ submitting: false, error: `Failed to create issue: ${messageText}` });
 			}
 		});
@@ -254,7 +272,7 @@ export function createCreateIssueController(deps: CreateIssueControllerDeps) {
 	};
 }
 
-function sanitizeCreateIssueValues(
+	private static sanitizeCreateIssueValues(
 	raw: any,
 	fallback: CreateIssueFormValues,
 	statusOptions?: IssueStatusOption[]
@@ -266,12 +284,12 @@ function sanitizeCreateIssueValues(
 	const issueType = ISSUE_TYPE_OPTIONS.includes(normalizedType) ? normalizedType : fallback.issueType;
 	const statusRaw = typeof raw?.status === 'string' ? raw.status : fallback.status;
 	const normalizedStatus = statusRaw?.trim() || fallback.status;
-	const availableStatuses = deriveStatusNameList(statusOptions);
-	const fallbackStatus = isStatusAllowed(fallback.status, availableStatuses)
+	const availableStatuses = CreateIssueControllerFactory.deriveStatusNameList(statusOptions);
+	const fallbackStatus = CreateIssueControllerFactory.isStatusAllowed(fallback.status, availableStatuses)
 		? fallback.status
 		: availableStatuses[0] ?? fallback.status;
-	const status = isStatusAllowed(normalizedStatus, availableStatuses) ? normalizedStatus : fallbackStatus;
-	const customFields = sanitizeCustomFields(raw?.customFields, fallback.customFields);
+	const status = CreateIssueControllerFactory.isStatusAllowed(normalizedStatus, availableStatuses) ? normalizedStatus : fallbackStatus;
+	const customFields = CreateIssueControllerFactory.sanitizeCustomFields(raw?.customFields, fallback.customFields);
 	const assigneeAccountIdRaw =
 		typeof raw?.assigneeAccountId === 'string' ? raw.assigneeAccountId.trim() : undefined;
 	const fallbackAccountId = fallback.assigneeAccountId?.trim();
@@ -300,7 +318,7 @@ function sanitizeCreateIssueValues(
 	};
 }
 
-function sanitizeCustomFields(
+	private static sanitizeCustomFields(
 	raw: any,
 	fallback?: Record<string, string>
 ): Record<string, string> {
@@ -325,7 +343,7 @@ function sanitizeCustomFields(
 	return result;
 }
 
-function mergeCustomFieldsForDefinitions(
+	private static mergeCustomFieldsForDefinitions(
 	values: CreateIssueFormValues,
 	definitions: CreateIssueFieldDefinition[]
 ): CreateIssueFormValues {
@@ -341,7 +359,7 @@ function mergeCustomFieldsForDefinitions(
 	};
 }
 
-function deriveStatusNameList(options?: IssueStatusOption[]): string[] {
+	private static deriveStatusNameList(options?: IssueStatusOption[]): string[] {
 	if (!options || options.length === 0) {
 		return ISSUE_STATUS_OPTIONS;
 	}
@@ -361,7 +379,7 @@ function deriveStatusNameList(options?: IssueStatusOption[]): string[] {
 	return names.length > 0 ? names : ISSUE_STATUS_OPTIONS;
 }
 
-function pickPreferredInitialStatus(names: string[]): string | undefined {
+	private static pickPreferredInitialStatus(names: string[]): string | undefined {
 	const preferredOrder = ['To Do', 'Backlog'];
 	const lowerNames = names.map((name) => name.toLowerCase());
 	for (const target of preferredOrder) {
@@ -374,16 +392,17 @@ function pickPreferredInitialStatus(names: string[]): string | undefined {
 	return firstNonDone;
 }
 
-function deriveInitialStatusName(options?: IssueStatusOption[]): string {
-	const names = deriveStatusNameList(options);
-	const preferred = pickPreferredInitialStatus(names);
+	private static deriveInitialStatusName(options?: IssueStatusOption[]): string {
+	const names = CreateIssueControllerFactory.deriveStatusNameList(options);
+	const preferred = CreateIssueControllerFactory.pickPreferredInitialStatus(names);
 	return preferred ?? names[0] ?? ISSUE_STATUS_OPTIONS[0];
 }
 
-function isStatusAllowed(value: string | undefined, options: string[]): boolean {
+	private static isStatusAllowed(value: string | undefined, options: string[]): boolean {
 	const normalized = value?.trim().toLowerCase();
 	if (!normalized) {
 		return false;
 	}
 	return options.some((name) => name.toLowerCase() === normalized);
+	}
 }

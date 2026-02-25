@@ -159,11 +159,12 @@ export class ProjectTransitionPrefetcher {
 		projectKey: string,
 		issue: JiraIssue
 	): Promise<void> {
-		if (!issue?.key) {
-			return;
-		}
-		const issueTypeIdentifier =
-			normalizeIdentifier(issue.issueTypeId) ?? normalizeIdentifier(issue.issueTypeName);
+			if (!issue?.key) {
+				return;
+			}
+			const issueTypeIdentifier =
+				ProjectTransitionPrefetcher.normalizeIdentifier(issue.issueTypeId) ??
+				ProjectTransitionPrefetcher.normalizeIdentifier(issue.issueTypeName);
 		const statusName = issue.statusName?.trim();
 		if (!issueTypeIdentifier || !statusName) {
 			return;
@@ -210,10 +211,13 @@ export class ProjectTransitionPrefetcher {
 		issueTypeGroup: ProjectIssueTypeStatuses,
 		statusName: string
 	): Promise<JiraIssue | undefined> {
-		const clauses = [`project = ${escapeJqlValue(projectKey)}`, `status = "${escapeJqlValue(statusName)}"`];
+		const clauses = [
+			`project = ${ProjectTransitionPrefetcher.escapeJqlValue(projectKey)}`,
+			`status = "${ProjectTransitionPrefetcher.escapeJqlValue(statusName)}"`,
+		];
 		const issueTypeName = issueTypeGroup.issueTypeName?.trim();
 		if (issueTypeName) {
-			clauses.push(`issuetype = "${escapeJqlValue(issueTypeName)}"`);
+			clauses.push(`issuetype = "${ProjectTransitionPrefetcher.escapeJqlValue(issueTypeName)}"`);
 		}
 		const jql = `${clauses.join(' AND ')} ORDER BY updated DESC`;
 		try {
@@ -232,13 +236,13 @@ export class ProjectTransitionPrefetcher {
 		const trimmed = projectKey?.trim();
 		return trimmed && trimmed.length > 0 ? trimmed.toLowerCase() : undefined;
 	}
-}
 
-function escapeJqlValue(value: string): string {
-	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
+	private static escapeJqlValue(value: string): string {
+		return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+	}
 
-function normalizeIdentifier(value?: string): string | undefined {
-	const trimmed = value?.trim();
-	return trimmed && trimmed.length > 0 ? trimmed : undefined;
+	private static normalizeIdentifier(value?: string): string | undefined {
+		const trimmed = value?.trim();
+		return trimmed && trimmed.length > 0 ? trimmed : undefined;
+	}
 }

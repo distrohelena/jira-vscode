@@ -32,8 +32,8 @@ export class ProjectStatusStore {
 		}
 		const cacheKeyBase = normalizedProjectKey.toLowerCase();
 		const identifiers = [
-			normalizeIdentifier(criteria.issueTypeId),
-			normalizeIdentifier(criteria.issueTypeName),
+			ProjectStatusStore.normalizeIdentifier(criteria.issueTypeId),
+			ProjectStatusStore.normalizeIdentifier(criteria.issueTypeName),
 		].filter((id): id is string => !!id);
 		for (const identifier of identifiers) {
 			const cacheKey = this.buildIssueTypeCacheKey(cacheKeyBase, identifier);
@@ -109,7 +109,7 @@ export class ProjectStatusStore {
 			return undefined;
 		}
 		const response = await jiraApiClient.fetchProjectStatuses(authInfo, token, key);
-		const entry = buildCacheEntry(response);
+		const entry = ProjectStatusStore.buildCacheEntry(response);
 		this.cache.set(key, entry);
 		this.primeIssueTypeCache(key, entry.issueTypeStatuses);
 		return entry;
@@ -128,8 +128,8 @@ export class ProjectStatusStore {
 		for (const group of groups) {
 			const statuses = Array.isArray(group.statuses) ? group.statuses : [];
 			const identifiers = [
-				normalizeIdentifier(group.issueTypeId),
-				normalizeIdentifier(group.issueTypeName),
+				ProjectStatusStore.normalizeIdentifier(group.issueTypeId),
+				ProjectStatusStore.normalizeIdentifier(group.issueTypeName),
 			].filter((id): id is string => !!id);
 			for (const identifier of identifiers) {
 				const cacheKey = this.buildIssueTypeCacheKey(normalizedProjectKey, identifier);
@@ -157,27 +157,26 @@ export class ProjectStatusStore {
 		const trimmed = projectKey?.trim();
 		return trimmed && trimmed.length > 0 ? trimmed : undefined;
 	}
-}
+	private static buildCacheEntry(response?: ProjectStatusesResponse): CachedProjectStatuses {
+		const allStatusesRaw = response?.allStatuses;
+		const allStatuses = Array.isArray(allStatusesRaw) ? allStatusesRaw : [];
+		const issueTypeStatuses = ProjectStatusStore.sanitizeIssueTypeGroups(response?.issueTypeStatuses ?? []);
+		return {
+			allStatuses,
+			issueTypeStatuses,
+		};
+	}
 
-function buildCacheEntry(response?: ProjectStatusesResponse): CachedProjectStatuses {
-	const allStatusesRaw = response?.allStatuses;
-	const allStatuses = Array.isArray(allStatusesRaw) ? allStatusesRaw : [];
-	const issueTypeStatuses = sanitizeIssueTypeGroups(response?.issueTypeStatuses ?? []);
-	return {
-		allStatuses,
-		issueTypeStatuses,
-	};
-}
+	private static sanitizeIssueTypeGroups(groups: ProjectIssueTypeStatuses[]): ProjectIssueTypeStatuses[] {
+		return groups.map((group) => ({
+			issueTypeId: group.issueTypeId,
+			issueTypeName: group.issueTypeName,
+			statuses: Array.isArray(group.statuses) ? group.statuses : [],
+		}));
+	}
 
-function sanitizeIssueTypeGroups(groups: ProjectIssueTypeStatuses[]): ProjectIssueTypeStatuses[] {
-	return groups.map((group) => ({
-		issueTypeId: group.issueTypeId,
-		issueTypeName: group.issueTypeName,
-		statuses: Array.isArray(group.statuses) ? group.statuses : [],
-	}));
-}
-
-function normalizeIdentifier(value?: string): string | undefined {
-	const trimmed = value?.trim().toLowerCase();
-	return trimmed && trimmed.length > 0 ? trimmed : undefined;
+	private static normalizeIdentifier(value?: string): string | undefined {
+		const trimmed = value?.trim().toLowerCase();
+		return trimmed && trimmed.length > 0 ? trimmed : undefined;
+	}
 }

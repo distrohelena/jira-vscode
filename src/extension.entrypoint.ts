@@ -1,22 +1,23 @@
 import * as vscode from 'vscode';
 
-import { initializeEnvironment } from './environment.runtime';
+import { EnvironmentRuntime } from './environment.runtime';
 import { JiraAuthManager } from './model/auth.manager';
 import { JiraFocusManager } from './model/focus.manager';
 import { ProjectStatusStore } from './model/project-status.store';
 import { IssueTransitionStore } from './model/issue-transition.store';
 import { ProjectTransitionPrefetcher } from './model/project-transition.prefetcher';
-import { createIssueController } from './controllers/issue.controller';
-import { createCreateIssueController } from './controllers/create-issue.controller';
-import { commitFromIssue } from './controllers/commit.controller';
+import { IssueControllerFactory } from './controllers/issue.controller';
+import { CreateIssueControllerFactory } from './controllers/create-issue.controller';
+import { CommitController } from './controllers/commit.controller';
 import { JiraItemsTreeDataProvider } from './views/tree/items-tree-data.provider';
 import { JiraProjectsTreeDataProvider } from './views/tree/projects-tree-data.provider';
 import { JiraSettingsTreeDataProvider } from './views/tree/settings-tree-data.provider';
 import { JiraIssue, JiraProject } from './model/jira.type';
 import { JiraTreeItem } from './views/tree/tree-item.view';
 
-export async function activate(context: vscode.ExtensionContext) {
-	initializeEnvironment(context.extensionUri);
+class ExtensionEntrypoint {
+	static async activate(context: vscode.ExtensionContext): Promise<void> {
+		EnvironmentRuntime.initializeEnvironment(context.extensionUri);
 
 	const authManager = new JiraAuthManager(context);
 	const focusManager = new JiraFocusManager(context, authManager);
@@ -49,14 +50,14 @@ export async function activate(context: vscode.ExtensionContext) {
 		itemsProvider.refresh();
 	};
 
-	const issueController = createIssueController({
+		const issueController = IssueControllerFactory.create({
 		authManager,
 		refreshAll,
 		projectStatusStore,
 		transitionStore: issueTransitionStore,
 		transitionPrefetcher,
 	});
-	const issueCreationController = createCreateIssueController({
+		const issueCreationController = CreateIssueControllerFactory.create({
 		authManager,
 		focusManager,
 		projectStatusStore,
@@ -199,12 +200,15 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('jira.openIssueDetails', async (issueOrKey?: JiraIssue | string) => {
 			await issueController.openIssueDetails(issueOrKey);
 		}),
-		vscode.commands.registerCommand('jira.commitFromIssue', async (node?: JiraTreeItem) => {
-			await commitFromIssue(node);
-		})
-	);
+			vscode.commands.registerCommand('jira.commitFromIssue', async (node?: JiraTreeItem) => {
+				await CommitController.commitFromIssue(node);
+			})
+		);
+	}
+	static deactivate(): void {
+		// nothing to clean up yet
+	}
 }
 
-export function deactivate() {
-	// nothing to clean up yet
-}
+export const activate = ExtensionEntrypoint.activate;
+export const deactivate = ExtensionEntrypoint.deactivate;

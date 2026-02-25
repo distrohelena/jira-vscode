@@ -1,7 +1,7 @@
-import axios from 'axios';
+import axios, { type AxiosError } from 'axios';
 
-import { normalizeBaseUrl } from '../shared/url.helper';
-import { escapeHtml, sanitizeRenderedHtml } from '../shared/html.helper';
+import { UrlHelper } from '../shared/url.helper';
+import { HtmlHelper } from '../shared/html.helper';
 import {
 	COMMENT_FETCH_LIMIT,
 	ISSUE_DETAIL_FIELDS,
@@ -12,7 +12,6 @@ import {
 	FetchProjectIssuesPage,
 	IssueAssignableUser,
 	IssueStatusOption,
-	JiraApiVersion,
 	JiraAuthInfo,
 	JiraIssue,
 	JiraIssueComment,
@@ -21,20 +20,65 @@ import {
 	CreateIssueFormValues,
 	CreateIssueFieldDefinition,
 	JiraRelatedIssue,
-	JiraServerLabel,
 	JiraCommentFormat,
 	ProjectStatusesResponse,
 	ProjectIssueTypeStatuses,
 } from './jira.type';
-import { determineStatusCategory } from './issue.model';
+import { IssueModel } from './issue.model';
 
-export async function verifyCredentials(
+type AssignableUserScope = {
+	issueKey?: string;
+	projectKey?: string;
+};
+
+const RESERVED_CREATE_FIELD_IDS = new Set([
+	'project',
+	'summary',
+	'description',
+	'issuetype',
+	'assignee',
+	'reporter',
+	'priority',
+	'labels',
+	'components',
+	'fixVersions',
+	'versions',
+	'status',
+]);
+
+type JiraIssueSearchOptions = {
+	jql: string;
+	maxResults?: number;
+	startAt?: number;
+	nextPageToken?: string;
+	fields?: readonly string[];
+};
+
+type JiraIssueSearchPage = {
+	issues: JiraIssue[];
+	mode: 'classic' | 'enhanced';
+	isLast?: boolean;
+	startAt?: number;
+	total?: number;
+	nextPageToken?: string;
+};
+
+type JiraApiVersion = '3' | 'latest' | '2';
+type JiraServerLabel = JiraAuthInfo['serverLabel'];
+
+const API_VERSION_PRIORITY: Record<JiraServerLabel, JiraApiVersion[]> = {
+	cloud: ['3', 'latest', '2'],
+	custom: ['latest', '2', '3'],
+};
+
+export class JiraApiTransport {
+	static async verifyCredentialsInternal(
 	baseUrl: string,
 	username: string,
 	token: string,
 	serverLabel: JiraServerLabel
 ): Promise<JiraProfileResponse> {
-	const urlRoot = normalizeBaseUrl(baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(baseUrl);
 	const endpoints = buildRestApiEndpoints(urlRoot, serverLabel, 'myself');
 
 	let lastError: unknown;
@@ -60,11 +104,11 @@ export async function verifyCredentials(
 	throw lastError;
 }
 
-function escapeJqlValue(value: string): string {
+	static escapeJqlValueInternal(value: string): string {
 	return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-function buildAssigneeFilterClause(authInfo: JiraAuthInfo): string | undefined {
+	static buildAssigneeFilterClauseInternal(authInfo: JiraAuthInfo): string | undefined {
 	const entries: string[] = [];
 	const username = authInfo.username?.trim();
 	if (authInfo.serverLabel === 'cloud') {
@@ -89,7 +133,7 @@ function buildAssigneeFilterClause(authInfo: JiraAuthInfo): string | undefined {
 	return `assignee in (${uniqueEntries.join(', ')})`;
 }
 
-function buildTextSearchClause(rawQuery: string | undefined): string | undefined {
+	static buildTextSearchClauseInternal(rawQuery: string | undefined): string | undefined {
 	const query = rawQuery?.trim();
 	if (!query) {
 		return undefined;
@@ -103,7 +147,7 @@ function buildTextSearchClause(rawQuery: string | undefined): string | undefined
 	return `text ~ "${escaped}"`;
 }
 
-export async function fetchProjectIssues(
+	static async fetchProjectIssuesInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	projectKey: string,
@@ -123,7 +167,7 @@ export async function fetchProjectIssues(
 	});
 }
 
-export async function fetchProjectIssuesPage(
+	static async fetchProjectIssuesPageInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	projectKey: string,
@@ -166,7 +210,7 @@ export async function fetchProjectIssuesPage(
 	};
 }
 
-function buildProjectIssuesJql(
+	static buildProjectIssuesJqlInternal(
 	authInfo: JiraAuthInfo,
 	projectKey: string,
 	options?: FetchProjectIssuesOptions
@@ -193,13 +237,13 @@ function buildProjectIssuesJql(
 	return `${jqlParts.join(' AND ')} ORDER BY updated DESC`;
 }
 
-export async function fetchIssueDetails(authInfo: JiraAuthInfo, token: string, issueKey: string): Promise<JiraIssue> {
+	static async fetchIssueDetailsInternal(authInfo: JiraAuthInfo, token: string, issueKey: string): Promise<JiraIssue> {
 	const sanitizedKey = issueKey?.trim();
 	if (!sanitizedKey) {
 		throw new Error('Issue key is required.');
 	}
 
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(sanitizedKey)}`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
@@ -230,12 +274,12 @@ export async function fetchIssueDetails(authInfo: JiraAuthInfo, token: string, i
 	throw lastError ?? new Error('Unable to load issue details.');
 }
 
-export async function fetchIssueTransitions(
+	static async fetchIssueTransitionsInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string
 ): Promise<IssueStatusOption[]> {
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(issueKey)}/transitions`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
@@ -264,7 +308,7 @@ export async function fetchIssueTransitions(
 	throw lastError ?? new Error('Unable to load issue transitions.');
 }
 
-export async function fetchProjectStatuses(
+	static async fetchProjectStatusesInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	projectKey: string
@@ -276,7 +320,7 @@ export async function fetchProjectStatuses(
 			issueTypeStatuses: [],
 		};
 	}
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `project/${encodeURIComponent(sanitizedKey)}/statuses`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
@@ -328,13 +372,13 @@ export async function fetchProjectStatuses(
 	throw lastError ?? new Error('Unable to load project statuses.');
 }
 
-export async function transitionIssueStatus(
+	static async transitionIssueStatusInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
 	transitionId: string
 ): Promise<void> {
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(issueKey)}/transitions`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
@@ -369,19 +413,14 @@ export async function transitionIssueStatus(
 	throw lastError ?? new Error('Unable to update issue status.');
 }
 
-type AssignableUserScope = {
-	issueKey?: string;
-	projectKey?: string;
-};
-
-export async function fetchAssignableUsers(
+	static async fetchAssignableUsersInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	scopeOrIssueKey: string | AssignableUserScope,
 	query = '',
 	maxResults = 50
 ): Promise<IssueAssignableUser[]> {
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `user/assignable/search`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 	const scope: AssignableUserScope =
@@ -444,13 +483,13 @@ export async function fetchAssignableUsers(
 	throw lastError ?? new Error('Unable to load assignable users.');
 }
 
-export async function assignIssue(
+	static async assignIssueInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
 	accountId: string
 ): Promise<void> {
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(issueKey)}/assignee`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
@@ -485,7 +524,7 @@ export async function assignIssue(
 	throw lastError ?? new Error('Unable to update assignee.');
 }
 
-export async function updateIssueSummary(
+	static async updateIssueSummaryInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
@@ -500,7 +539,7 @@ export async function updateIssueSummary(
 		throw new Error('Issue title cannot be empty.');
 	}
 
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(sanitizedKey)}`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
@@ -535,7 +574,7 @@ export async function updateIssueSummary(
 	throw lastError ?? new Error('Unable to update issue title.');
 }
 
-export async function updateIssueDescription(
+	static async updateIssueDescriptionInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
@@ -548,7 +587,7 @@ export async function updateIssueDescription(
 	const nextDescription = typeof description === 'string' ? description : '';
 	const descriptionValue = nextDescription.trim().length > 0 ? nextDescription : null;
 
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(sanitizedKey)}`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
@@ -583,7 +622,7 @@ export async function updateIssueDescription(
 	throw lastError ?? new Error('Unable to update issue description.');
 }
 
-export async function fetchIssueComments(
+	static async fetchIssueCommentsInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
@@ -594,7 +633,7 @@ export async function fetchIssueComments(
 		return [];
 	}
 
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(sanitizedKey)}/comment`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
@@ -637,7 +676,7 @@ export async function fetchIssueComments(
 	throw lastError ?? new Error('Unable to load comments.');
 }
 
-export async function addIssueComment(
+	static async addIssueCommentInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
@@ -653,7 +692,7 @@ export async function addIssueComment(
 		throw new Error('Issue key is required.');
 	}
 
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(sanitizedKey)}/comment`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
@@ -684,7 +723,11 @@ export async function addIssueComment(
 					'User-Agent': 'jira-vscode',
 				},
 			});
-			return mapIssueComment(response.data, authInfo);
+				const createdComment = mapIssueComment(response.data, authInfo);
+				if (!createdComment) {
+					throw new Error('Jira did not return the created comment.');
+				}
+				return createdComment;
 		} catch (error) {
 			lastError = error;
 			continue;
@@ -694,7 +737,7 @@ export async function addIssueComment(
 	throw lastError ?? new Error('Unable to add comment.');
 }
 
-export async function deleteIssueComment(
+	static async deleteIssueCommentInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
@@ -709,7 +752,7 @@ export async function deleteIssueComment(
 		throw new Error('Issue key is required.');
 	}
 
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(sanitizedKey)}/comment/${encodeURIComponent(trimmedId)}`;
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
@@ -735,7 +778,7 @@ export async function deleteIssueComment(
 	throw lastError ?? new Error('Unable to delete comment.');
 }
 
-function mapIssueComment(comment: any, authInfo: JiraAuthInfo): JiraIssueComment | undefined {
+	static mapIssueCommentInternal(comment: any, authInfo: JiraAuthInfo): JiraIssueComment | undefined {
 	if (!comment) {
 		return undefined;
 	}
@@ -753,9 +796,9 @@ function mapIssueComment(comment: any, authInfo: JiraAuthInfo): JiraIssueComment
 		typeof comment.renderedBody === 'string'
 			? comment.renderedBody
 			: typeof comment.body === 'string'
-			? escapeHtml(comment.body).replace(/\r?\n/g, '<br />')
+			? HtmlHelper.escapeHtml(comment.body).replace(/\r?\n/g, '<br />')
 			: undefined;
-	const sanitized = sanitizeRenderedHtml(rendered);
+	const sanitized = HtmlHelper.sanitizeRenderedHtml(rendered);
 	const authorAccountId = author.accountId ?? author.name ?? author.key;
 	const isCurrentUser = Boolean(
 		(authInfo.accountId && author.accountId && authInfo.accountId === author.accountId) ||
@@ -774,7 +817,7 @@ function mapIssueComment(comment: any, authInfo: JiraAuthInfo): JiraIssueComment
 	};
 }
 
-function buildAdfDocumentFromPlainText(text: string): any {
+	static buildAdfDocumentFromPlainTextInternal(text: string): any {
 	const normalized = text.replace(/\r\n/g, '\n');
 	const paragraphs = normalized.split(/\n{2,}/);
 	const content = paragraphs
@@ -805,20 +848,20 @@ function buildAdfDocumentFromPlainText(text: string): any {
 	};
 }
 
-function getApiVersionFromEndpoint(endpoint: string): string | undefined {
+	static getApiVersionFromEndpointInternal(endpoint: string): string | undefined {
 	const match = endpoint.match(/\/rest\/api\/([^/]+)\//i);
 	return match?.[1];
 }
 
-export async function createJiraIssue(
+	static async createJiraIssueInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	projectKey: string,
 	values: CreateIssueFormValues
 ): Promise<JiraIssue> {
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, 'issue');
-	const payload = {
+	const payload: { fields: Record<string, unknown> } = {
 		fields: {
 			project: { key: projectKey },
 			summary: values.summary.trim(),
@@ -879,22 +922,7 @@ export async function createJiraIssue(
 	throw lastError ?? new Error('Unable to create Jira issue.');
 }
 
-const RESERVED_CREATE_FIELD_IDS = new Set([
-	'project',
-	'summary',
-	'description',
-	'issuetype',
-	'assignee',
-	'reporter',
-	'priority',
-	'labels',
-	'components',
-	'fixVersions',
-	'versions',
-	'status',
-]);
-
-export async function fetchCreateIssueFields(
+	static async fetchCreateIssueFieldsInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	projectKey: string,
@@ -904,7 +932,7 @@ export async function fetchCreateIssueFields(
 	if (!sanitizedProjectKey) {
 		return [];
 	}
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, 'issue/createmeta');
 
 	let lastError: unknown;
@@ -959,7 +987,7 @@ export async function fetchCreateIssueFields(
 	return [];
 }
 
-function mapCreateIssueFieldDefinition(fieldId: string, raw: any): CreateIssueFieldDefinition | undefined {
+	static mapCreateIssueFieldDefinitionInternal(fieldId: string, raw: any): CreateIssueFieldDefinition | undefined {
 	const normalizedId = fieldId?.trim();
 	if (!normalizedId || RESERVED_CREATE_FIELD_IDS.has(normalizedId)) {
 		return undefined;
@@ -987,7 +1015,7 @@ function mapCreateIssueFieldDefinition(fieldId: string, raw: any): CreateIssueFi
 	};
 }
 
-export async function finalizeCreatedIssue(
+	static async finalizeCreatedIssueInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
@@ -1017,24 +1045,7 @@ export async function finalizeCreatedIssue(
 	}
 }
 
-type JiraIssueSearchOptions = {
-	jql: string;
-	maxResults?: number;
-	startAt?: number;
-	nextPageToken?: string;
-	fields?: string[];
-};
-
-type JiraIssueSearchPage = {
-	issues: JiraIssue[];
-	mode: 'classic' | 'enhanced';
-	isLast?: boolean;
-	startAt?: number;
-	total?: number;
-	nextPageToken?: string;
-};
-
-async function searchAllJiraIssues(
+	static async searchAllJiraIssuesInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	options: JiraIssueSearchOptions
@@ -1073,7 +1084,7 @@ async function searchAllJiraIssues(
 	return aggregated;
 }
 
-export async function searchJiraIssues(
+	static async searchJiraIssuesInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	options: JiraIssueSearchOptions
@@ -1082,12 +1093,12 @@ export async function searchJiraIssues(
 	return page.issues;
 }
 
-async function searchJiraIssuesPage(
+	static async searchJiraIssuesPageInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	options: JiraIssueSearchOptions
 ): Promise<JiraIssueSearchPage> {
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const searchResources =
 		authInfo.serverLabel === 'cloud'
 			? options.nextPageToken
@@ -1198,12 +1209,12 @@ async function searchJiraIssuesPage(
 	throw lastError;
 }
 
-function mapIssues(data: any, urlRoot: string): JiraIssue[] {
+	static mapIssuesInternal(data: any, urlRoot: string): JiraIssue[] {
 	const issues = data?.issues ?? [];
 	return issues.map((issue: any) => mapIssue(issue, urlRoot));
 }
 
-function mapIssue(issue: any, urlRoot: string): JiraIssue {
+	static mapIssueInternal(issue: any, urlRoot: string): JiraIssue {
 	const fields = issue?.fields ?? {};
 	const avatarUrls = fields?.assignee?.avatarUrls ?? issue?.assignee?.avatarUrls ?? {};
 	const reporterAvatarUrls = fields?.reporter?.avatarUrls ?? issue?.reporter?.avatarUrls ?? {};
@@ -1212,9 +1223,9 @@ function mapIssue(issue: any, urlRoot: string): JiraIssue {
 	const renderedDescription = typeof renderedFields?.description === 'string' ? renderedFields.description : undefined;
 	let descriptionHtml: string | undefined;
 	if (renderedDescription) {
-		descriptionHtml = sanitizeRenderedHtml(renderedDescription);
+		descriptionHtml = HtmlHelper.sanitizeRenderedHtml(renderedDescription);
 	} else if (typeof rawDescription === 'string') {
-		descriptionHtml = `<p>${escapeHtml(rawDescription).replace(/\r?\n/g, '<br />')}</p>`;
+		descriptionHtml = `<p>${HtmlHelper.escapeHtml(rawDescription).replace(/\r?\n/g, '<br />')}</p>`;
 	}
 	const descriptionText = typeof rawDescription === 'string' ? rawDescription : undefined;
 	const assigneeAvatarUrl =
@@ -1265,7 +1276,7 @@ function mapIssue(issue: any, urlRoot: string): JiraIssue {
 	};
 }
 
-function mapRelatedIssues(rawList: any, urlRoot: string): JiraRelatedIssue[] | undefined {
+	static mapRelatedIssuesInternal(rawList: any, urlRoot: string): JiraRelatedIssue[] | undefined {
 	if (!Array.isArray(rawList) || rawList.length === 0) {
 		return undefined;
 	}
@@ -1275,7 +1286,7 @@ function mapRelatedIssues(rawList: any, urlRoot: string): JiraRelatedIssue[] | u
 	return mapped.length > 0 ? mapped : undefined;
 }
 
-function mapRelatedIssue(raw: any, urlRoot: string): JiraRelatedIssue | undefined {
+	static mapRelatedIssueInternal(raw: any, urlRoot: string): JiraRelatedIssue | undefined {
 	if (!raw) {
 		return undefined;
 	}
@@ -1303,7 +1314,7 @@ function mapRelatedIssue(raw: any, urlRoot: string): JiraRelatedIssue | undefine
 	};
 }
 
-function mapTransitionToStatusOption(transition: any): IssueStatusOption | undefined {
+	static mapTransitionToStatusOptionInternal(transition: any): IssueStatusOption | undefined {
 	if (!transition?.id) {
 		return undefined;
 	}
@@ -1317,11 +1328,11 @@ function mapTransitionToStatusOption(transition: any): IssueStatusOption | undef
 	return {
 		id: String(transition.id),
 		name,
-		category: determineStatusCategory(categorySource),
+		category: IssueModel.determineStatusCategory(categorySource),
 	};
 }
 
-function mapProjectStatusToOption(status: any): IssueStatusOption | undefined {
+	static mapProjectStatusToOptionInternal(status: any): IssueStatusOption | undefined {
 	if (!status) {
 		return undefined;
 	}
@@ -1338,11 +1349,11 @@ function mapProjectStatusToOption(status: any): IssueStatusOption | undefined {
 	return {
 		id: String(idSource),
 		name,
-		category: determineStatusCategory(categorySource),
+		category: IssueModel.determineStatusCategory(categorySource),
 	};
 }
 
-function mapProject(project: any, urlRoot: string): JiraProject {
+	static mapProjectInternal(project: any, urlRoot: string): JiraProject {
 	return {
 		id: project?.id,
 		key: project?.key,
@@ -1352,8 +1363,8 @@ function mapProject(project: any, urlRoot: string): JiraProject {
 	};
 }
 
-export async function fetchRecentProjects(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	static async fetchRecentProjectsInternal(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, 'project/recent');
 
 	let lastError: unknown;
@@ -1387,8 +1398,8 @@ export async function fetchRecentProjects(authInfo: JiraAuthInfo, token: string)
 	throw lastError;
 }
 
-export async function fetchAccessibleProjects(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
-	const urlRoot = normalizeBaseUrl(authInfo.baseUrl);
+	static async fetchAccessibleProjectsInternal(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, 'project/search');
 
 	let lastError: unknown;
@@ -1443,7 +1454,7 @@ export async function fetchAccessibleProjects(authInfo: JiraAuthInfo, token: str
 	throw lastError;
 }
 
-function deriveErrorMessage(error: unknown): string {
+	static deriveErrorMessageInternal(error: unknown): string {
 	if (axios.isAxiosError(error)) {
 		const axiosError = error as AxiosError<any>;
 		const status = axiosError.response?.status;
@@ -1462,15 +1473,7 @@ function deriveErrorMessage(error: unknown): string {
 	return 'Unknown error';
 }
 
-type JiraApiVersion = '3' | 'latest' | '2';
-type JiraServerLabel = JiraAuthInfo['serverLabel'];
-
-const API_VERSION_PRIORITY: Record<JiraServerLabel, JiraApiVersion[]> = {
-	cloud: ['3', 'latest', '2'],
-	custom: ['latest', '2', '3'],
-};
-
-function buildRestApiEndpoints(
+	static buildRestApiEndpointsInternal(
 	baseUrl: string,
 	preference: JiraServerLabel,
 	...resources: string[]
@@ -1496,7 +1499,7 @@ function buildRestApiEndpoints(
 	return endpoints;
 }
 
-export function inferServerLabelFromProfile(profile: JiraProfileResponse | undefined): JiraServerLabel | undefined {
+	static inferServerLabelFromProfileInternal(profile: JiraProfileResponse | undefined): JiraServerLabel | undefined {
 	if (!profile) {
 		return undefined;
 	}
@@ -1512,7 +1515,7 @@ export function inferServerLabelFromProfile(profile: JiraProfileResponse | undef
 	return undefined;
 }
 
-function shouldFallbackToGet(error: unknown): boolean {
+	static shouldFallbackToGetInternal(error: unknown): boolean {
 	if (!axios.isAxiosError(error)) {
 		return false;
 	}
@@ -1520,8 +1523,8 @@ function shouldFallbackToGet(error: unknown): boolean {
 	return status === 410 || status === 404 || status === 405;
 }
 
-function expandBaseUrlCandidates(baseUrl: string): string[] {
-	const normalized = normalizeBaseUrl(baseUrl);
+	static expandBaseUrlCandidatesInternal(baseUrl: string): string[] {
+	const normalized = UrlHelper.normalizeBaseUrl(baseUrl);
 	if (!normalized) {
 		return [];
 	}
@@ -1552,3 +1555,210 @@ function expandBaseUrlCandidates(baseUrl: string): string[] {
 
 	return candidates;
 }
+
+	static verifyCredentials(
+		baseUrl: string,
+		username: string,
+		token: string,
+		serverLabel: JiraServerLabel
+	): Promise<JiraProfileResponse> {
+		return verifyCredentials(baseUrl, username, token, serverLabel);
+	}
+
+	static fetchProjectIssues(
+		authInfo: JiraAuthInfo,
+		token: string,
+		projectKey: string,
+		options?: FetchProjectIssuesOptions
+	): Promise<JiraIssue[]> {
+		return fetchProjectIssues(authInfo, token, projectKey, options);
+	}
+
+	static fetchProjectIssuesPage(
+		authInfo: JiraAuthInfo,
+		token: string,
+		projectKey: string,
+		options?: FetchProjectIssuesOptions
+	): Promise<FetchProjectIssuesPage> {
+		return fetchProjectIssuesPage(authInfo, token, projectKey, options);
+	}
+
+	static fetchIssueDetails(authInfo: JiraAuthInfo, token: string, issueKey: string): Promise<JiraIssue> {
+		return fetchIssueDetails(authInfo, token, issueKey);
+	}
+
+	static fetchIssueTransitions(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string
+	): Promise<IssueStatusOption[]> {
+		return fetchIssueTransitions(authInfo, token, issueKey);
+	}
+
+	static fetchProjectStatuses(
+		authInfo: JiraAuthInfo,
+		token: string,
+		projectKey: string
+	): Promise<ProjectStatusesResponse> {
+		return fetchProjectStatuses(authInfo, token, projectKey);
+	}
+
+	static transitionIssueStatus(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		transitionId: string
+	): Promise<void> {
+		return transitionIssueStatus(authInfo, token, issueKey, transitionId);
+	}
+
+	static fetchAssignableUsers(
+		authInfo: JiraAuthInfo,
+		token: string,
+		scopeOrIssueKey: string | AssignableUserScope,
+		query = '',
+		maxResults = 50
+	): Promise<IssueAssignableUser[]> {
+		return fetchAssignableUsers(authInfo, token, scopeOrIssueKey, query, maxResults);
+	}
+
+	static assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, accountId: string): Promise<void> {
+		return assignIssue(authInfo, token, issueKey, accountId);
+	}
+
+	static updateIssueSummary(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		summary: string
+	): Promise<void> {
+		return updateIssueSummary(authInfo, token, issueKey, summary);
+	}
+
+	static updateIssueDescription(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		description: string
+	): Promise<void> {
+		return updateIssueDescription(authInfo, token, issueKey, description);
+	}
+
+	static fetchIssueComments(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		maxResults = COMMENT_FETCH_LIMIT
+	): Promise<JiraIssueComment[]> {
+		return fetchIssueComments(authInfo, token, issueKey, maxResults);
+	}
+
+	static addIssueComment(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		body: string,
+		format: JiraCommentFormat
+	): Promise<JiraIssueComment> {
+		return addIssueComment(authInfo, token, issueKey, body, format);
+	}
+
+	static deleteIssueComment(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		commentId: string
+	): Promise<void> {
+		return deleteIssueComment(authInfo, token, issueKey, commentId);
+	}
+
+	static createIssue(
+		authInfo: JiraAuthInfo,
+		token: string,
+		projectKey: string,
+		values: CreateIssueFormValues
+	): Promise<JiraIssue> {
+		return createJiraIssue(authInfo, token, projectKey, values);
+	}
+
+	static fetchCreateIssueFields(
+		authInfo: JiraAuthInfo,
+		token: string,
+		projectKey: string,
+		issueTypeName?: string
+	): Promise<CreateIssueFieldDefinition[]> {
+		return fetchCreateIssueFields(authInfo, token, projectKey, issueTypeName);
+	}
+
+	static finalizeCreatedIssue(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		desiredStatus?: string
+	): Promise<JiraIssue> {
+		return finalizeCreatedIssue(authInfo, token, issueKey, desiredStatus);
+	}
+
+	static searchIssues(
+		authInfo: JiraAuthInfo,
+		token: string,
+		options: JiraIssueSearchOptions
+	): Promise<JiraIssue[]> {
+		return searchJiraIssues(authInfo, token, options);
+	}
+
+	static fetchRecentProjects(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
+		return fetchRecentProjects(authInfo, token);
+	}
+
+	static fetchAccessibleProjects(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
+		return fetchAccessibleProjects(authInfo, token);
+	}
+
+	static inferServerLabelFromProfile(profile: JiraProfileResponse | undefined): JiraServerLabel | undefined {
+		return inferServerLabelFromProfile(profile);
+	}
+}
+
+const verifyCredentials = JiraApiTransport.verifyCredentialsInternal;
+const escapeJqlValue = JiraApiTransport.escapeJqlValueInternal;
+const buildAssigneeFilterClause = JiraApiTransport.buildAssigneeFilterClauseInternal;
+const buildTextSearchClause = JiraApiTransport.buildTextSearchClauseInternal;
+const fetchProjectIssues = JiraApiTransport.fetchProjectIssuesInternal;
+const fetchProjectIssuesPage = JiraApiTransport.fetchProjectIssuesPageInternal;
+const buildProjectIssuesJql = JiraApiTransport.buildProjectIssuesJqlInternal;
+const fetchIssueDetails = JiraApiTransport.fetchIssueDetailsInternal;
+const fetchIssueTransitions = JiraApiTransport.fetchIssueTransitionsInternal;
+const fetchProjectStatuses = JiraApiTransport.fetchProjectStatusesInternal;
+const transitionIssueStatus = JiraApiTransport.transitionIssueStatusInternal;
+const fetchAssignableUsers = JiraApiTransport.fetchAssignableUsersInternal;
+const assignIssue = JiraApiTransport.assignIssueInternal;
+const updateIssueSummary = JiraApiTransport.updateIssueSummaryInternal;
+const updateIssueDescription = JiraApiTransport.updateIssueDescriptionInternal;
+const fetchIssueComments = JiraApiTransport.fetchIssueCommentsInternal;
+const addIssueComment = JiraApiTransport.addIssueCommentInternal;
+const deleteIssueComment = JiraApiTransport.deleteIssueCommentInternal;
+const mapIssueComment = JiraApiTransport.mapIssueCommentInternal;
+const buildAdfDocumentFromPlainText = JiraApiTransport.buildAdfDocumentFromPlainTextInternal;
+const getApiVersionFromEndpoint = JiraApiTransport.getApiVersionFromEndpointInternal;
+const createJiraIssue = JiraApiTransport.createJiraIssueInternal;
+const fetchCreateIssueFields = JiraApiTransport.fetchCreateIssueFieldsInternal;
+const mapCreateIssueFieldDefinition = JiraApiTransport.mapCreateIssueFieldDefinitionInternal;
+const finalizeCreatedIssue = JiraApiTransport.finalizeCreatedIssueInternal;
+const searchAllJiraIssues = JiraApiTransport.searchAllJiraIssuesInternal;
+const searchJiraIssues = JiraApiTransport.searchJiraIssuesInternal;
+const searchJiraIssuesPage = JiraApiTransport.searchJiraIssuesPageInternal;
+const mapIssues = JiraApiTransport.mapIssuesInternal;
+const mapIssue = JiraApiTransport.mapIssueInternal;
+const mapRelatedIssues = JiraApiTransport.mapRelatedIssuesInternal;
+const mapRelatedIssue = JiraApiTransport.mapRelatedIssueInternal;
+const mapTransitionToStatusOption = JiraApiTransport.mapTransitionToStatusOptionInternal;
+const mapProjectStatusToOption = JiraApiTransport.mapProjectStatusToOptionInternal;
+const mapProject = JiraApiTransport.mapProjectInternal;
+const fetchRecentProjects = JiraApiTransport.fetchRecentProjectsInternal;
+const fetchAccessibleProjects = JiraApiTransport.fetchAccessibleProjectsInternal;
+const deriveErrorMessage = JiraApiTransport.deriveErrorMessageInternal;
+const buildRestApiEndpoints = JiraApiTransport.buildRestApiEndpointsInternal;
+const inferServerLabelFromProfile = JiraApiTransport.inferServerLabelFromProfileInternal;
+const shouldFallbackToGet = JiraApiTransport.shouldFallbackToGetInternal;
+const expandBaseUrlCandidates = JiraApiTransport.expandBaseUrlCandidatesInternal;

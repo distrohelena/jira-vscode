@@ -14,9 +14,9 @@ import {
 import { ProjectStatusStore } from '../model/project-status.store';
 import { IssueTransitionStore } from '../model/issue-transition.store';
 import { ProjectTransitionPrefetcher } from '../model/project-transition.prefetcher';
-import { createPlaceholderIssue } from '../model/issue.model';
-import { deriveErrorMessage } from '../shared/error.helper';
-import { renderIssuePanelContent, showIssueDetailsPanel } from '../views/webview/webview.panel';
+import { IssueModel } from '../model/issue.model';
+import { ErrorHelper } from '../shared/error.helper';
+import { JiraWebviewPanel } from '../views/webview/webview.panel';
 
 export type IssueControllerDeps = {
 	authManager: JiraAuthManager;
@@ -31,7 +31,12 @@ type OpenPanelEntry = {
 	refresh: () => void;
 };
 
-export function createIssueController(deps: IssueControllerDeps) {
+export class IssueControllerFactory {
+	static create(deps: IssueControllerDeps) {
+		return IssueControllerFactory.createIssueControllerInternal(deps);
+	}
+
+	private static createIssueControllerInternal(deps: IssueControllerDeps) {
 	const { authManager, refreshAll, projectStatusStore, transitionStore, transitionPrefetcher } = deps;
 	const openIssuePanels = new Map<string, OpenPanelEntry>();
 
@@ -51,7 +56,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 		}
 
 		const initialIssue = typeof issueOrKey === 'string' ? undefined : issueOrKey;
-		const issueProjectKey = deriveProjectKeyFromIssueKey(resolvedIssueKey);
+			const issueProjectKey = IssueControllerFactory.deriveProjectKeyFromIssueKey(resolvedIssueKey);
 		const initialIssueType = initialIssue
 			? {
 					issueTypeId: initialIssue.issueTypeId,
@@ -96,7 +101,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			descriptionEditError?: string;
 			loadingIssue: boolean;
 		} = {
-			issue: initialIssue ?? createPlaceholderIssue(resolvedIssueKey),
+			issue: initialIssue ?? IssueModel.createPlaceholderIssue(resolvedIssueKey),
 			transitions: cachedTransitions,
 			statusPrefill: cachedStatuses,
 			assignableUsers: undefined,
@@ -143,7 +148,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			initialOptions.statusPending = !panelState.transitions;
 		}
 
-		const panel = showIssueDetailsPanel(
+		const panel = JiraWebviewPanel.showIssueDetailsPanel(
 			resolvedIssueKey,
 			panelState.issue,
 			initialOptions,
@@ -194,7 +199,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			if (merged.loading === undefined) {
 				merged.loading = panelState.loadingIssue;
 			}
-			renderIssuePanelContent(panel, panelState.issue, merged);
+			JiraWebviewPanel.renderIssuePanelContent(panel, panelState.issue, merged);
 		};
 
 		openIssuePanels.set(resolvedIssueKey, {
@@ -254,7 +259,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 
 			try {
 				const issue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
-				const issueProjectKeyResolved = deriveProjectKeyFromIssueKey(issue.key);
+				const issueProjectKeyResolved = IssueControllerFactory.deriveProjectKeyFromIssueKey(issue.key);
 				if (issueProjectKeyResolved) {
 					void projectStatusStore.ensure(issueProjectKeyResolved);
 					void projectStatusStore.ensureAllIssueTypeStatuses(issueProjectKeyResolved);
@@ -296,7 +301,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 					assigneeQuery: panelState.assigneeQuery,
 				});
 			} catch (error) {
-				const message = deriveErrorMessage(error);
+				const message = ErrorHelper.deriveErrorMessage(error);
 				if (!disposed) {
 					panelState.loadingIssue = false;
 					renderPanel({
@@ -331,7 +336,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 			try {
 				await jiraApiClient.transitionIssueStatus(authInfo, token, resolvedIssueKey, transitionId);
 				const updatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
-				const updatedProjectKey = deriveProjectKeyFromIssueKey(updatedIssue.key);
+				const updatedProjectKey = IssueControllerFactory.deriveProjectKeyFromIssueKey(updatedIssue.key);
 				if (updatedProjectKey) {
 					void projectStatusStore.ensure(updatedProjectKey);
 					void projectStatusStore.ensureAllIssueTypeStatuses(updatedProjectKey);
@@ -369,7 +374,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 				});
 				refreshAll();
 			} catch (error) {
-				const message = deriveErrorMessage(error);
+				const message = ErrorHelper.deriveErrorMessage(error);
 				if (!disposed) {
 					renderPanel({
 						statusOptions: panelState.transitions,
@@ -415,7 +420,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 				});
 				refreshAll();
 			} catch (error) {
-				const message = deriveErrorMessage(error);
+				const message = ErrorHelper.deriveErrorMessage(error);
 				if (!disposed) {
 					renderPanel({
 						statusOptions: panelState.transitions,
@@ -466,7 +471,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 					assigneeAutoFocus: true,
 				});
 			} catch (error) {
-				const message = deriveErrorMessage(error);
+				const message = ErrorHelper.deriveErrorMessage(error);
 				if (!disposed) {
 					renderPanel({
 						statusOptions: panelState.transitions,
@@ -525,7 +530,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 				});
 				refreshAll();
 			} catch (error) {
-				const message = deriveErrorMessage(error);
+				const message = ErrorHelper.deriveErrorMessage(error);
 				if (!disposed) {
 					panelState.summaryEditPending = false;
 					panelState.summaryEditError = `Failed to update title: ${message}`;
@@ -574,7 +579,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 				});
 				refreshAll();
 			} catch (error) {
-				const message = deriveErrorMessage(error);
+				const message = ErrorHelper.deriveErrorMessage(error);
 				if (!disposed) {
 					panelState.descriptionEditPending = false;
 					panelState.descriptionEditError = `Failed to update description: ${message}`;
@@ -612,7 +617,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 				panelState.commentsLoading = false;
 				renderPanel();
 			} catch (error) {
-				const message = deriveErrorMessage(error);
+				const message = ErrorHelper.deriveErrorMessage(error);
 				if (disposed) {
 					return;
 				}
@@ -654,7 +659,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 				renderPanel();
 				await refreshComments(true);
 			} catch (error) {
-				const message = deriveErrorMessage(error);
+				const message = ErrorHelper.deriveErrorMessage(error);
 				panelState.commentSubmitPending = false;
 				panelState.commentSubmitError = `Failed to add comment: ${message}`;
 				renderPanel();
@@ -690,7 +695,7 @@ export function createIssueController(deps: IssueControllerDeps) {
 				renderPanel();
 				await refreshComments(true);
 			} catch (error) {
-				const message = deriveErrorMessage(error);
+				const message = ErrorHelper.deriveErrorMessage(error);
 				panelState.commentDeletingId = undefined;
 				panelState.commentsError = `Failed to delete comment: ${message}`;
 				renderPanel();
@@ -706,7 +711,8 @@ export function createIssueController(deps: IssueControllerDeps) {
 		projectKey?: string,
 		options?: { useCache?: boolean }
 	): Promise<{ transitions?: IssueStatusOption[]; error?: string }> {
-		const normalizedProjectKey = projectKey ?? deriveProjectKeyFromIssueKey(targetIssue.key);
+			const normalizedProjectKey =
+				projectKey ?? IssueControllerFactory.deriveProjectKeyFromIssueKey(targetIssue.key);
 		const cacheKey = {
 			projectKey: normalizedProjectKey,
 			issueTypeId: targetIssue.issueTypeId ?? targetIssue.issueTypeName,
@@ -727,21 +733,22 @@ export function createIssueController(deps: IssueControllerDeps) {
 			}
 			return { transitions: fetchedTransitions };
 		} catch (error) {
-			return { error: deriveErrorMessage(error) };
+			return { error: ErrorHelper.deriveErrorMessage(error) };
 		}
 	}
 
-	return {
-		openIssueDetails,
-	};
-}
-
-function deriveProjectKeyFromIssueKey(issueKey?: string): string | undefined {
-	if (!issueKey) {
-		return undefined;
+		return {
+			openIssueDetails,
+		};
 	}
-	const separatorIndex = issueKey.indexOf('-');
-	const projectPart = separatorIndex === -1 ? issueKey : issueKey.slice(0, separatorIndex);
-	const trimmed = projectPart.trim();
-	return trimmed.length > 0 ? trimmed : undefined;
+
+	private static deriveProjectKeyFromIssueKey(issueKey?: string): string | undefined {
+		if (!issueKey) {
+			return undefined;
+		}
+		const separatorIndex = issueKey.indexOf('-');
+		const projectPart = separatorIndex === -1 ? issueKey : issueKey.slice(0, separatorIndex);
+		const trimmed = projectPart.trim();
+		return trimmed.length > 0 ? trimmed : undefined;
+	}
 }

@@ -5,8 +5,8 @@ import { JiraFocusManager } from '../../model/focus.manager';
 import { PROJECT_FAVORITES_KEY, PROJECTS_VIEW_MODE_CONTEXT, PROJECTS_VIEW_MODE_KEY } from '../../model/jira.constant';
 import { jiraApiClient } from '../../jiraApi';
 import { JiraAuthInfo, JiraProject, ProjectsViewMode } from '../../model/jira.type';
-import { deriveErrorMessage } from '../../shared/error.helper';
-import { extractHost } from '../../shared/url.helper';
+import { ErrorHelper } from '../../shared/error.helper';
+import { UrlHelper } from '../../shared/url.helper';
 import { JiraTreeItem } from './tree-item.view';
 import { JiraTreeDataProvider } from './base-tree-data.provider';
 
@@ -164,7 +164,7 @@ export class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
 			}
 
 			this.updateBadge();
-			const host = extractHost(authInfo.baseUrl);
+			const host = UrlHelper.extractHost(authInfo.baseUrl);
 			const description = host
 				? showingRecent
 					? `${host} • recent`
@@ -223,7 +223,7 @@ export class JiraProjectsTreeDataProvider extends JiraTreeDataProvider {
 
 			return nodes;
 		} catch (error) {
-			const message = deriveErrorMessage(error);
+			const message = ErrorHelper.deriveErrorMessage(error);
 			this.updateBadge();
 			return [
 				new JiraTreeItem('info', `Failed to load projects: ${message}`, vscode.TreeItemCollapsibleState.None),

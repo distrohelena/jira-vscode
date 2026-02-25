@@ -1,14 +1,16 @@
 import * as vscode from 'vscode';
 
-let extensionUri: vscode.Uri | undefined;
+export class EnvironmentRuntime {
+	private static extensionUri: vscode.Uri | undefined;
 
-export function initializeEnvironment(uri: vscode.Uri): void {
-	extensionUri = uri;
-}
-
-export function getExtensionUri(): vscode.Uri {
-	if (!extensionUri) {
-		throw new Error('Extension environment not initialized.');
+	static initializeEnvironment(uri: vscode.Uri): void {
+		EnvironmentRuntime.extensionUri = uri;
 	}
-	return extensionUri;
+
+	static getExtensionUri(): vscode.Uri {
+		if (!EnvironmentRuntime.extensionUri) {
+			throw new Error('Extension environment not initialized.');
+		}
+		return EnvironmentRuntime.extensionUri;
+	}
 }

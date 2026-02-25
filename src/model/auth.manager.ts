@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 
 import { AUTH_STATE_KEY, SECRET_PREFIX } from './jira.constant';
-import { deriveErrorMessage, isJiraCredentialError } from '../shared/error.helper';
-import { normalizeBaseUrl } from '../shared/url.helper';
+import { ErrorHelper } from '../shared/error.helper';
+import { UrlHelper } from '../shared/url.helper';
 import { jiraApiClient } from '../jiraApi';
 import { JiraAuthInfo, JiraServerLabel } from './jira.type';
 
@@ -88,7 +88,7 @@ export class JiraAuthManager implements vscode.Disposable {
 			return;
 		}
 
-		const normalizedBaseUrl = normalizeBaseUrl(baseUrlInput);
+		const normalizedBaseUrl = UrlHelper.normalizeBaseUrl(baseUrlInput);
 
 		const username = await vscode.window.showInputBox({
 			title: selection.value === 'cloud' ? 'Atlassian account email' : 'Jira username/email',
@@ -116,12 +116,12 @@ export class JiraAuthManager implements vscode.Disposable {
 			return;
 		}
 
-		const accountKey = buildAccountKey(normalizedBaseUrl, username);
+		const accountKey = JiraAuthManager.buildAccountKey(normalizedBaseUrl, username);
 
 		try {
 			const profile = await jiraApiClient.verifyCredentials(normalizedBaseUrl, username, token, selection.value);
 			const serverLabel = jiraApiClient.inferServerLabelFromProfile(profile) ?? selection.value;
-			await this.context.secrets.store(buildSecretKey(accountKey), token);
+			await this.context.secrets.store(JiraAuthManager.buildSecretKey(accountKey), token);
 			await this.saveAuthInfo({
 				baseUrl: normalizedBaseUrl,
 				username,
@@ -137,7 +137,7 @@ export class JiraAuthManager implements vscode.Disposable {
 
 			await vscode.window.showInformationMessage(`Connected to Jira as ${profile.displayName ?? username}`);
 		} catch (error) {
-			const message = deriveErrorMessage(error);
+			const message = ErrorHelper.deriveErrorMessage(error);
 			await vscode.window.showErrorMessage(`Failed to connect to Jira: ${message}`);
 		}
 	}
@@ -147,8 +147,8 @@ export class JiraAuthManager implements vscode.Disposable {
 		if (!authInfo) {
 			return;
 		}
-		const accountKey = buildAccountKey(authInfo.baseUrl, authInfo.username);
-		await this.context.secrets.delete(buildSecretKey(accountKey));
+		const accountKey = JiraAuthManager.buildAccountKey(authInfo.baseUrl, authInfo.username);
+		await this.context.secrets.delete(JiraAuthManager.buildSecretKey(accountKey));
 		await this.saveAuthInfo(undefined);
 		this.setCredentialValidation({ state: 'unknown' });
 		await vscode.window.showInformationMessage('Disconnected from Jira.');
@@ -159,8 +159,8 @@ export class JiraAuthManager implements vscode.Disposable {
 		if (!authInfo) {
 			return undefined;
 		}
-		const accountKey = buildAccountKey(authInfo.baseUrl, authInfo.username);
-		const token = await this.context.secrets.get(buildSecretKey(accountKey));
+		const accountKey = JiraAuthManager.buildAccountKey(authInfo.baseUrl, authInfo.username);
+		const token = await this.context.secrets.get(JiraAuthManager.buildSecretKey(accountKey));
 		return token ?? undefined;
 	}
 
@@ -286,7 +286,7 @@ export class JiraAuthManager implements vscode.Disposable {
 			}
 			return successState;
 		} catch (error) {
-			if (isJiraCredentialError(error)) {
+			if (ErrorHelper.isJiraCredentialError(error)) {
 				const invalidState: JiraCredentialValidation = {
 					state: 'invalid',
 					message: 'API key invalid or expired.',
@@ -305,7 +305,7 @@ export class JiraAuthManager implements vscode.Disposable {
 				return invalidState;
 			}
 
-			const message = deriveErrorMessage(error);
+			const message = ErrorHelper.deriveErrorMessage(error);
 			const errorState: JiraCredentialValidation = {
 				state: 'error',
 				message,
@@ -318,12 +318,12 @@ export class JiraAuthManager implements vscode.Disposable {
 			return errorState;
 		}
 	}
-}
 
-function buildAccountKey(baseUrl: string, username: string): string {
-	return `${baseUrl}:${username}`;
-}
+	private static buildAccountKey(baseUrl: string, username: string): string {
+		return `${baseUrl}:${username}`;
+	}
 
-function buildSecretKey(accountKey: string): string {
-	return `${SECRET_PREFIX}:${accountKey}`;
+	private static buildSecretKey(accountKey: string): string {
+		return `${SECRET_PREFIX}:${accountKey}`;
+	}
 }
