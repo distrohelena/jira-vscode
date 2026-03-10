@@ -6,6 +6,7 @@ import {
 	IssueAssignableUser,
 	IssuePanelOptions,
 	IssueStatusOption,
+	CommentReplyContext,
 	JiraCommentFormat,
 	JiraIssue,
 	JiraIssueComment,
@@ -16,6 +17,7 @@ import { IssueTransitionStore } from '../model/issue-transition.store';
 import { ProjectTransitionPrefetcher } from '../model/project-transition.prefetcher';
 import { IssueModel } from '../model/issue.model';
 import { ErrorHelper } from '../shared/error.helper';
+import { IssueCommentReplyService } from '../services/issue-comment-reply.service';
 import { JiraWebviewPanel } from '../views/webview/webview.panel';
 
 export type IssueControllerDeps = {
@@ -95,6 +97,7 @@ export class IssueControllerFactory {
 			commentFormat: JiraCommentFormat;
 			commentDraft: string;
 			commentDeletingId?: string;
+			commentReplyContext?: CommentReplyContext;
 			summaryEditPending: boolean;
 			summaryEditError?: string;
 			descriptionEditPending: boolean;
@@ -114,6 +117,7 @@ export class IssueControllerFactory {
 			commentFormat: 'wiki',
 			commentDraft: '',
 			commentDeletingId: undefined,
+			commentReplyContext: undefined,
 			summaryEditPending: false,
 			summaryEditError: undefined,
 			descriptionEditPending: false,
@@ -134,6 +138,7 @@ export class IssueControllerFactory {
 			commentDeletingId: panelState.commentDeletingId,
 			commentFormat: panelState.commentFormat,
 			commentDraft: panelState.commentDraft,
+			commentReplyContext: panelState.commentReplyContext,
 		});
 
 		let disposed = false;
@@ -171,6 +176,10 @@ export class IssueControllerFactory {
 					await handleDeleteComment(message.commentId);
 				} else if (message?.type === 'refreshComments') {
 					await refreshComments(true);
+				} else if (message?.type === 'startCommentReply' && typeof message.commentId === 'string') {
+					handleStartCommentReply(message.commentId);
+				} else if (message?.type === 'cancelCommentReply') {
+					handleCancelCommentReply();
 				} else if (message?.type === 'updateSummary' && typeof message.summary === 'string') {
 					await handleSummaryUpdate(message.summary);
 				} else if (message?.type === 'updateDescription' && typeof message.description === 'string') {
@@ -613,6 +622,12 @@ export class IssueControllerFactory {
 					return;
 				}
 				panelState.comments = comments;
+				if (
+					panelState.commentReplyContext &&
+					!comments.some((comment) => comment.id === panelState.commentReplyContext?.commentId)
+				) {
+					panelState.commentReplyContext = undefined;
+				}
 				panelState.commentsError = undefined;
 				panelState.commentsLoading = false;
 				renderPanel();
@@ -652,10 +667,12 @@ export class IssueControllerFactory {
 			renderPanel();
 
 			try {
-				await jiraApiClient.addIssueComment(authInfo, token, resolvedIssueKey, trimmedBody, 'wiki');
+				const commentBody = IssueCommentReplyService.buildCommentBody(trimmedBody, panelState.commentReplyContext);
+				await jiraApiClient.addIssueComment(authInfo, token, resolvedIssueKey, commentBody, 'wiki');
 				panelState.commentDraft = '';
 				panelState.commentSubmitPending = false;
 				panelState.commentSubmitError = undefined;
+				panelState.commentReplyContext = undefined;
 				renderPanel();
 				await refreshComments(true);
 			} catch (error) {
@@ -665,6 +682,31 @@ export class IssueControllerFactory {
 				renderPanel();
 				await vscode.window.showErrorMessage(`Failed to add comment: ${message}`);
 			}
+		}
+
+		function handleStartCommentReply(commentId: string): void {
+			if (disposed || !commentId) {
+				return;
+			}
+
+			const sourceComment = panelState.comments?.find((comment) => comment.id === commentId);
+			if (!sourceComment) {
+				return;
+			}
+
+			panelState.commentReplyContext = IssueCommentReplyService.createReplyContext(sourceComment);
+			panelState.commentSubmitError = undefined;
+			renderPanel();
+		}
+
+		function handleCancelCommentReply(): void {
+			if (disposed || !panelState.commentReplyContext) {
+				return;
+			}
+
+			panelState.commentReplyContext = undefined;
+			panelState.commentSubmitError = undefined;
+			renderPanel();
 		}
 
 		async function handleDeleteComment(commentId: string): Promise<void> {

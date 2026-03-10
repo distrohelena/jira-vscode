@@ -335,7 +335,9 @@ export class JiraWebviewPanel {
 		flex-wrap: wrap;
 	}
 	.comment-refresh,
+	.comment-reply,
 	.comment-delete,
+	.comment-reply-cancel,
 	.comment-submit {
 		border-radius: 4px;
 		border: 1px solid var(--vscode-button-secondaryBorder, transparent);
@@ -346,7 +348,9 @@ export class JiraWebviewPanel {
 		font-size: 0.9em;
 	}
 	.comment-refresh:disabled,
+	.comment-reply:disabled,
 	.comment-delete:disabled,
+	.comment-reply-cancel:disabled,
 	.comment-submit:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
@@ -385,6 +389,12 @@ export class JiraWebviewPanel {
 		display: flex;
 		gap: 12px;
 		align-items: center;
+		flex-wrap: wrap;
+	}
+	.comment-meta-actions {
+		display: inline-flex;
+		gap: 8px;
+		margin-left: auto;
 		flex-wrap: wrap;
 	}
 	.comment-author {
@@ -585,6 +595,31 @@ export class JiraWebviewPanel {
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
+	}
+	.comment-reply-banner {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 12px;
+		padding: 12px;
+		border-radius: 6px;
+		border: 1px solid var(--vscode-textLink-foreground, rgba(0,122,204,0.35));
+		background: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent);
+	}
+	.comment-reply-copy {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		min-width: 0;
+	}
+	.comment-reply-title {
+		font-weight: 600;
+	}
+	.comment-reply-excerpt {
+		color: var(--vscode-descriptionForeground);
+		font-size: 0.9em;
+		white-space: pre-wrap;
+		word-break: break-word;
 	}
 	.comment-form .jira-rich-editor-input {
 		min-height: 120px;
@@ -1370,6 +1405,7 @@ export class JiraWebviewPanel {
 				const textarea = commentForm.querySelector('.comment-input');
 				const submitButton = commentForm.querySelector('.comment-submit');
 				const errorEl = commentForm.querySelector('.comment-error');
+				const cancelReplyButton = commentForm.querySelector('.comment-reply-cancel');
 				const updateSubmitState = () => {
 					if (!submitButton || !textarea) {
 						return;
@@ -1394,8 +1430,28 @@ export class JiraWebviewPanel {
 					}
 					vscode.postMessage({ type: 'addComment', body: textarea.value, format: 'wiki' });
 				});
+				if (cancelReplyButton) {
+					cancelReplyButton.addEventListener('click', () => {
+						if (cancelReplyButton.disabled) {
+							return;
+						}
+						vscode.postMessage({ type: 'cancelCommentReply' });
+					});
+				}
 				updateSubmitState();
 			}
+			document.querySelectorAll('.comment-reply').forEach((button) => {
+				button.addEventListener('click', () => {
+					if (button.disabled) {
+						return;
+					}
+					const commentId = button.getAttribute('data-comment-id');
+					if (!commentId) {
+						return;
+					}
+					vscode.postMessage({ type: 'startCommentReply', commentId });
+				});
+			});
 			document.querySelectorAll('.comment-delete').forEach((button) => {
 				button.addEventListener('click', () => {
 					if (button.disabled) {
@@ -2417,6 +2473,13 @@ export class JiraWebviewPanel {
 	const deleteButton = comment.id
 		? `<button type="button" class="comment-delete" data-comment-id="${HtmlHelper.escapeAttribute(comment.id)}" ${deleteDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(deleteLabel)}</button>`
 		: '';
+	const replyDisabled = (options?.commentsPending ?? false) || (options?.commentSubmitPending ?? false);
+	const isReplying = options?.commentReplyContext?.commentId === comment.id;
+	const replyButton = comment.id
+		? `<button type="button" class="comment-reply" data-comment-id="${HtmlHelper.escapeAttribute(comment.id)}" ${replyDisabled || isReplying ? 'disabled' : ''}>${HtmlHelper.escapeHtml(
+				isReplying ? 'Replying...' : 'Reply'
+			)}</button>`
+		: '';
 	const currentUserTag = comment.isCurrentUser ? '<span class="comment-author-self">You</span>' : '';
 	const bodyHtml = comment.renderedBody && comment.renderedBody.trim().length > 0
 		? comment.renderedBody
@@ -2428,7 +2491,10 @@ export class JiraWebviewPanel {
 				<span class="comment-author">${authorLabel}</span>
 				${currentUserTag}
 				${timestampText ? `<span class="comment-date">${HtmlHelper.escapeHtml(timestampText)}</span>` : ''}
-				${deleteButton}
+				<div class="comment-meta-actions">
+					${replyButton}
+					${deleteButton}
+				</div>
 			</div>
 			<div class="comment-body rich-text-block" data-comment-id="${HtmlHelper.escapeAttribute(comment.id ?? '')}">${bodyHtml}</div>
 		</div>
@@ -2438,29 +2504,55 @@ export class JiraWebviewPanel {
 	static renderCommentForm(options?: IssuePanelOptions): string {
 	const pending = options?.commentSubmitPending ?? false;
 	const draftValue = options?.commentDraft ?? '';
+	const replyContext = options?.commentReplyContext;
 	const hasText = draftValue.trim().length > 0;
 	const buttonDisabled = pending || !hasText;
-	const buttonLabel = pending ? 'Adding…' : 'Add comment';
+	const formTitle = replyContext ? 'Reply to comment' : 'Add a comment';
+	const placeholder = replyContext ? 'Write your reply' : 'Share updates or blockers';
 	const errorMarkup = options?.commentSubmitError
 		? `<div class="comment-error">${HtmlHelper.escapeHtml(options.commentSubmitError)}</div>`
 		: '<div class="comment-error hidden"></div>';
 	return `<form class="comment-form" data-pending="${pending ? 'true' : 'false'}">
-		<label class="section-title" for="comment-input">Add a comment</label>
+		<label class="section-title" for="comment-input">${HtmlHelper.escapeHtml(formTitle)}</label>
+		${renderCommentReplyBanner(options)}
 		${renderRichTextEditor({
 			editorId: 'comment-input',
 			value: draftValue,
-			placeholder: 'Share updates or blockers',
+			placeholder,
 			disabled: pending,
 			minRows: 6,
 			inputClassName: 'comment-input',
 			editorClassName: 'comment-editor',
-			ariaLabel: 'Comment',
+			ariaLabel: formTitle,
 		})}
 		<div class="comment-controls">
-			<button type="submit" class="comment-submit" ${buttonDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(buttonLabel)}</button>
+			<button type="submit" class="comment-submit" ${buttonDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(
+				pending ? (replyContext ? 'Replying...' : 'Adding...') : replyContext ? 'Reply' : 'Add comment'
+			)}</button>
 		</div>
 		${errorMarkup}
 	</form>`;
+}
+
+	static renderCommentReplyBanner(options?: IssuePanelOptions): string {
+	const replyContext = options?.commentReplyContext;
+	if (!replyContext) {
+		return '';
+	}
+	const timestampMarkup = replyContext.timestampLabel
+		? `<div class="comment-date">${HtmlHelper.escapeHtml(replyContext.timestampLabel)}</div>`
+		: '';
+	const excerptMarkup = replyContext.excerpt
+		? `<div class="comment-reply-excerpt">${HtmlHelper.escapeHtml(replyContext.excerpt)}</div>`
+		: '';
+	return `<div class="comment-reply-banner">
+		<div class="comment-reply-copy">
+			<div class="comment-reply-title">Replying to ${HtmlHelper.escapeHtml(replyContext.authorName)}</div>
+			${timestampMarkup}
+			${excerptMarkup}
+		</div>
+		<button type="button" class="comment-reply-cancel" ${options?.commentSubmitPending ? 'disabled' : ''}>Cancel reply</button>
+	</div>`;
 }
 
 	static renderCommentAvatar(comment: JiraIssueComment): string {
@@ -2977,6 +3069,7 @@ const renderCommentsSection = JiraWebviewPanel.renderCommentsSection;
 const renderCommentList = JiraWebviewPanel.renderCommentList;
 const renderCommentItem = JiraWebviewPanel.renderCommentItem;
 const renderCommentForm = JiraWebviewPanel.renderCommentForm;
+const renderCommentReplyBanner = JiraWebviewPanel.renderCommentReplyBanner;
 const renderCommentAvatar = JiraWebviewPanel.renderCommentAvatar;
 const renderRelatedIssueButton = JiraWebviewPanel.renderRelatedIssueButton;
 const renderMetadataPanel = JiraWebviewPanel.renderMetadataPanel;

@@ -59,6 +59,31 @@ export type JiraIssueComment = {
 
 export type JiraCommentFormat = 'plain' | 'wiki';
 
+/**
+ * Captures the original Jira comment metadata needed to render and persist a reply.
+ */
+export type CommentReplyContext = {
+	/**
+	 * The Jira identifier of the comment being replied to.
+	 */
+	commentId: string;
+
+	/**
+	 * The display name shown for the original comment author.
+	 */
+	authorName: string;
+
+	/**
+	 * The formatted timestamp shown in the reply banner.
+	 */
+	timestampLabel?: string;
+
+	/**
+	 * A plain-text excerpt from the original comment body.
+	 */
+	excerpt?: string;
+};
+
 export type IssueStatusCategory = 'done' | 'inProgress' | 'open' | 'default';
 
 export type IssueStatusOption = {
@@ -107,6 +132,11 @@ export type IssuePanelOptions = {
 	commentDeletingId?: string;
 	commentFormat?: JiraCommentFormat;
 	commentDraft?: string;
+
+	/**
+	 * The currently selected comment reply target for the issue panel composer.
+	 */
+	commentReplyContext?: CommentReplyContext;
 };
 
 export type CreateIssueFormValues = {

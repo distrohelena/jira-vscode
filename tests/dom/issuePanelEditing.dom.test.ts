@@ -3,7 +3,7 @@ import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 import { EnvironmentRuntime } from '../../src/environment.runtime';
-import { JiraIssue, IssuePanelOptions } from '../../src/model/jira.type';
+import { JiraIssue, JiraIssueComment, IssuePanelOptions } from '../../src/model/jira.type';
 import { JiraWebviewPanel } from '../../src/views/webview/webview.panel';
 import { Uri } from 'vscode';
 
@@ -39,6 +39,20 @@ class IssuePanelTestHarness {
 			issueTypeName: overrides?.issueTypeName ?? 'Task',
 			parent: overrides?.parent,
 			children: overrides?.children,
+		};
+	}
+
+	static createComment(overrides?: Partial<JiraIssueComment>): JiraIssueComment {
+		return {
+			id: overrides?.id ?? 'comment-1',
+			body: overrides?.body ?? 'Original comment body',
+			renderedBody: overrides?.renderedBody ?? '<p>Original comment body</p>',
+			authorName: overrides?.authorName ?? 'Helena',
+			authorAccountId: overrides?.authorAccountId,
+			authorAvatarUrl: overrides?.authorAvatarUrl,
+			created: overrides?.created ?? '2026-02-23T12:30:00.000Z',
+			updated: overrides?.updated ?? '2026-02-23T12:30:00.000Z',
+			isCurrentUser: overrides?.isCurrentUser ?? false,
 		};
 	}
 
@@ -209,5 +223,36 @@ describe('Issue panel editor interactions', () => {
 
 		expect(summaryBlock?.classList.contains('editor-open')).toBe(false);
 		expect(descriptionBlock?.classList.contains('editor-open')).toBe(false);
+	});
+
+	it('posts startCommentReply when reply is clicked', () => {
+		const { dom, messages } = IssuePanelTestHarness.renderIssuePanelDom({
+			comments: [IssuePanelTestHarness.createComment({ id: 'comment-42' })],
+		});
+		const replyButton = dom.window.document.querySelector('.comment-reply');
+		expect(replyButton).toBeTruthy();
+
+		IssuePanelTestHarness.click(replyButton as Element, dom.window);
+
+		const replyMessage = messages.find((message) => message?.type === 'startCommentReply');
+		expect(replyMessage).toBeTruthy();
+		expect(replyMessage.commentId).toBe('comment-42');
+	});
+
+	it('posts cancelCommentReply when cancel reply is clicked', () => {
+		const { dom, messages } = IssuePanelTestHarness.renderIssuePanelDom({
+			commentReplyContext: {
+				commentId: 'comment-42',
+				authorName: 'Helena',
+				timestampLabel: '2/23/2026, 12:30:00 PM',
+				excerpt: 'Original comment body',
+			},
+		});
+		const cancelButton = dom.window.document.querySelector('.comment-reply-cancel');
+		expect(cancelButton).toBeTruthy();
+
+		IssuePanelTestHarness.click(cancelButton as Element, dom.window);
+
+		expect(messages.some((message) => message?.type === 'cancelCommentReply')).toBe(true);
 	});
 });
