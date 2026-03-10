@@ -20,6 +20,7 @@ import {
 } from '../../model/issue.model';
 import { JiraAuthInfo, JiraIssue, ItemsGroupMode, ItemsSortMode, ItemsViewMode } from '../../model/jira.type';
 import { ErrorHelper } from '../../shared/error.helper';
+import { ItemsTreeIdentityService } from '../../services/items-tree-identity.service';
 import { JiraTreeDataProvider } from './base-tree-data.provider';
 import { JiraTreeItem } from './tree-item.view';
 
@@ -408,7 +409,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				return prependSearchNode(nodes);
 			}
 
-			const issueNodes = this.buildIssueNodes(displayedIssues);
+			const issueNodes = this.buildIssueNodes(displayedIssues, selectedProject.key);
 			if (loadMoreNode) {
 				issueNodes.push(loadMoreNode);
 			}
@@ -426,19 +427,25 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		}
 	}
 
-	private buildIssueNodes(issues: JiraIssue[]): JiraTreeItem[] {
+	/**
+	 * Builds the root ticket nodes using the active grouping mode.
+	 */
+	private buildIssueNodes(issues: JiraIssue[], projectKey: string): JiraTreeItem[] {
 		switch (this.groupMode) {
 			case 'none':
 				return issues.map((issue) => JiraTreeItem.createIssueTreeItem(issue));
 			case 'type':
-				return this.buildTypeGroupNodes(issues);
+				return this.buildTypeGroupNodes(issues, projectKey);
 			case 'status':
 			default:
-				return this.buildStatusGroupNodes(issues);
+				return this.buildStatusGroupNodes(issues, projectKey);
 		}
 	}
 
-	private buildStatusGroupNodes(issues: JiraIssue[]): JiraTreeItem[] {
+	/**
+	 * Builds status-based group nodes with stable identifiers so expanded groups stay open after refreshes.
+	 */
+	private buildStatusGroupNodes(issues: JiraIssue[], projectKey: string): JiraTreeItem[] {
 		return IssueModel.groupIssuesByStatus(issues).map((group) => {
 			const childNodes = group.issues.map((issue) => JiraTreeItem.createIssueTreeItem(issue));
 			const label = group.issues.length > 0 ? `${group.statusName} (${group.issues.length})` : group.statusName;
@@ -450,6 +457,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				undefined,
 				childNodes
 			);
+			groupItem.id = ItemsTreeIdentityService.createStatusGroupId(projectKey, group.statusName);
 			groupItem.iconPath = JiraTreeItem.deriveIssueIcon(group.statusName);
 			groupItem.tooltip =
 				group.issues.length === 1
@@ -459,7 +467,10 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		});
 	}
 
-	private buildTypeGroupNodes(issues: JiraIssue[]): JiraTreeItem[] {
+	/**
+	 * Builds issue-type group nodes with stable identifiers so expanded groups stay open after refreshes.
+	 */
+	private buildTypeGroupNodes(issues: JiraIssue[], projectKey: string): JiraTreeItem[] {
 		return this.groupIssuesByType(issues).map((group) => {
 			const childNodes = group.issues.map((issue) => JiraTreeItem.createIssueTreeItem(issue));
 			const label = group.issues.length > 0 ? `${group.typeName} (${group.issues.length})` : group.typeName;
@@ -471,6 +482,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				undefined,
 				childNodes
 			);
+			groupItem.id = ItemsTreeIdentityService.createTypeGroupId(projectKey, group.typeName);
 			groupItem.iconPath = new vscode.ThemeIcon('symbol-class');
 			groupItem.tooltip =
 				group.issues.length === 1
