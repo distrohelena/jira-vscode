@@ -14,9 +14,16 @@ export const ITEMS_GROUP_MODE_KEY = 'jira.itemsGroupMode';
 export const ITEMS_GROUP_MODE_CONTEXT = 'jiraItemsGroupMode';
 export const ITEMS_SORT_MODE_KEY = 'jira.itemsSortMode';
 export const ITEMS_SORT_MODE_CONTEXT = 'jiraItemsSortMode';
+export const NOTIFICATIONS_HISTORY_KEY = 'jira.notificationsHistory';
 export const ITEMS_LOAD_BATCH_SIZE = 500;
 export const PROJECT_ISSUES_PAGE_SIZE = 100;
 export const COMMENT_FETCH_LIMIT = 50;
+export const NOTIFICATIONS_HISTORY_LIMIT = 200;
+export const NOTIFICATIONS_ISSUE_SEARCH_LIMIT = 25;
+export const NOTIFICATIONS_COMMENT_FETCH_LIMIT = 20;
+export const NOTIFICATIONS_CHANGELOG_FETCH_LIMIT = 20;
+export const NOTIFICATIONS_FETCH_CONCURRENCY = 4;
+export const NOTIFICATIONS_LOOKBACK_DAYS = 14;
 
 export const ISSUE_DETAIL_FIELDS = [
 	'created',

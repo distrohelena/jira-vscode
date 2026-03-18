@@ -21,7 +21,7 @@ export type CreateIssueControllerDeps = {
 	authManager: JiraAuthManager;
 	focusManager: JiraFocusManager;
 	projectStatusStore: ProjectStatusStore;
-	refreshItemsView: () => void;
+	revealIssueInItemsView: (issueOrKey?: JiraIssue | string) => Promise<void>;
 	openIssueDetails: (issueOrKey?: JiraIssue | string) => Promise<void>;
 };
 
@@ -31,7 +31,7 @@ export class CreateIssueControllerFactory {
 	}
 
 	private static createCreateIssueControllerInternal(deps: CreateIssueControllerDeps) {
-	const { authManager, focusManager, projectStatusStore, refreshItemsView, openIssueDetails } = deps;
+	const { authManager, focusManager, projectStatusStore, revealIssueInItemsView, openIssueDetails } = deps;
 
 	const createIssue = async (): Promise<void> => {
 		const project = focusManager.getSelectedProject();
@@ -241,6 +241,13 @@ export class CreateIssueControllerFactory {
 				updatePanel({ error: 'Summary is required.', values });
 				return;
 			}
+			const missingRequiredField = (state.createFields ?? []).find(
+				(field) => field.required && !(values.customFields?.[field.id] ?? '').trim()
+			);
+			if (missingRequiredField) {
+				updatePanel({ error: `${missingRequiredField.name} is required.`, values });
+				return;
+			}
 
 			updatePanel({ submitting: true, error: undefined, successIssue: undefined, values });
 			try {
@@ -250,8 +257,13 @@ export class CreateIssueControllerFactory {
 					selectedProject.key,
 					values
 				);
-				refreshItemsView();
-				panel.dispose();
+				updatePanel({
+					submitting: false,
+					error: undefined,
+					successIssue: createdIssue,
+					values,
+				});
+				void revealIssueInItemsView(createdIssue);
 				try {
 					await openIssueDetails(createdIssue);
 				} catch (error) {

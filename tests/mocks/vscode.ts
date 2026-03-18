@@ -32,6 +32,17 @@ export const TreeItemCollapsibleState = {
 	Expanded: 2,
 };
 
+export class TreeItem {
+	command?: unknown;
+	description?: string;
+	contextValue?: string;
+	iconPath?: unknown;
+	tooltip?: string;
+	id?: string;
+
+	constructor(public readonly label: string, public readonly collapsibleState: number) {}
+}
+
 export class EventEmitter<T = void> {
 	readonly event = () => undefined;
 
@@ -48,6 +59,13 @@ export const window = {
 	createWebviewPanel: () => {
 		throw new Error('createWebviewPanel mock is not implemented.');
 	},
+	createOutputChannel: () => ({
+		appendLine: (_value: string) => undefined,
+		append: (_value: string) => undefined,
+		clear: () => undefined,
+		show: () => undefined,
+		dispose: () => undefined,
+	}),
 	showInformationMessage: async () => undefined,
 	showWarningMessage: async () => undefined,
 	showErrorMessage: async () => undefined,
@@ -55,4 +73,3 @@ export const window = {
 	showInputBox: async () => undefined,
 	createTreeView: () => ({}),
 };
-

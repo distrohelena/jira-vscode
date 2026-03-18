@@ -10,6 +10,7 @@ import { IssueControllerFactory } from './controllers/issue.controller';
 import { CreateIssueControllerFactory } from './controllers/create-issue.controller';
 import { CommitController } from './controllers/commit.controller';
 import { JiraItemsTreeDataProvider } from './views/tree/items-tree-data.provider';
+import { JiraNotificationsTreeDataProvider } from './views/tree/notifications-tree-data.provider';
 import { JiraProjectsTreeDataProvider } from './views/tree/projects-tree-data.provider';
 import { JiraSettingsTreeDataProvider } from './views/tree/settings-tree-data.provider';
 import { JiraIssue, JiraProject } from './model/jira.type';
@@ -27,6 +28,7 @@ class ExtensionEntrypoint {
 
 	const projectsProvider = new JiraProjectsTreeDataProvider(context, authManager, focusManager);
 	const itemsProvider = new JiraItemsTreeDataProvider(context, authManager, focusManager, transitionPrefetcher);
+	const notificationsProvider = new JiraNotificationsTreeDataProvider(context, authManager, focusManager);
 	const settingsProvider = new JiraSettingsTreeDataProvider(authManager, focusManager);
 
 	const projectsView = vscode.window.createTreeView('jiraProjectsView', {
@@ -39,6 +41,11 @@ class ExtensionEntrypoint {
 	});
 	itemsProvider.bindView(itemsView);
 
+	const notificationsView = vscode.window.createTreeView('jiraNotificationsView', {
+		treeDataProvider: notificationsProvider,
+	});
+	notificationsProvider.bindView(notificationsView);
+
 	const settingsView = vscode.window.createTreeView('jiraSettingsView', {
 		treeDataProvider: settingsProvider,
 	});
@@ -48,6 +55,7 @@ class ExtensionEntrypoint {
 		projectsProvider.refresh();
 		settingsProvider.refresh();
 		itemsProvider.refresh();
+		notificationsProvider.refresh();
 	};
 
 		const issueController = IssueControllerFactory.create({
@@ -57,11 +65,13 @@ class ExtensionEntrypoint {
 		transitionStore: issueTransitionStore,
 		transitionPrefetcher,
 	});
-		const issueCreationController = CreateIssueControllerFactory.create({
+	const issueCreationController = CreateIssueControllerFactory.create({
 		authManager,
 		focusManager,
 		projectStatusStore,
-		refreshItemsView: () => itemsProvider.refresh(),
+		revealIssueInItemsView: async (issueOrKey?: JiraIssue | string) => {
+			await itemsProvider.revealIssue(issueOrKey);
+		},
 		openIssueDetails: issueController.openIssueDetails,
 	});
 
@@ -100,6 +110,7 @@ class ExtensionEntrypoint {
 		credentialValidationDisposable,
 		projectsView,
 		itemsView,
+		notificationsView,
 		settingsView,
 		vscode.commands.registerCommand('jira.login', async () => {
 			await authManager.login();
@@ -135,6 +146,9 @@ class ExtensionEntrypoint {
 		}),
 		vscode.commands.registerCommand('jira.showUnassignedItems', async () => {
 			await itemsProvider.showUnassignedItems();
+		}),
+		vscode.commands.registerCommand('jira.refreshNotificationsView', async () => {
+			notificationsProvider.refresh();
 		}),
 		vscode.commands.registerCommand('jira.showRecentItems', async () => {
 			await itemsProvider.showAssignedItems();
@@ -200,9 +214,12 @@ class ExtensionEntrypoint {
 		vscode.commands.registerCommand('jira.openIssueDetails', async (issueOrKey?: JiraIssue | string) => {
 			await issueController.openIssueDetails(issueOrKey);
 		}),
-			vscode.commands.registerCommand('jira.commitFromIssue', async (node?: JiraTreeItem) => {
-				await CommitController.commitFromIssue(node);
-			})
+		vscode.commands.registerCommand('jira.commitFromIssue', async (node?: JiraTreeItem) => {
+			await CommitController.commitFromIssue(node);
+		}),
+		vscode.commands.registerCommand('jira.searchCommitHistory', async (node?: JiraTreeItem) => {
+			await CommitController.searchCommitHistory(node);
+		})
 		);
 	}
 	static deactivate(): void {

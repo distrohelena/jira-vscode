@@ -1,6 +1,6 @@
 # Jira VS Code
 
-Jira VS Code is an open-source Visual Studio Code extension for working with Jira Cloud and Jira Server/Data Center without leaving the editor. It combines project browsing, issue triage, inline editing, comments, ticket creation, and commit message helpers in a single sidebar and issue panel workflow.
+Jira VS Code is an open-source Visual Studio Code extension for working with Jira Cloud and Jira Server/Data Center without leaving the editor. It combines project browsing, issue triage, inline editing, comments, activity notifications, ticket creation, and commit message helpers in a single sidebar and issue panel workflow.
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
 
@@ -24,6 +24,13 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 - Keep expanded groups open across refreshes by using stable tree item identities.
 - Show an activity badge for in-progress items.
 
+### Notifications view
+
+- Show a local `My Activity` feed built from supported Jira APIs instead of Jira's private bell inbox.
+- Surface `@mentions`, assignee changes, and recent comment or status activity on issues related to you.
+- Keep recent activity in local history so refreshes do not clear the feed immediately.
+- Refresh the activity feed from the view toolbar.
+
 ### Issue details panel
 
 - Open a dedicated issue panel from the Items tree and reuse the same panel for the same issue instead of opening duplicates.
@@ -34,6 +41,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 - View assignee, reporter, timestamps, related parent/child issues, and rich Jira description content.
 - Open the issue directly in Jira.
 - Start a commit message from the issue key, targeting the repository currently selected in VS Code Source Control.
+- Search local commit history for the issue key and summary in the repository currently selected in VS Code Source Control.
 
 ### Comments
 
@@ -50,7 +58,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 - Load Jira-driven additional fields when the selected project or issue type requires them.
 - Search assignable users and use `Assign to Me` when Jira provides a current user.
 - Preserve create-form state while the panel is hidden.
-- Open the created issue automatically after success.
+- Keep the create panel open after success and reveal or select the created issue in the Items tree.
 
 ### Authentication and validation
 
@@ -63,7 +71,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 1. Install dependencies with `npm install`.
 2. Build the extension with `npm run compile`.
 3. Press `F5` in VS Code to launch an Extension Development Host.
-4. Open the Jira activity bar icon to reveal the `Projects`, `Items`, and `Settings` views.
+4. Open the Jira activity bar icon to reveal the `Projects`, `Items`, `Notifications`, and `Settings` views.
 5. Run `Jira: Log In` and enter your Jira base URL, username/email, and API token or password.
 6. Focus a project in the Projects view.
 7. Use the Items view to filter, search, group, sort, open, create, and update tickets.
@@ -87,7 +95,13 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 - Use `Jira: Search Items` for Jira-backed search.
 - Use the `Group By` and `Sort By` menus to change how the tree is presented.
 
-### 4. Work in the issue panel
+### 4. Review My Activity
+
+- Use the Notifications view to review your local `My Activity` feed.
+- Refresh the feed when you want a newer snapshot of mentions, assignment changes, or activity on issues related to you.
+- Open any notification to jump straight into the corresponding issue details.
+
+### 5. Work in the issue panel
 
 - Open any issue to inspect metadata, reporter, assignee, related issues, and comments.
 - Edit summary or description inline.
@@ -95,12 +109,13 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 - Refresh, add, reply to, or delete comments from the same panel.
 - Replies are posted as regular Jira comments with reply context so they remain readable in Jira itself.
 - Use `Commit from Issue` from the panel or the issue tree context menu to prefill the SCM commit box.
+- Use `Search Commit History` from the panel or the issue tree context menu to search the selected repository's Git log and open a matched commit diff.
 
-### 5. Create new tickets
+### 6. Create new tickets
 
 - Click `+ Ticket` in the Items view.
 - Fill in the form and any additional Jira-required fields.
-- Submit the form to create the ticket and open its details automatically.
+- Submit the form to create the ticket, keep the create panel open, and reveal the new issue in the Items tree.
 
 ## Commands
 
@@ -115,6 +130,7 @@ The extension contributes these commands. Some are primarily exposed through vie
 | `Jira: Clear Project Focus` | Clear the current project focus. |
 | `Refresh` | Refresh the Items view. |
 | `Refresh Projects` | Refresh the Projects view. |
+| `Refresh Notifications` | Refresh the Notifications view. |
 | `Show Recent` | Switch the Projects view to recent projects. |
 | `Show All` | Switch the Projects view or Items view to show all entries for that view. |
 | `Show Favorites` | Switch the Projects view to favorites. |
@@ -133,6 +149,7 @@ The extension contributes these commands. Some are primarily exposed through vie
 | `Sort Items: Alphabetically` | Sort Items by summary/key ordering. |
 | `Jira: Open Issue Details` | Open the issue details panel. |
 | `Jira: Commit From Issue` | Prefill the SCM commit input with the issue key. |
+| `Jira: Search Commit History` | Search the selected repository's local Git history for the issue key and summary. |
 | `Jira: Create Issue` | Open the create issue panel. |
 
 ## Development
@@ -147,7 +164,7 @@ The extension contributes these commands. Some are primarily exposed through vie
 ### Key paths
 
 - `src/extension.entrypoint.ts` wires activation, commands, tree views, and controllers.
-- `src/views/tree/` contains the Projects, Items, and Settings tree providers.
+- `src/views/tree/` contains the Projects, Items, Notifications, and Settings tree providers.
 - `src/views/webview/webview.panel.ts` renders the issue and create-ticket webviews.
 - `src/controllers/` contains issue, create-issue, and commit workflows.
 - `src/jira-api/` contains the reusable Jira API layer.

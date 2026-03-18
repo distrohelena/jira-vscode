@@ -1,4 +1,8 @@
 import {
+	FetchNotificationGroupsOptions,
+	JiraNotificationGroupsResponse,
+} from '../../model/jira-notification-log.type';
+import {
 	CreateIssueFieldDefinition,
 	CreateIssueFormValues,
 	FetchProjectIssuesOptions,
@@ -7,6 +11,7 @@ import {
 	IssueStatusOption,
 	JiraAuthInfo,
 	JiraCommentFormat,
+	JiraIssueChangelogEntry,
 	JiraIssue,
 	JiraIssueComment,
 	JiraProfileResponse,
@@ -123,6 +128,25 @@ export interface IJiraApiClient {
 	fetchIssueComments(authInfo: JiraAuthInfo, token: string, issueKey: string, maxResults?: number): Promise<JiraIssueComment[]>;
 
 	/**
+	 * Loads documented issue changelog entries for the provided issue key.
+	 */
+	fetchIssueChangelog(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		maxResults?: number
+	): Promise<JiraIssueChangelogEntry[]>;
+
+	/**
+	 * Loads grouped notifications from the Atlassian notification-log feed when available.
+	 */
+	fetchNotificationGroups(
+		authInfo: JiraAuthInfo,
+		token: string,
+		options?: FetchNotificationGroupsOptions
+	): Promise<JiraNotificationGroupsResponse>;
+
+	/**
 	 * Adds a new issue comment in plain text or wiki format.
 	 */
 	addIssueComment(
@@ -162,4 +186,9 @@ export interface IJiraApiClient {
 		issueKey: string,
 		desiredStatus?: string
 	): Promise<JiraIssue>;
+
+	/**
+	 * Executes a paged Jira issue search until all available results are collected.
+	 */
+	searchAllIssues(authInfo: JiraAuthInfo, token: string, options: JiraIssueSearchRequest): Promise<JiraIssue[]>;
 }

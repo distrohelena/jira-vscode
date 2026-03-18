@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- No unreleased changes.
+- Added `Search Commit History` on Jira issues, using the repository currently selected in Source Control.
+- Commit history search now scans local Git commit messages for the Jira issue key and summary, shows matches in a picker, and opens the selected commit details.
+
+## 1.0.31
+
+- Added a Notifications view that keeps a local `My Activity` history from supported Jira issue, comment, and changelog APIs.
+- Reworked notifications into a bounded feed for issues related to the current user, surfacing mentions, assignment changes, and comment or status activity without the earlier broad crawl.
+- Creating a ticket now keeps the create panel open and reveals the new issue in the Items tree.
 
 ## 1.0.29
 

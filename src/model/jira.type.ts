@@ -1,4 +1,4 @@
-import type { SourceControlInputBox } from 'vscode';
+import type { SourceControlInputBox, Uri } from 'vscode';
 
 export type JiraServerLabel = 'cloud' | 'custom';
 
@@ -49,6 +49,16 @@ export type JiraIssueComment = {
 	id: string;
 	body?: string;
 	renderedBody?: string;
+
+	/**
+	 * The raw Atlassian Document Format payload returned for the comment body.
+	 */
+	bodyDocument?: unknown;
+
+	/**
+	 * The mention nodes parsed from the raw comment body document.
+	 */
+	mentions?: JiraCommentMention[];
 	authorName?: string;
 	authorAccountId?: string;
 	authorAvatarUrl?: string;
@@ -58,6 +68,91 @@ export type JiraIssueComment = {
 };
 
 export type JiraCommentFormat = 'plain' | 'wiki';
+
+/**
+ * Represents a parsed user mention found inside a Jira comment body.
+ */
+export type JiraCommentMention = {
+	/**
+	 * The Atlassian account identifier attached to the mention node when Jira provides one.
+	 */
+	accountId?: string;
+
+	/**
+	 * The rendered mention text, including the leading @ when Jira provides it.
+	 */
+	text?: string;
+
+	/**
+	 * The Jira user type metadata reported by the mention node.
+	 */
+	userType?: string;
+};
+
+/**
+ * Represents a single field change inside a Jira issue changelog entry.
+ */
+export type JiraIssueChangelogItem = {
+	/**
+	 * The Jira field label reported for the change.
+	 */
+	field: string;
+
+	/**
+	 * The Jira field identifier when the API provides it.
+	 */
+	fieldId?: string;
+
+	/**
+	 * The previous raw value reported by Jira.
+	 */
+	from?: string;
+
+	/**
+	 * The previous human-readable value reported by Jira.
+	 */
+	fromString?: string;
+
+	/**
+	 * The new raw value reported by Jira.
+	 */
+	to?: string;
+
+	/**
+	 * The new human-readable value reported by Jira.
+	 */
+	toString?: string;
+};
+
+/**
+ * Represents a Jira issue changelog entry returned from the documented changelog endpoints.
+ */
+export type JiraIssueChangelogEntry = {
+	/**
+	 * The stable Jira changelog entry identifier.
+	 */
+	id: string;
+
+	/**
+	 * The display name of the user who performed the change.
+	 */
+	authorName?: string;
+
+	/**
+	 * The Jira account identifier of the user who performed the change.
+	 */
+	authorAccountId?: string;
+
+	/**
+	 * The timestamp when the change was recorded.
+	 */
+	created?: string;
+
+	/**
+	 * The list of field changes captured in this changelog entry.
+	 */
+	items: JiraIssueChangelogItem[];
+};
 
 /**
  * Captures the original Jira comment metadata needed to render and persist a reply.
@@ -187,7 +282,45 @@ export type GitAPI = {
 	repositories: GitRepository[];
 };
 
+/**
+ * Represents one Git commit returned by the local commit history search flow.
+ */
+export type GitCommitHistoryEntry = {
+	/**
+	 * The full commit hash used to load details for the selected result.
+	 */
+	hash: string;
+
+	/**
+	 * The shortened commit hash shown in the search result list.
+	 */
+	shortHash: string;
+
+	/**
+	 * The commit author name reported by Git.
+	 */
+	authorName: string;
+
+	/**
+	 * The authored date shown in the search result list.
+	 */
+	authoredDate: string;
+
+	/**
+	 * The commit subject line shown in the search result list.
+	 */
+	subject: string;
+};
+
 export type GitRepository = {
+	/**
+	 * The repository working tree root used to run Git history commands.
+	 */
+	rootUri?: Uri;
+
+	/**
+	 * The SCM input box exposed by the VS Code Git extension.
+	 */
 	inputBox: SourceControlInputBox;
 };
 
@@ -222,11 +355,82 @@ export type JiraNodeKind =
 	| 'loginPrompt'
 	| 'info'
 	| 'logout'
+	| 'notification'
 	| 'project'
 	| 'issue'
 	| 'statusGroup'
 	| 'typeGroup'
 	| 'search';
+
+/**
+ * Defines the supported notification kinds shown in the Notifications view.
+ */
+export type JiraNotificationKind = 'mention' | 'assigned' | 'unassigned' | 'comment' | 'status' | 'other';
+
+/**
+ * Represents a locally persisted notification derived from supported Jira activity APIs.
+ */
+export type JiraNotification = {
+	/**
+	 * The stable local identifier used to merge notification history entries.
+	 */
+	id: string;
+
+	/**
+	 * The notification kind currently represented by this entry.
+	 */
+	kind: JiraNotificationKind;
+
+	/**
+	 * The Jira issue key associated with the notification.
+	 */
+	issueKey: string;
+
+	/**
+	 * The Jira issue summary shown alongside the notification.
+	 */
+	issueSummary: string;
+
+	/**
+	 * The issue status name captured when the notification was created.
+	 */
+	issueStatusName?: string;
+
+	/**
+	 * The user who triggered the notification event.
+	 */
+	actorName: string;
+
+	/**
+	 * The short text shown in the tree row for the notification event.
+	 */
+	message: string;
+
+	/**
+	 * The excerpt captured from the source comment body.
+	 */
+	excerpt?: string;
+
+	/**
+	 * The mention text reported by Jira when available.
+	 */
+	mentionText?: string;
+
+	/**
+	 * The source issue comment identifier when the notification came from a comment.
+	 */
+	commentId?: string;
+
+	/**
+	 * The issue URL used for tooltips and fallback navigation context.
+	 */
+	issueUrl?: string;
+
+	/**
+	 * The event timestamp used for ordering notifications.
+	 */
+	created?: string;
+};
 
 export type FetchProjectIssuesOptions = {
 	onlyAssignedToCurrentUser?: boolean;

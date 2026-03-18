@@ -32,6 +32,20 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private sortMode: ItemsSortMode;
 	private forceRemoteReload = true;
 	private pendingLoadMore = false;
+	/**
+	 * Stores parent relationships for the current tree snapshot so nested issue nodes can be revealed.
+	 */
+	private readonly parentByItem = new Map<JiraTreeItem, JiraTreeItem | undefined>();
+
+	/**
+	 * Indexes the current issue nodes by key for post-refresh selection and reveal operations.
+	 */
+	private readonly issueItemByKey = new Map<string, JiraTreeItem>();
+
+	/**
+	 * Tracks the issue that should be revealed after the next tree refresh finishes rebuilding nodes.
+	 */
+	private pendingRevealIssueKey?: string;
 	private issueCache?: {
 		projectKey: string;
 		viewMode: ItemsViewMode;
@@ -199,9 +213,31 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return this.loadItems(authInfo);
 	}
 
+	/**
+	 * Returns the parent tree item for the current snapshot so VS Code can reveal nested issues.
+	 */
+	getParent(element: JiraTreeItem): JiraTreeItem | undefined {
+		return this.parentByItem.get(element);
+	}
+
 	refresh(): void {
 		this.forceRemoteReload = true;
 		super.refresh();
+	}
+
+	/**
+	 * Refreshes the Items tree and reveals the matching issue once the refreshed nodes are available.
+	 */
+	async revealIssue(issueOrKey?: JiraIssue | string): Promise<void> {
+		const issueKey =
+			typeof issueOrKey === 'string'
+				? issueOrKey.trim()
+				: issueOrKey?.key?.trim();
+		if (!issueKey) {
+			return;
+		}
+		this.pendingRevealIssueKey = issueKey;
+		this.refresh();
 	}
 
 	private async setViewMode(mode: ItemsViewMode): Promise<void> {
@@ -268,13 +304,13 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			this.pendingLoadMore = false;
 			this.updateBadge();
 			this.updateDescription();
-			return [
+			return this.finalizeTreeNodes([
 				new JiraTreeItem(
 					'info',
 					'Missing auth token. Please log in again.',
 					vscode.TreeItemCollapsibleState.None
 				),
-			];
+			]);
 		}
 
 		const selectedProject = this.focusManager.getSelectedProject();
@@ -282,13 +318,13 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			this.pendingLoadMore = false;
 			this.updateBadge();
 			this.updateDescription('No project selected');
-			return [
+			return this.finalizeTreeNodes([
 				new JiraTreeItem(
 				 'info',
 				 'Select a project to see Jira issues.',
 				 vscode.TreeItemCollapsibleState.None
 				),
-			];
+			]);
 		}
 
 		const projectLabel = selectedProject.name
@@ -375,7 +411,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				if (loadMoreNode) {
 					nodes.push(loadMoreNode);
 				}
-				return prependSearchNode(nodes);
+				return this.finalizeTreeNodes(prependSearchNode(nodes));
 			}
 
 			this.transitionPrefetcher.prefetchIssues(selectedProject.key, relevantIssues);
@@ -406,25 +442,81 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				if (loadMoreNode) {
 					nodes.push(loadMoreNode);
 				}
-				return prependSearchNode(nodes);
+				return this.finalizeTreeNodes(prependSearchNode(nodes));
 			}
 
 			const issueNodes = this.buildIssueNodes(displayedIssues, selectedProject.key);
 			if (loadMoreNode) {
 				issueNodes.push(loadMoreNode);
 			}
-			return prependSearchNode(issueNodes);
+			return this.finalizeTreeNodes(prependSearchNode(issueNodes));
 		} catch (error) {
 			const message = ErrorHelper.deriveErrorMessage(error);
 			this.updateBadge();
-			return prependSearchNode([
+			return this.finalizeTreeNodes(prependSearchNode([
 				new JiraTreeItem(
 					'info',
 					`Failed to load project issues: ${message}`,
 					vscode.TreeItemCollapsibleState.None
 				),
-			]);
+			]));
 		}
+	}
+
+	/**
+	 * Captures the current tree snapshot and performs any deferred reveal request against the rebuilt nodes.
+	 */
+	private finalizeTreeNodes(nodes: JiraTreeItem[]): JiraTreeItem[] {
+		this.captureTreeState(nodes);
+		void this.revealPendingIssueNode();
+		return nodes;
+	}
+
+	/**
+	 * Rebuilds the parent and issue lookup indexes for the latest set of root nodes.
+	 */
+	private captureTreeState(nodes: JiraTreeItem[]): void {
+		this.parentByItem.clear();
+		this.issueItemByKey.clear();
+		for (const node of nodes) {
+			this.registerTreeNode(node, undefined);
+		}
+	}
+
+	/**
+	 * Registers a tree item and its descendants so reveal operations can locate the correct node path.
+	 */
+	private registerTreeNode(node: JiraTreeItem, parent: JiraTreeItem | undefined): void {
+		this.parentByItem.set(node, parent);
+		const issueKey = node.issue?.key?.trim();
+		if (issueKey) {
+			this.issueItemByKey.set(issueKey, node);
+		}
+		for (const child of node.children ?? []) {
+			this.registerTreeNode(child, node);
+		}
+	}
+
+	/**
+	 * Reveals the queued issue node after a refresh finishes rebuilding the Items tree.
+	 */
+	private async revealPendingIssueNode(): Promise<void> {
+		const issueKey = this.pendingRevealIssueKey;
+		if (!issueKey) {
+			return;
+		}
+		this.pendingRevealIssueKey = undefined;
+
+		const issueNode = this.issueItemByKey.get(issueKey);
+		if (!issueNode) {
+			return;
+		}
+
+		await this.revealTreeItem(issueNode, {
+			select: true,
+			focus: false,
+			expand: 3,
+		});
 	}
 
 	/**

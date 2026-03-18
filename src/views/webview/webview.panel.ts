@@ -305,7 +305,8 @@ export class JiraWebviewPanel {
 	align-items: flex-start;
 	gap: 8px;
 }
-.issue-commit {
+.issue-commit,
+.issue-search-commit-history {
 	border-radius: 4px;
 	border: 1px solid var(--vscode-button-secondaryBorder, transparent);
 	background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
@@ -315,7 +316,8 @@ export class JiraWebviewPanel {
 	font-size: 0.95em;
 	white-space: nowrap;
 }
-.issue-commit:disabled {
+.issue-commit:disabled,
+.issue-search-commit-history:disabled {
 	opacity: 0.6;
 	cursor: not-allowed;
 }
@@ -881,6 +883,9 @@ export class JiraWebviewPanel {
 					<button type="button" class="issue-commit" data-issue-key="${HtmlHelper.escapeAttribute(
 						issue.key
 					)}" ${isLoading ? 'disabled' : ''}>Commit from Issue</button>
+					<button type="button" class="issue-search-commit-history" data-issue-key="${HtmlHelper.escapeAttribute(
+						issue.key
+					)}" ${isLoading ? 'disabled' : ''}>Search Commit History</button>
 				</div>
 			</div>
 			${messageBanner}
@@ -1302,6 +1307,21 @@ export class JiraWebviewPanel {
 						if (issueKey) {
 							button.disabled = true;
 							vscode.postMessage({ type: 'commitFromIssue', issueKey });
+							setTimeout(() => {
+								button.disabled = false;
+							}, 500);
+						}
+					});
+				});
+				document.querySelectorAll('.issue-search-commit-history').forEach((button) => {
+					button.addEventListener('click', () => {
+						if (button.disabled) {
+							return;
+						}
+						const issueKey = button.getAttribute('data-issue-key');
+						if (issueKey) {
+							button.disabled = true;
+							vscode.postMessage({ type: 'searchCommitHistory', issueKey });
 							setTimeout(() => {
 								button.disabled = false;
 							}, 500);

@@ -170,6 +170,10 @@ export class IssueControllerFactory {
 					await vscode.commands.executeCommand('jira.commitFromIssue', {
 						issue: panelState.issue ?? { key: resolvedIssueKey },
 					});
+				} else if (message?.type === 'searchCommitHistory') {
+					await vscode.commands.executeCommand('jira.searchCommitHistory', {
+						issue: panelState.issue ?? { key: resolvedIssueKey },
+					});
 				} else if (message?.type === 'addComment' && typeof message.body === 'string') {
 					await handleAddComment(message.body);
 				} else if (message?.type === 'deleteComment' && typeof message.commentId === 'string') {

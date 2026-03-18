@@ -3,6 +3,10 @@ import axios, { type AxiosError } from 'axios';
 import { UrlHelper } from '../shared/url.helper';
 import { HtmlHelper } from '../shared/html.helper';
 import {
+	FetchNotificationGroupsOptions,
+	JiraNotificationGroupsResponse,
+} from './jira-notification-log.type';
+import {
 	COMMENT_FETCH_LIMIT,
 	ISSUE_DETAIL_FIELDS,
 	PROJECT_ISSUES_PAGE_SIZE,
@@ -13,6 +17,8 @@ import {
 	IssueAssignableUser,
 	IssueStatusOption,
 	JiraAuthInfo,
+	JiraIssueChangelogEntry,
+	JiraIssueChangelogItem,
 	JiraIssue,
 	JiraIssueComment,
 	JiraProfileResponse,
@@ -25,6 +31,7 @@ import {
 	ProjectIssueTypeStatuses,
 } from './jira.type';
 import { IssueModel } from './issue.model';
+import { JiraCommentMentionService } from '../services/jira-comment-mention.service';
 
 type AssignableUserScope = {
 	issueKey?: string;
@@ -622,7 +629,7 @@ export class JiraApiTransport {
 	throw lastError ?? new Error('Unable to update issue description.');
 }
 
-	static async fetchIssueCommentsInternal(
+static async fetchIssueCommentsInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
@@ -643,6 +650,7 @@ export class JiraApiTransport {
 			const response = await axios.get(endpoint, {
 				params: {
 					maxResults,
+					orderBy: '-created',
 					expand: 'renderedBody',
 				},
 				auth: {
@@ -674,6 +682,78 @@ export class JiraApiTransport {
 	}
 
 	throw lastError ?? new Error('Unable to load comments.');
+}
+
+	static async fetchIssueChangelogInternal(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string,
+	maxResults = 100
+): Promise<JiraIssueChangelogEntry[]> {
+	const sanitizedKey = issueKey?.trim();
+	if (!sanitizedKey) {
+		return [];
+	}
+
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(sanitizedKey)}/changelog`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+	let startAt = 0;
+	const totalLimit = Math.max(maxResults, 1);
+	const pageSize = Math.min(totalLimit, 100);
+	const aggregated: JiraIssueChangelogEntry[] = [];
+
+	while (aggregated.length < totalLimit) {
+		let lastError: unknown;
+		let pageLoaded = false;
+		for (const endpoint of endpoints) {
+			try {
+				const response = await axios.get(endpoint, {
+					params: {
+						startAt,
+						maxResults: pageSize,
+					},
+					auth: {
+						username: authInfo.username,
+						password: token,
+					},
+					headers: {
+						Accept: 'application/json',
+						'User-Agent': 'jira-vscode',
+					},
+				});
+
+				const values: any[] = Array.isArray(response.data?.values)
+					? response.data.values
+					: Array.isArray(response.data?.histories)
+					? response.data.histories
+					: [];
+				const mapped = values
+					.map((entry: any) => mapIssueChangelogEntry(entry))
+					.filter((entry): entry is JiraIssueChangelogEntry => !!entry);
+				aggregated.push(...mapped.slice(0, Math.max(totalLimit - aggregated.length, 0)));
+
+				const total =
+					typeof response.data?.total === 'number'
+						? response.data.total
+						: typeof response.data?.histories?.length === 'number'
+						? response.data.histories.length
+						: undefined;
+				if (mapped.length === 0 || aggregated.length >= totalLimit || (typeof total === 'number' && startAt + mapped.length >= total)) {
+					return aggregated;
+				}
+				startAt += mapped.length;
+				pageLoaded = true;
+				break;
+			} catch (error) {
+				lastError = error;
+			}
+		}
+
+		if (!pageLoaded) {
+			throw lastError ?? new Error('Unable to load issue changelog.');
+		}
+	}
 }
 
 	static async addIssueCommentInternal(
@@ -799,6 +879,8 @@ export class JiraApiTransport {
 			? HtmlHelper.escapeHtml(comment.body).replace(/\r?\n/g, '<br />')
 			: undefined;
 	const sanitized = HtmlHelper.sanitizeRenderedHtml(rendered);
+	const bodyDocument =
+		comment.body && typeof comment.body === 'object' && !Array.isArray(comment.body) ? comment.body : undefined;
 	const authorAccountId = author.accountId ?? author.name ?? author.key;
 	const isCurrentUser = Boolean(
 		(authInfo.accountId && author.accountId && authInfo.accountId === author.accountId) ||
@@ -808,12 +890,50 @@ export class JiraApiTransport {
 		id: String(identifier),
 		body: typeof comment.body === 'string' ? comment.body : undefined,
 		renderedBody: sanitized,
+		bodyDocument,
+		mentions: JiraCommentMentionService.extractMentions(bodyDocument),
 		authorName: author.displayName ?? author.name ?? 'Unknown',
 		authorAccountId: authorAccountId ? String(authorAccountId) : undefined,
 		authorAvatarUrl: avatar,
 		created: comment.created,
 		updated: comment.updated,
 		isCurrentUser,
+	};
+}
+
+	static mapIssueChangelogEntryInternal(entry: any): JiraIssueChangelogEntry | undefined {
+	if (!entry?.id) {
+		return undefined;
+	}
+
+	const author = entry.author ?? {};
+	const items = Array.isArray(entry.items)
+		? entry.items
+				.map((item: any) => mapIssueChangelogItem(item))
+				.filter((item): item is JiraIssueChangelogItem => !!item)
+		: [];
+	return {
+		id: String(entry.id),
+		authorName: author.displayName ?? author.name ?? undefined,
+		authorAccountId: author.accountId ?? author.name ?? author.key ?? undefined,
+		created: typeof entry.created === 'string' ? entry.created : undefined,
+		items,
+	};
+}
+
+	static mapIssueChangelogItemInternal(item: any): JiraIssueChangelogItem | undefined {
+	const field = typeof item?.field === 'string' ? item.field.trim() : '';
+	if (!field) {
+		return undefined;
+	}
+
+	return {
+		field,
+		fieldId: typeof item?.fieldId === 'string' ? item.fieldId : undefined,
+		from: item?.from != null ? String(item.from) : undefined,
+		fromString: typeof item?.fromString === 'string' ? item.fromString : undefined,
+		to: item?.to != null ? String(item.to) : undefined,
+		toString: typeof item?.toString === 'string' ? item.toString : undefined,
 	};
 }
 
@@ -876,12 +996,13 @@ export class JiraApiTransport {
 			continue;
 		}
 		const value = typeof rawValue === 'string' ? rawValue : '';
-		if (value.trim().length === 0) {
+		const mappedValue = JiraApiTransport.buildCreateIssueFieldValueInternal(normalizedFieldId, value);
+		if (mappedValue === undefined) {
 			continue;
 		}
 		payload.fields = {
 			...payload.fields,
-			[normalizedFieldId]: value,
+			[normalizedFieldId]: mappedValue,
 		};
 	}
 	const assigneeIdentifier = values.assigneeAccountId?.trim();
@@ -921,6 +1042,37 @@ export class JiraApiTransport {
 
 	throw lastError ?? new Error('Unable to create Jira issue.');
 }
+
+	/**
+	 * Determines whether Jira create metadata describes the parent issue selector field.
+	 */
+	static isParentCreateFieldInternal(fieldId: string, raw?: any): boolean {
+		const normalizedFieldId = fieldId?.trim().toLowerCase();
+		if (normalizedFieldId === 'parent') {
+			return true;
+		}
+		const systemType = typeof raw?.schema?.system === 'string' ? raw.schema.system.trim().toLowerCase() : '';
+		return systemType === 'parent';
+	}
+
+	/**
+	 * Maps free-form create form text into the Jira REST payload expected for the target field.
+	 */
+	static buildCreateIssueFieldValueInternal(fieldId: string, rawValue: string): unknown {
+		const normalizedFieldId = fieldId?.trim();
+		if (!normalizedFieldId) {
+			return undefined;
+		}
+		const value = typeof rawValue === 'string' ? rawValue : '';
+		const trimmedValue = value.trim();
+		if (!trimmedValue) {
+			return undefined;
+		}
+		if (JiraApiTransport.isParentCreateFieldInternal(normalizedFieldId)) {
+			return /^\d+$/.test(trimmedValue) ? { id: trimmedValue } : { key: trimmedValue };
+		}
+		return value;
+	}
 
 	static async fetchCreateIssueFieldsInternal(
 	authInfo: JiraAuthInfo,
@@ -996,8 +1148,9 @@ export class JiraApiTransport {
 	if (operations.length > 0 && !operations.includes('set')) {
 		return undefined;
 	}
+	const isParentField = JiraApiTransport.isParentCreateFieldInternal(normalizedId, raw);
 	const schemaType = typeof raw?.schema?.type === 'string' ? raw.schema.type.trim().toLowerCase() : '';
-	if (schemaType && schemaType !== 'string') {
+	if (schemaType && schemaType !== 'string' && !isParentField) {
 		return undefined;
 	}
 	const name = typeof raw?.name === 'string' ? raw.name.trim() : normalizedId;
@@ -1006,7 +1159,7 @@ export class JiraApiTransport {
 	}
 	const customType =
 		typeof raw?.schema?.custom === 'string' ? raw.schema.custom.trim().toLowerCase() : '';
-	const multiline = customType.includes('textarea');
+	const multiline = !isParentField && customType.includes('textarea');
 	return {
 		id: normalizedId,
 		name,
@@ -1050,20 +1203,21 @@ export class JiraApiTransport {
 	token: string,
 	options: JiraIssueSearchOptions
 ): Promise<JiraIssue[]> {
-	const maxResults = options.maxResults ?? PROJECT_ISSUES_PAGE_SIZE;
+	const totalLimit = options.maxResults ?? PROJECT_ISSUES_PAGE_SIZE;
+	const pageSize = Math.min(totalLimit, PROJECT_ISSUES_PAGE_SIZE);
 	const aggregated: JiraIssue[] = [];
 	let startAt = options.startAt ?? 0;
 	let nextPageToken = options.nextPageToken;
 
-	while (true) {
+	while (aggregated.length < totalLimit) {
 		const page = await searchJiraIssuesPage(authInfo, token, {
 			jql: options.jql,
-			maxResults,
+			maxResults: pageSize,
 			startAt,
 			nextPageToken,
 			fields: options.fields,
 		});
-		aggregated.push(...page.issues);
+		aggregated.push(...page.issues.slice(0, Math.max(totalLimit - aggregated.length, 0)));
 		if (page.issues.length === 0) {
 			break;
 		}
@@ -1074,7 +1228,7 @@ export class JiraApiTransport {
 			nextPageToken = page.nextPageToken;
 			continue;
 		}
-		if (page.issues.length < maxResults) {
+		if (page.issues.length < pageSize) {
 			break;
 		}
 		startAt += page.issues.length;
@@ -1399,8 +1553,8 @@ export class JiraApiTransport {
 }
 
 	static async fetchAccessibleProjectsInternal(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
-	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
-	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, 'project/search');
+		const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
+		const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, 'project/search');
 
 	let lastError: unknown;
 	for (const endpoint of endpoints) {
@@ -1453,6 +1607,150 @@ export class JiraApiTransport {
 
 	throw lastError;
 }
+
+	/**
+	 * Loads grouped notifications from the Atlassian notification-log feed used by the Jira Cloud UI.
+	 */
+	static async fetchNotificationGroupsInternal(
+		authInfo: JiraAuthInfo,
+		token: string,
+		options?: FetchNotificationGroupsOptions
+	): Promise<JiraNotificationGroupsResponse> {
+		if (authInfo.serverLabel !== 'cloud') {
+			throw new Error('The Atlassian notification-log feed is only available for Jira Cloud.');
+		}
+
+		const endpoints = buildNotificationLogEndpoints(authInfo.baseUrl);
+		let lastError: unknown;
+		for (const endpoint of endpoints) {
+			try {
+				const response = await axios.get(endpoint, {
+					params: buildNotificationLogQueryParameters(options),
+					auth: {
+						username: authInfo.username,
+						password: token,
+					},
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+						'Accept-Language': 'en-US,en;q=0.9',
+						'User-Agent': 'jira-vscode',
+						'x-app-name': 'jira-vscode',
+						'x-app-version': '1.0.32',
+					},
+				});
+				return normalizeNotificationGroupsResponse(response.data);
+			} catch (error) {
+				lastError = error;
+			}
+		}
+
+		throw lastError ?? new Error('Unable to load the Atlassian notification-log feed.');
+	}
+
+	/**
+	 * Normalizes notification-log query options into the repeated query-string shape used by the Atlassian UI.
+	 */
+	static buildNotificationLogQueryParametersInternal(options?: FetchNotificationGroupsOptions): URLSearchParams {
+		const parameters = new URLSearchParams();
+		const appendValue = (key: string, value: string | undefined): void => {
+			const trimmed = value?.trim();
+			if (trimmed) {
+				parameters.append(key, trimmed);
+			}
+		};
+		const appendValues = (key: string, values: string[] | undefined): void => {
+			for (const value of values ?? []) {
+				appendValue(key, value);
+			}
+		};
+
+		appendValue('category', options?.category);
+		appendValue('product', options?.product);
+		appendValue('readState', options?.readState);
+		appendValue('beforeTimestamp', options?.beforeTimestamp);
+		appendValue('afterTimestamp', options?.afterTimestamp);
+		appendValues('includeActor', options?.includeActor);
+		appendValues('excludeActor', options?.excludeActor);
+		appendValue('expand', options?.expand);
+		appendValue('continuationToken', options?.continuationToken);
+		if (typeof options?.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0) {
+			parameters.append('limit', String(Math.trunc(options.limit)));
+		}
+
+		return parameters;
+	}
+
+	/**
+	 * Builds the notification-log endpoint candidates that can proxy the same feed used by the Atlassian web UI.
+	 */
+	static buildNotificationLogEndpointsInternal(baseUrl: string): string[] {
+		const candidates = new Set<string>();
+		const normalizedBaseUrl = UrlHelper.normalizeBaseUrl(baseUrl);
+		if (normalizedBaseUrl) {
+			try {
+				const parsed = new URL(normalizedBaseUrl);
+				candidates.add(parsed.origin);
+			} catch {
+				// ignore invalid URLs and continue with the normalized value
+			}
+		}
+
+		for (const candidate of expandBaseUrlCandidates(baseUrl)) {
+			const normalizedCandidate = UrlHelper.normalizeBaseUrl(candidate);
+			if (normalizedCandidate) {
+				candidates.add(normalizedCandidate);
+			}
+		}
+		candidates.add('https://home.atlassian.com');
+
+		return Array.from(candidates).map(
+			(candidate) => `${UrlHelper.normalizeBaseUrl(candidate)}/gateway/api/notification-log/api/3/notification-groups`
+		);
+	}
+
+	/**
+	 * Validates the notification-log payload and rejects HTML or other unsupported responses.
+	 */
+	static normalizeNotificationGroupsResponseInternal(data: unknown): JiraNotificationGroupsResponse {
+		if (typeof data === 'string') {
+			const trimmed = data.trim();
+			if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') || trimmed.startsWith('<HTML')) {
+				throw new Error('Notification-log endpoint returned HTML instead of JSON.');
+			}
+			try {
+				return normalizeNotificationGroupsResponse(JSON.parse(trimmed));
+			} catch {
+				throw new Error('Notification-log endpoint returned an unsupported response payload.');
+			}
+		}
+
+		if (!data || typeof data !== 'object') {
+			throw new Error('Notification-log endpoint returned an empty response.');
+		}
+
+		const payload = data as {
+			continuationToken?: unknown;
+			groups?: unknown;
+		};
+		if (!Array.isArray(payload.groups)) {
+			throw new Error('Notification-log endpoint returned an unexpected response shape.');
+		}
+
+		return {
+			continuationToken:
+				typeof payload.continuationToken === 'string' && payload.continuationToken.trim().length > 0
+					? payload.continuationToken
+					: undefined,
+			groups: payload.groups.filter(
+				(group): group is JiraNotificationGroupsResponse['groups'][number] =>
+					!!group &&
+					typeof group === 'object' &&
+					typeof (group as { id?: unknown }).id === 'string' &&
+					Array.isArray((group as { notifications?: unknown }).notifications)
+			),
+		};
+	}
 
 	static deriveErrorMessageInternal(error: unknown): string {
 	if (axios.isAxiosError(error)) {
@@ -1707,6 +2005,34 @@ export class JiraApiTransport {
 		return searchJiraIssues(authInfo, token, options);
 	}
 
+	static searchAllIssues(
+		authInfo: JiraAuthInfo,
+		token: string,
+		options: JiraIssueSearchOptions
+	): Promise<JiraIssue[]> {
+		return searchAllJiraIssues(authInfo, token, options);
+	}
+
+	static fetchIssueChangelog(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		maxResults?: number
+	): Promise<JiraIssueChangelogEntry[]> {
+		return fetchIssueChangelog(authInfo, token, issueKey, maxResults);
+	}
+
+	/**
+	 * Loads grouped notifications from the Atlassian notification-log feed.
+	 */
+	static fetchNotificationGroups(
+		authInfo: JiraAuthInfo,
+		token: string,
+		options?: FetchNotificationGroupsOptions
+	): Promise<JiraNotificationGroupsResponse> {
+		return fetchNotificationGroups(authInfo, token, options);
+	}
+
 	static fetchRecentProjects(authInfo: JiraAuthInfo, token: string): Promise<JiraProject[]> {
 		return fetchRecentProjects(authInfo, token);
 	}
@@ -1736,9 +2062,13 @@ const assignIssue = JiraApiTransport.assignIssueInternal;
 const updateIssueSummary = JiraApiTransport.updateIssueSummaryInternal;
 const updateIssueDescription = JiraApiTransport.updateIssueDescriptionInternal;
 const fetchIssueComments = JiraApiTransport.fetchIssueCommentsInternal;
+const fetchIssueChangelog = JiraApiTransport.fetchIssueChangelogInternal;
+const fetchNotificationGroups = JiraApiTransport.fetchNotificationGroupsInternal;
 const addIssueComment = JiraApiTransport.addIssueCommentInternal;
 const deleteIssueComment = JiraApiTransport.deleteIssueCommentInternal;
 const mapIssueComment = JiraApiTransport.mapIssueCommentInternal;
+const mapIssueChangelogEntry = JiraApiTransport.mapIssueChangelogEntryInternal;
+const mapIssueChangelogItem = JiraApiTransport.mapIssueChangelogItemInternal;
 const buildAdfDocumentFromPlainText = JiraApiTransport.buildAdfDocumentFromPlainTextInternal;
 const getApiVersionFromEndpoint = JiraApiTransport.getApiVersionFromEndpointInternal;
 const createJiraIssue = JiraApiTransport.createJiraIssueInternal;
@@ -1757,6 +2087,9 @@ const mapProjectStatusToOption = JiraApiTransport.mapProjectStatusToOptionIntern
 const mapProject = JiraApiTransport.mapProjectInternal;
 const fetchRecentProjects = JiraApiTransport.fetchRecentProjectsInternal;
 const fetchAccessibleProjects = JiraApiTransport.fetchAccessibleProjectsInternal;
+const buildNotificationLogQueryParameters = JiraApiTransport.buildNotificationLogQueryParametersInternal;
+const buildNotificationLogEndpoints = JiraApiTransport.buildNotificationLogEndpointsInternal;
+const normalizeNotificationGroupsResponse = JiraApiTransport.normalizeNotificationGroupsResponseInternal;
 const deriveErrorMessage = JiraApiTransport.deriveErrorMessageInternal;
 const buildRestApiEndpoints = JiraApiTransport.buildRestApiEndpointsInternal;
 const inferServerLabelFromProfile = JiraApiTransport.inferServerLabelFromProfileInternal;

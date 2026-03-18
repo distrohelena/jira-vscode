@@ -2,6 +2,10 @@ import {
 	JiraApiTransport,
 } from '../../model/jira-api.client';
 import {
+	FetchNotificationGroupsOptions,
+	JiraNotificationGroupsResponse,
+} from '../../model/jira-notification-log.type';
+import {
 	CreateIssueFieldDefinition,
 	CreateIssueFormValues,
 	FetchProjectIssuesOptions,
@@ -10,6 +14,7 @@ import {
 	IssueStatusOption,
 	JiraAuthInfo,
 	JiraCommentFormat,
+	JiraIssueChangelogEntry,
 	JiraIssue,
 	JiraIssueComment,
 	JiraProfileResponse,
@@ -87,6 +92,13 @@ export class JiraApiClient implements IJiraApiClient {
 	 */
 	async searchIssues(authInfo: JiraAuthInfo, token: string, options: JiraIssueSearchRequest): Promise<JiraIssue[]> {
 		return JiraApiTransport.searchIssues(authInfo, token, options);
+	}
+
+	/**
+	 * Executes a paged Jira issue search until all available results are collected.
+	 */
+	async searchAllIssues(authInfo: JiraAuthInfo, token: string, options: JiraIssueSearchRequest): Promise<JiraIssue[]> {
+		return JiraApiTransport.searchAllIssues(authInfo, token, options);
 	}
 
 	/**
@@ -171,6 +183,29 @@ export class JiraApiClient implements IJiraApiClient {
 		maxResults?: number
 	): Promise<JiraIssueComment[]> {
 		return JiraApiTransport.fetchIssueComments(authInfo, token, issueKey, maxResults);
+	}
+
+	/**
+	 * Loads documented issue changelog entries for the provided issue key.
+	 */
+	async fetchIssueChangelog(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		maxResults?: number
+	): Promise<JiraIssueChangelogEntry[]> {
+		return JiraApiTransport.fetchIssueChangelog(authInfo, token, issueKey, maxResults);
+	}
+
+	/**
+	 * Loads grouped notifications from the Atlassian notification-log feed.
+	 */
+	async fetchNotificationGroups(
+		authInfo: JiraAuthInfo,
+		token: string,
+		options?: FetchNotificationGroupsOptions
+	): Promise<JiraNotificationGroupsResponse> {
+		return JiraApiTransport.fetchNotificationGroups(authInfo, token, options);
 	}
 
 	/**

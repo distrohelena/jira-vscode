@@ -134,4 +134,17 @@ export abstract class JiraTreeDataProvider implements vscode.TreeDataProvider<Ji
 			this.treeView.description = text || undefined;
 		}
 	}
+
+	/**
+	 * Reveals a bound tree item without requiring derived providers to hold the tree view reference directly.
+	 */
+	protected async revealTreeItem(
+		element: JiraTreeItem,
+		options?: { select?: boolean; focus?: boolean; expand?: number | boolean }
+	): Promise<void> {
+		if (!this.treeView) {
+			return;
+		}
+		await this.treeView.reveal(element, options);
+	}
 }
