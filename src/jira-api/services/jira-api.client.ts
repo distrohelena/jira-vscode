@@ -148,9 +148,9 @@ export class JiraApiClient implements IJiraApiClient {
 	}
 
 	/**
-	 * Assigns an issue to a Jira user account.
+	 * Assigns an issue to a Jira user account or clears the assignee.
 	 */
-	async assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, accountId: string): Promise<void> {
+	async assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, accountId?: string): Promise<void> {
 		return JiraApiTransport.assignIssue(authInfo, token, issueKey, accountId);
 	}
 
@@ -171,6 +171,18 @@ export class JiraApiClient implements IJiraApiClient {
 		description: string
 	): Promise<void> {
 		return JiraApiTransport.updateIssueDescription(authInfo, token, issueKey, description);
+	}
+
+	/**
+	 * Updates or clears the parent issue relationship for an issue.
+	 */
+	async updateIssueParent(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		parentKey?: string
+	): Promise<void> {
+		return JiraApiTransport.updateIssueParent(authInfo, token, issueKey, parentKey);
 	}
 
 	/**

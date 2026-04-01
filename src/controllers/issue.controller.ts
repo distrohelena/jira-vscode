@@ -11,6 +11,7 @@ import {
 	JiraIssue,
 	JiraIssueComment,
 	JiraAuthInfo,
+	JiraRelatedIssue,
 } from '../model/jira.type';
 import { ProjectStatusStore } from '../model/project-status.store';
 import { IssueTransitionStore } from '../model/issue-transition.store';
@@ -18,13 +19,19 @@ import { ProjectTransitionPrefetcher } from '../model/project-transition.prefetc
 import { IssueModel } from '../model/issue.model';
 import { ErrorHelper } from '../shared/error.helper';
 import { IssueCommentReplyService } from '../services/issue-comment-reply.service';
+import { JiraWebviewIconService } from '../services/jira-webview-icon.service';
+import { AssigneePickerController, AssigneePickerSession } from './assignee-picker.controller';
+import { ParentIssuePickerController, ParentIssuePickerSession } from './parent-issue-picker.controller';
 import { JiraWebviewPanel } from '../views/webview/webview.panel';
 
 export type IssueControllerDeps = {
 	authManager: JiraAuthManager;
+	assigneePicker: AssigneePickerController;
+	parentIssuePicker: ParentIssuePickerController;
 	projectStatusStore: ProjectStatusStore;
 	transitionStore: IssueTransitionStore;
 	transitionPrefetcher: ProjectTransitionPrefetcher;
+	webviewIconService: JiraWebviewIconService;
 	refreshAll: () => void;
 };
 
@@ -39,7 +46,7 @@ export class IssueControllerFactory {
 	}
 
 	private static createIssueControllerInternal(deps: IssueControllerDeps) {
-	const { authManager, refreshAll, projectStatusStore, transitionStore, transitionPrefetcher } = deps;
+	const { authManager, assigneePicker, parentIssuePicker, refreshAll, projectStatusStore, transitionStore, transitionPrefetcher, webviewIconService } = deps;
 	const openIssuePanels = new Map<string, OpenPanelEntry>();
 
 	const openIssueDetails = async (issueOrKey?: JiraIssue | string): Promise<void> => {
@@ -103,6 +110,7 @@ export class IssueControllerFactory {
 			descriptionEditPending: boolean;
 			descriptionEditError?: string;
 			loadingIssue: boolean;
+			currentUser?: IssuePanelOptions['currentUser'];
 		} = {
 			issue: initialIssue ?? IssueModel.createPlaceholderIssue(resolvedIssueKey),
 			transitions: cachedTransitions,
@@ -123,6 +131,7 @@ export class IssueControllerFactory {
 			descriptionEditPending: false,
 			descriptionEditError: undefined,
 			loadingIssue: true,
+			currentUser: undefined,
 		};
 
 		const buildCommentOptions = (): IssuePanelOptions => ({
@@ -139,6 +148,7 @@ export class IssueControllerFactory {
 			commentFormat: panelState.commentFormat,
 			commentDraft: panelState.commentDraft,
 			commentReplyContext: panelState.commentReplyContext,
+			currentUser: panelState.currentUser,
 		});
 
 		let disposed = false;
@@ -158,14 +168,20 @@ export class IssueControllerFactory {
 			panelState.issue,
 			initialOptions,
 			async (message) => {
+				if (assigneePickerSession && (await assigneePickerSession.handleMessage(message))) {
+					return;
+				}
+				if (parentPickerSession && (await parentPickerSession.handleMessage(message))) {
+					return;
+				}
 				if (message?.type === 'changeStatus' && typeof message.transitionId === 'string') {
 					await handleStatusChange(message.transitionId);
 				} else if (message?.type === 'changeAssignee' && typeof message.accountId === 'string') {
 					await handleAssigneeChange(message.accountId);
-				} else if (message?.type === 'loadAssignees') {
-					const queryValue =
-						typeof message.query === 'string' ? message.query : panelState.assigneeQuery ?? '';
-					await handleAssigneeSearch(queryValue, !!message.force);
+				} else if (message?.type === 'openAssigneePicker') {
+					await handleAssigneePicker();
+				} else if (message?.type === 'openParentPicker') {
+					await handleParentChange();
 				} else if (message?.type === 'commitFromIssue') {
 					await vscode.commands.executeCommand('jira.commitFromIssue', {
 						issue: panelState.issue ?? { key: resolvedIssueKey },
@@ -197,6 +213,9 @@ export class IssueControllerFactory {
 			}
 		);
 
+		let assigneePickerSession: AssigneePickerSession | undefined;
+		let parentPickerSession: ParentIssuePickerSession | undefined;
+
 		const renderPanel = (options?: IssuePanelOptions) => {
 			const fallbackStatusOptions = panelState.transitions ?? panelState.statusPrefill;
 			const merged: IssuePanelOptions = {
@@ -215,6 +234,13 @@ export class IssueControllerFactory {
 			JiraWebviewPanel.renderIssuePanelContent(panel, panelState.issue, merged);
 		};
 
+		/**
+		 * Resolves Jira-owned icon URLs for the active issue header through the authenticated local cache.
+		 */
+		const resolveIssueForWebview = async (issue: JiraIssue): Promise<JiraIssue> => {
+			return webviewIconService.createIssueWithResolvedIconSources(panel.webview, issue);
+		};
+
 		openIssuePanels.set(resolvedIssueKey, {
 			panel,
 			refresh: () => {
@@ -229,6 +255,8 @@ export class IssueControllerFactory {
 		panel.onDidDispose(() => {
 			disposed = true;
 			openIssuePanels.delete(resolvedIssueKey);
+			assigneePickerSession?.dispose();
+			parentPickerSession?.dispose();
 		});
 
 		void refreshComments(true);
@@ -255,6 +283,10 @@ export class IssueControllerFactory {
 				await vscode.window.showInformationMessage('Log in to Jira to view issue details.');
 				return;
 			}
+			panelState.currentUser = {
+				accountId: authInfo.accountId ?? authInfo.username,
+				displayName: authInfo.displayName ?? authInfo.username,
+			};
 
 			const token = await authManager.getToken();
 			if (!token) {
@@ -271,7 +303,8 @@ export class IssueControllerFactory {
 			}
 
 			try {
-				const issue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const fetchedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const issue = await resolveIssueForWebview(fetchedIssue);
 				const issueProjectKeyResolved = IssueControllerFactory.deriveProjectKeyFromIssueKey(issue.key);
 				if (issueProjectKeyResolved) {
 					void projectStatusStore.ensure(issueProjectKeyResolved);
@@ -348,7 +381,8 @@ export class IssueControllerFactory {
 
 			try {
 				await jiraApiClient.transitionIssueStatus(authInfo, token, resolvedIssueKey, transitionId);
-				const updatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const fetchedUpdatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const updatedIssue = await resolveIssueForWebview(fetchedUpdatedIssue);
 				const updatedProjectKey = IssueControllerFactory.deriveProjectKeyFromIssueKey(updatedIssue.key);
 				if (updatedProjectKey) {
 					void projectStatusStore.ensure(updatedProjectKey);
@@ -421,7 +455,8 @@ export class IssueControllerFactory {
 
 			try {
 				await jiraApiClient.assignIssue(authInfo, token, resolvedIssueKey, accountId);
-				const updatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const fetchedUpdatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const updatedIssue = await resolveIssueForWebview(fetchedUpdatedIssue);
 				if (disposed) {
 					return;
 				}
@@ -446,56 +481,168 @@ export class IssueControllerFactory {
 			}
 		}
 
-		async function handleAssigneeSearch(query?: string, force = false): Promise<void> {
+		async function handleAssigneePicker(): Promise<void> {
 			if (disposed) {
-				return;
-			}
-			const normalizedQuery = query?.trim() ?? '';
-			if (!force && normalizedQuery === panelState.assigneeQuery && panelState.assignableUsers) {
 				return;
 			}
 
 			const authInfo = await authManager.getAuthInfo();
 			const token = await authManager.getToken();
 			if (!authInfo || !token) {
-				await vscode.window.showInformationMessage('Log in to Jira to search for assignees.');
+				await vscode.window.showInformationMessage('Log in to Jira to update the assignee.');
 				return;
 			}
 
-			renderPanel({
-				statusOptions: panelState.transitions,
-				assigneeOptions: panelState.assignableUsers,
-				assigneePending: true,
-				assigneeQuery: normalizedQuery,
-				assigneeAutoFocus: true,
+			if (assigneePickerSession) {
+				return;
+			}
+			assigneePickerSession = assigneePicker.pickAssignee({
+				panel,
+				scopeLabel: `Issue ${resolvedIssueKey}`,
+				authInfo,
+				token,
+				scopeOrIssueKey: resolvedIssueKey,
+				initialSelectedAccountId: panelState.issue.assigneeAccountId ?? undefined,
+				initialSelectedUser: panelState.issue.assigneeAccountId
+					? {
+							accountId: panelState.issue.assigneeAccountId,
+							displayName: panelState.issue.assigneeName ?? panelState.issue.assigneeAccountId,
+							avatarUrl: panelState.issue.assigneeAvatarUrl,
+					  }
+					: undefined,
 			});
-
-			try {
-				const users = await jiraApiClient.fetchAssignableUsers(authInfo, token, resolvedIssueKey, normalizedQuery);
-				if (disposed) {
+			void assigneePickerSession.promise.then(async (selection) => {
+				assigneePickerSession = undefined;
+				if (!selection || disposed) {
 					return;
 				}
-				panelState.assignableUsers = users;
-				panelState.assigneeQuery = normalizedQuery;
+				const currentAccountId = panelState.issue.assigneeAccountId?.trim() ?? '';
+				const nextAccountId =
+					selection.kind === 'user'
+						? selection.user.accountId?.trim() ?? ''
+						: '';
+				if (currentAccountId === nextAccountId) {
+					return;
+				}
+
 				renderPanel({
 					statusOptions: panelState.transitions,
-					assigneeOptions: users,
-					assigneeQuery: normalizedQuery,
-					assigneeAutoFocus: true,
+					assigneeOptions: panelState.assignableUsers,
+					assigneeQuery: panelState.assigneeQuery,
+					loading: true,
 				});
-			} catch (error) {
-				const message = ErrorHelper.deriveErrorMessage(error);
-				if (!disposed) {
+
+				try {
+					await jiraApiClient.assignIssue(authInfo, token, resolvedIssueKey, nextAccountId || undefined);
+					const fetchedUpdatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+					const updatedIssue = await resolveIssueForWebview(fetchedUpdatedIssue);
+					if (disposed) {
+						return;
+					}
+					panelState.issue = updatedIssue;
 					renderPanel({
-						statusOptions: panelState.transitions,
+						statusOptions: panelState.transitions ?? panelState.statusPrefill,
 						assigneeOptions: panelState.assignableUsers,
-						assigneeError: `Failed to load assignable users: ${message}`,
-						assigneeQuery: normalizedQuery,
-						assigneeAutoFocus: true,
+						assigneeQuery: panelState.assigneeQuery,
+						loading: false,
 					});
+					refreshAll();
+				} catch (error) {
+					const message = ErrorHelper.deriveErrorMessage(error);
+					if (!disposed) {
+						renderPanel({
+							statusOptions: panelState.transitions,
+							assigneeOptions: panelState.assignableUsers,
+							assigneeQuery: panelState.assigneeQuery,
+							loading: false,
+							error: `Failed to update assignee: ${message}`,
+						});
+					}
+					await vscode.window.showErrorMessage(`Failed to update assignee: ${message}`);
 				}
-				await vscode.window.showErrorMessage(`Failed to load assignable users: ${message}`);
+			});
+		}
+
+		async function handleParentChange(): Promise<void> {
+			if (disposed) {
+				return;
 			}
+
+			const authInfo = await authManager.getAuthInfo();
+			const token = await authManager.getToken();
+			if (!authInfo || !token) {
+				await vscode.window.showInformationMessage('Log in to Jira to update the parent issue.');
+				return;
+			}
+
+			if (parentPickerSession) {
+				return;
+			}
+			parentPickerSession = parentIssuePicker.pickParentIssue({
+				panel,
+				project: {
+					key: IssueControllerFactory.deriveProjectKeyFromIssueKey(resolvedIssueKey) ?? resolvedIssueKey,
+				},
+				authInfo,
+				token,
+				excludeIssueKey: resolvedIssueKey,
+				initialSelectedIssueKey: panelState.issue.parent?.key ?? undefined,
+			});
+			void parentPickerSession.promise.then(async (selection) => {
+				parentPickerSession = undefined;
+				if (!selection || disposed) {
+					return;
+				}
+				const currentParentKey = panelState.issue.parent?.key?.trim() ?? '';
+				const nextParentKey =
+					selection.kind === 'issue'
+						? selection.issue.key?.trim() ?? ''
+						: '';
+				if (nextParentKey === currentParentKey) {
+					return;
+				}
+
+				renderPanel({
+					statusOptions: panelState.transitions,
+					assigneeOptions: panelState.assignableUsers,
+					assigneeQuery: panelState.assigneeQuery,
+					loading: true,
+				});
+
+				try {
+					await jiraApiClient.updateIssueParent(
+						authInfo,
+						token,
+						resolvedIssueKey,
+						nextParentKey || undefined
+					);
+					const fetchedUpdatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+					const updatedIssue = await resolveIssueForWebview(fetchedUpdatedIssue);
+					if (disposed) {
+						return;
+					}
+					panelState.issue = updatedIssue;
+					renderPanel({
+						statusOptions: panelState.transitions ?? panelState.statusPrefill,
+						assigneeOptions: panelState.assignableUsers,
+						assigneeQuery: panelState.assigneeQuery,
+						loading: false,
+					});
+					refreshAll();
+				} catch (error) {
+					const message = ErrorHelper.deriveErrorMessage(error);
+					if (!disposed) {
+						renderPanel({
+							statusOptions: panelState.transitions,
+							assigneeOptions: panelState.assignableUsers,
+							assigneeQuery: panelState.assigneeQuery,
+							loading: false,
+							error: `Failed to update parent issue: ${message}`,
+						});
+					}
+					await vscode.window.showErrorMessage(`Failed to update parent issue: ${message}`);
+				}
+			});
 		}
 
 		async function handleSummaryUpdate(summary: string): Promise<void> {
@@ -529,7 +676,8 @@ export class IssueControllerFactory {
 
 			try {
 				await jiraApiClient.updateIssueSummary(authInfo, token, resolvedIssueKey, trimmed);
-				const updatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const fetchedUpdatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const updatedIssue = await resolveIssueForWebview(fetchedUpdatedIssue);
 				if (disposed) {
 					return;
 				}
@@ -578,7 +726,8 @@ export class IssueControllerFactory {
 
 			try {
 				await jiraApiClient.updateIssueDescription(authInfo, token, resolvedIssueKey, description);
-				const updatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const fetchedUpdatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
+				const updatedIssue = await resolveIssueForWebview(fetchedUpdatedIssue);
 				if (disposed) {
 					return;
 				}

@@ -1,10 +1,21 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after, before } from 'node:test';
 
 import { IJiraApiClient } from '../../src/jira-api';
 import { JiraNotificationGroupsResponse } from '../../src/model/jira-notification-log.type';
 import { JiraAuthInfo, JiraIssue, JiraIssueChangelogEntry, JiraIssueComment } from '../../src/model/jira.type';
 import { NotificationsFeedService } from '../../src/services/notifications-feed.service';
+
+const fixedNow = Date.parse('2026-03-20T00:00:00.000Z');
+const originalDateNow = Date.now;
+
+before(() => {
+	Date.now = () => fixedNow;
+});
+
+after(() => {
+	Date.now = originalDateNow;
+});
 
 /**
  * Provides compact fixtures for notifications feed tests.

@@ -8,15 +8,26 @@ import { IssueTransitionStore } from './model/issue-transition.store';
 import { ProjectTransitionPrefetcher } from './model/project-transition.prefetcher';
 import { IssueControllerFactory } from './controllers/issue.controller';
 import { CreateIssueControllerFactory } from './controllers/create-issue.controller';
+import { AssigneePickerController } from './controllers/assignee-picker.controller';
+import { ParentIssuePickerController } from './controllers/parent-issue-picker.controller';
 import { CommitController } from './controllers/commit.controller';
 import { JiraItemsTreeDataProvider } from './views/tree/items-tree-data.provider';
 import { JiraNotificationsTreeDataProvider } from './views/tree/notifications-tree-data.provider';
 import { JiraProjectsTreeDataProvider } from './views/tree/projects-tree-data.provider';
 import { JiraSettingsTreeDataProvider } from './views/tree/settings-tree-data.provider';
 import { JiraIssue, JiraProject } from './model/jira.type';
+import { JiraIconCacheService } from './services/jira-icon-cache.service';
+import { JiraIconDownloaderFactory } from './services/jira-icon-downloader.factory';
+import { JiraWebviewIconService } from './services/jira-webview-icon.service';
 import { JiraTreeItem } from './views/tree/tree-item.view';
 
+/**
+ * Wires the extension runtime, services, views, and commands together during activation.
+ */
 class ExtensionEntrypoint {
+	/**
+	 * Activates the extension and connects the tree providers to the Jira service layer.
+	 */
 	static async activate(context: vscode.ExtensionContext): Promise<void> {
 		EnvironmentRuntime.initializeEnvironment(context.extensionUri);
 
@@ -25,9 +36,19 @@ class ExtensionEntrypoint {
 	const projectStatusStore = new ProjectStatusStore(authManager);
 	const issueTransitionStore = new IssueTransitionStore();
 	const transitionPrefetcher = new ProjectTransitionPrefetcher(authManager, projectStatusStore, issueTransitionStore);
+	const iconCacheService = ExtensionEntrypoint.createJiraIconCacheService(context, authManager);
+	const webviewIconService = new JiraWebviewIconService(iconCacheService);
+	const assigneePicker = new AssigneePickerController();
+	const parentIssuePicker = new ParentIssuePickerController(webviewIconService, projectStatusStore);
 
 	const projectsProvider = new JiraProjectsTreeDataProvider(context, authManager, focusManager);
-	const itemsProvider = new JiraItemsTreeDataProvider(context, authManager, focusManager, transitionPrefetcher);
+	const itemsProvider = new JiraItemsTreeDataProvider(
+		context,
+		authManager,
+		focusManager,
+		transitionPrefetcher,
+		iconCacheService
+	);
 	const notificationsProvider = new JiraNotificationsTreeDataProvider(context, authManager, focusManager);
 	const settingsProvider = new JiraSettingsTreeDataProvider(authManager, focusManager);
 
@@ -58,16 +79,21 @@ class ExtensionEntrypoint {
 		notificationsProvider.refresh();
 	};
 
-		const issueController = IssueControllerFactory.create({
+	const issueController = IssueControllerFactory.create({
 		authManager,
+		assigneePicker,
+		parentIssuePicker,
 		refreshAll,
 		projectStatusStore,
 		transitionStore: issueTransitionStore,
 		transitionPrefetcher,
+		webviewIconService,
 	});
 	const issueCreationController = CreateIssueControllerFactory.create({
 		authManager,
 		focusManager,
+		assigneePicker,
+		parentIssuePicker,
 		projectStatusStore,
 		revealIssueInItemsView: async (issueOrKey?: JiraIssue | string) => {
 			await itemsProvider.revealIssue(issueOrKey);
@@ -222,6 +248,23 @@ class ExtensionEntrypoint {
 		})
 		);
 	}
+
+	/**
+	 * Creates the Jira icon cache service and restricts authenticated icon downloads to the Jira server origin.
+	 */
+	private static createJiraIconCacheService(
+		context: vscode.ExtensionContext,
+		authManager: JiraAuthManager
+	): JiraIconCacheService {
+		return new JiraIconCacheService(
+			context.globalStorageUri.fsPath,
+			JiraIconDownloaderFactory.create(authManager)
+		);
+	}
+
+	/**
+	 * Deactivates the extension. No explicit teardown is required yet.
+	 */
 	static deactivate(): void {
 		// nothing to clean up yet
 	}

@@ -16,6 +16,8 @@ import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../../model/jira.const
 import { IssueModel } from '../../model/issue.model';
 import { HtmlHelper } from '../../shared/html.helper';
 import { ViewResource } from '../view.resource';
+import { AssigneePickerOverlay } from './assignee-picker.overlay';
+import { ParentIssuePickerOverlay } from './parent-issue-picker.overlay';
 
 type RichTextEditorRenderOptions = {
 	editorId: string;
@@ -68,7 +70,7 @@ export class JiraWebviewPanel {
 		if (iconPath) {
 			panel.iconPath = iconPath;
 		}
-		const statusIconSrc = ViewResource.getStatusIconWebviewSrc(panel.webview, statusCategory);
+		const statusIconSrc = issue.statusIconSrc?.trim() || ViewResource.getStatusIconWebviewSrc(panel.webview, statusCategory);
 		panel.webview.html = renderIssueDetailsHtml(panel.webview, issue, statusIconSrc, options);
 	}
 
@@ -122,19 +124,34 @@ export class JiraWebviewPanel {
 	const isLoading = options?.loading ?? false;
 	const errorMessage = options?.error;
 	const descriptionSection = errorMessage ? '' : renderDescriptionSection(issue, options, isLoading);
-	const parentSection = errorMessage ? '' : renderParentSection(issue);
+	const parentSection = errorMessage ? '' : renderParentMetadataSection(issue);
 	const childrenSection = errorMessage ? '' : renderChildrenSection(issue);
 	const cspSource = webview.cspSource;
-	const metadataPanel = renderMetadataPanel(issue, assignee, reporter, updatedText, options);
+	const metadataPanel = renderMetadataPanel(issue, parentSection, assignee, reporter, updatedText, options);
 	const issueTypeLabel = (issue.issueTypeName?.trim() || 'Issue').toUpperCase();
-	const statusIconMarkup = `<div class="ticket-icon-block">
+	const effectiveStatusIconSrc = statusIconSrc?.trim();
+	const effectiveIssueTypeIconSrc = issue.issueTypeIconSrc?.trim();
+	const issueTypeIconMarkup = `<div class="ticket-icon-slot">
 		${
-			statusIconSrc
-				? `<img class="status-icon" src="${HtmlHelper.escapeAttribute(statusIconSrc)}" alt="${HtmlHelper.escapeHtml(
+			effectiveIssueTypeIconSrc
+				? `<img class="issue-type-icon" src="${HtmlHelper.escapeAttribute(effectiveIssueTypeIconSrc)}" alt="${HtmlHelper.escapeHtml(
+						issue.issueTypeName ?? 'Issue type'
+					)} icon" />`
+				: '<span class="issue-type-icon issue-type-icon-placeholder" aria-hidden="true"></span>'
+		}
+	</div>`;
+	const statusIconMarkup = `<div class="ticket-icon-slot">
+		${
+			effectiveStatusIconSrc
+				? `<img class="status-icon" src="${HtmlHelper.escapeAttribute(effectiveStatusIconSrc)}" alt="${HtmlHelper.escapeHtml(
 						issue.statusName ?? 'Issue status'
 					)} status icon" />`
-				: ''
+				: '<span class="status-icon status-icon-placeholder" aria-hidden="true"></span>'
 		}
+	</div>`;
+	const ticketIconMarkup = `<div class="ticket-icon-block">
+		${issueTypeIconMarkup}
+		${statusIconMarkup}
 		<div class="ticket-type-label">${HtmlHelper.escapeHtml(issueTypeLabel)}</div>
 	</div>`;
 	let messageBanner = '';
@@ -208,13 +225,34 @@ export class JiraWebviewPanel {
 		height: 56px;
 		flex-shrink: 0;
 		margin-top: 4px;
-		}
+		object-fit: contain;
+	}
+	.issue-type-icon {
+		width: 56px;
+		height: 56px;
+		flex-shrink: 0;
+		object-fit: contain;
+	}
 	.ticket-icon-block {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		flex-shrink: 0;
-		min-width: 56px;
+		min-width: 72px;
+	}
+	.ticket-icon-slot {
+		width: 56px;
+		height: 56px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+	}
+	.ticket-icon-slot .issue-type-icon,
+	.ticket-icon-slot .status-icon,
+	.ticket-icon-slot .issue-type-icon-placeholder,
+	.ticket-icon-slot .status-icon-placeholder {
+		display: block;
 	}
 	.ticket-type-label {
 		margin-top: 4px;
@@ -847,6 +885,8 @@ export class JiraWebviewPanel {
 				font-size: 0.9em;
 			}
 			${richTextEditorStyles}
+			${ParentIssuePickerOverlay.renderStyles()}
+			${AssigneePickerOverlay.renderStyles()}
 			@media (max-width: 900px) {
 				.issue-layout {
 					grid-template-columns: 1fr;
@@ -859,7 +899,7 @@ export class JiraWebviewPanel {
 		<div class="issue-main">
 			<div class="issue-header">
 				<div class="issue-header-main">
-					${statusIconMarkup}
+					${ticketIconMarkup}
 					<div class="issue-header-copy">
 						<h1>${HtmlHelper.escapeHtml(issue.key)}</h1>
 						<div class="${summaryBlockClasses.join(' ')}" data-issue-key="${HtmlHelper.escapeAttribute(
@@ -890,16 +930,19 @@ export class JiraWebviewPanel {
 			</div>
 			${messageBanner}
 			${descriptionSection}
-			${parentSection}
 			${childrenSection}
 			${linkSection}
 			${commentsSection}
 		</div>
 		${metadataPanel}
 	</div>
+	${ParentIssuePickerOverlay.renderHostMarkup()}
+	${AssigneePickerOverlay.renderHostMarkup()}
 			<script nonce="${nonce}">
 				(function () {
 					const vscode = acquireVsCodeApi();
+					${ParentIssuePickerOverlay.renderBootstrapScript()}
+					${AssigneePickerOverlay.renderBootstrapScript()}
 					const logDebug = (event, details) => {
 						try {
 							vscode.postMessage({ type: 'debugLog', event, details });
@@ -1339,87 +1382,20 @@ export class JiraWebviewPanel {
 						vscode.postMessage({ type: 'changeStatus', transitionId, issueKey });
 					});
 				});
-				const requestAssignees = (issueKey, query, force) => {
-					if (!issueKey) {
-						return;
-					}
-					vscode.postMessage({ type: 'loadAssignees', issueKey, query: query ?? '', force: !!force });
-				};
-				const updateApplyState = (select, button) => {
-					if (!button) {
-						return;
-					}
-					const currentAccountId = (select.getAttribute('data-current-account-id') || '').trim();
-					const value = select.value || '';
-					const hasNewSelection = !!value && value !== currentAccountId;
-					button.disabled = select.disabled || !hasNewSelection;
-				};
-
-				document.querySelectorAll('.jira-assignee-select').forEach((select) => {
-					const issueKey = select.getAttribute('data-issue-key');
-					const row = select.closest('.assignee-select-row');
-					const applyButton = row ? row.querySelector('.jira-assignee-apply') : null;
-
-					const ensureAssigneesLoaded = () => {
-						if (!issueKey) {
-							return;
-						}
-						const selector = '.jira-assignee-search[data-issue-key="' + issueKey + '"]';
-						const searchInput = document.querySelector(selector);
-						const query = searchInput ? searchInput.value : '';
-						const loaded = select.getAttribute('data-loaded') === 'true';
-						const lastQuery = select.getAttribute('data-query') || '';
-						if (!loaded || lastQuery !== query) {
-							select.setAttribute('data-loaded', 'pending');
-							select.setAttribute('data-query', query);
-							requestAssignees(issueKey, query);
-						}
-					};
-
-					select.addEventListener('focus', ensureAssigneesLoaded);
-					select.addEventListener('click', ensureAssigneesLoaded);
-					select.addEventListener('change', () => {
-						updateApplyState(select, applyButton);
-					});
-					updateApplyState(select, applyButton);
-				});
-
-				document.querySelectorAll('.jira-assignee-apply').forEach((button) => {
+				document.querySelectorAll('.jira-assignee-assign-me').forEach((button) => {
 					button.addEventListener('click', () => {
 						if (button.disabled) {
 							return;
 						}
-						const row = button.closest('.assignee-select-row');
-						if (!row) {
-							return;
-						}
-						const select = row.querySelector('.jira-assignee-select');
-						if (!select) {
-							return;
-						}
-						const issueKey = select.getAttribute('data-issue-key');
-						const accountId = select.value;
-						if (!accountId || !issueKey) {
+						const issueKey = button.getAttribute('data-issue-key');
+						const accountId = (button.getAttribute('data-account-id') || '').trim();
+						if (!issueKey || !accountId) {
 							return;
 						}
 						button.disabled = true;
-						select.disabled = true;
-						vscode.postMessage({ type: 'changeAssignee', accountId, issueKey });
+						vscode.postMessage({ type: 'changeAssignee', issueKey, accountId });
 					});
 				});
-				document.querySelectorAll('.jira-assignee-search').forEach((input) => {
-				const issueKey = input.getAttribute('data-issue-key');
-				const triggerSearch = () => {
-					requestAssignees(issueKey, input.value, true);
-				};
-				input.addEventListener('keydown', (event) => {
-				if (event.key === 'Enter') {
-					event.preventDefault();
-					triggerSearch();
-					input.dataset.loaded = 'true';
-				}
-			});
-			});
 			const commentForm = document.querySelector('.comment-form');
 			if (commentForm) {
 				const textarea = commentForm.querySelector('.comment-input');
@@ -1520,6 +1496,7 @@ export class JiraWebviewPanel {
 		</div>`
 		: '';
 	const projectLabel = project.name ? `${project.name} (${project.key})` : project.key;
+	const parentSidebarSection = renderCreateParentSidebarSection(state, !!state.submitting);
 	const assigneeSection = renderCreateAssigneeSection(state);
 	const additionalFieldsSection = renderCreateAdditionalFieldsSection(state, !!state.submitting);
 	const buttonLabel = state.submitting ? 'Creating…' : 'Create Ticket';
@@ -1601,6 +1578,51 @@ export class JiraWebviewPanel {
 \t\t\tmin-height: 140px;
 \t\t\tresize: vertical;
 \t\t}
+\t\t.parent-field {
+\t\t\tgap: 8px;
+\t\t}
+\t\t.parent-picker-summary {
+\t\t\tdisplay: flex;
+\t\t\tflex-direction: column;
+\t\t\tjustify-content: center;
+\t\t\tgap: 4px;
+\t\t\tmin-height: 72px;
+\t\t\tpadding: 10px 12px;
+\t\t\tborder: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
+\t\t\tborder-radius: 6px;
+\t\t\tbackground: var(--vscode-editorWidget-background, rgba(255,255,255,0.03));
+\t\t}
+\t\t.parent-picker-summary-key {
+\t\t\tfont-weight: 600;
+\t\t\tmin-height: 1.4em;
+\t\t}
+\t\t.parent-picker-summary-meta {
+\t\t\tcolor: var(--vscode-descriptionForeground);
+\t\t\tfont-size: 0.9em;
+\t\t\tmin-height: 1.2em;
+\t\t}
+\t\t.parent-picker-trigger {
+\t\t\talign-self: flex-start;
+\t\t\tmin-height: 32px;
+\t\t\tpadding: 6px 12px;
+\t\t\tborder-radius: 4px;
+\t\t\tborder: 1px solid var(--vscode-button-secondaryBorder, transparent);
+\t\t\tbackground: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+\t\t\tcolor: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+\t\t\tcursor: pointer;
+\t\t}
+\t\t.parent-picker-card .parent-picker-card-title {
+\t\t\tfont-weight: 600;
+\t\t\tmin-height: 1.4em;
+\t\t}
+\t\t.parent-picker-card .parent-picker-card-detail {
+\t\t\tcolor: var(--vscode-descriptionForeground);
+\t\t\tfont-size: 0.9em;
+\t\t\tmin-height: 1.2em;
+\t\t}
+\t\t.parent-picker-card .parent-picker-card-detail + .parent-picker-card-detail {
+\t\t\tdisplay: none;
+\t\t}
 \t\t.field-required {
 \t\t\tcolor: var(--vscode-errorForeground);
 \t\t}
@@ -1674,17 +1696,25 @@ export class JiraWebviewPanel {
 \t\t\tjustify-content: flex-start;
 \t\t\twidth: 100%;
 \t\t}
-\t\t.jira-create-assign-me {
-\t\t\tpadding: 6px 12px;
-\t\t\tborder-radius: 4px;
-\t\t\tborder: 1px solid var(--vscode-button-secondaryBorder, transparent);
-\t\t\tbackground: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
-\t\t\tcolor: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+\t\t.jira-create-assign-me,
+\t\t.jira-assignee-assign-me {
+\t\t\tpadding: 8px 14px;
+\t\t\tborder-radius: 999px;
+\t\t\tborder: 1px solid color-mix(in srgb, var(--vscode-foreground) 18%, transparent);
+\t\t\tbackground: transparent;
+\t\t\tcolor: var(--vscode-foreground);
 \t\t\tcursor: pointer;
 \t\t\tmin-width: 0;
 \t\t\twidth: 100%;
+\t\t\ttransition: background-color 120ms ease, border-color 120ms ease;
 \t\t}
-\t\t.jira-create-assign-me:disabled {
+\t\t.jira-create-assign-me:hover:not(:disabled),
+\t\t.jira-assignee-assign-me:hover:not(:disabled) {
+\t\t\tbackground: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent);
+\t\t\tborder-color: color-mix(in srgb, var(--vscode-textLink-foreground) 32%, transparent);
+\t\t}
+\t\t.jira-create-assign-me:disabled,
+\t\t.jira-assignee-assign-me:disabled {
 \t\t\topacity: 0.6;
 \t\t\tcursor: not-allowed;
 \t\t}
@@ -1794,6 +1824,8 @@ export class JiraWebviewPanel {
 \t\t\tfont-size: 0.9em;
 \t\t}
 \t\t${richTextEditorStyles}
+\t\t${ParentIssuePickerOverlay.renderStyles()}
+\t\t${AssigneePickerOverlay.renderStyles()}
 \t\ta {
 \t\t\tcolor: var(--vscode-textLink-foreground);
 \t\t\ttext-decoration: none;
@@ -1862,6 +1894,7 @@ export class JiraWebviewPanel {
 \t\t\t\t\t\t${statusPending ? '<div class="muted status-helper">Loading project statuses…</div>' : ''}
 \t\t\t\t\t\t${statusError ? `<div class="status-error">${HtmlHelper.escapeHtml(statusError)}</div>` : ''}
 \t\t\t\t\t</div>
+					${parentSidebarSection}
 \t\t\t\t\t<div class="meta-section">
 \t\t\t\t\t\t<div class="section-title">Assignee</div>
 \t\t\t\t\t\t${assigneeSection}
@@ -1882,16 +1915,17 @@ export class JiraWebviewPanel {
 \t\t\t</div>
 \t\t</form>
 \t</div>
+\t${ParentIssuePickerOverlay.renderHostMarkup()}
+\t${AssigneePickerOverlay.renderHostMarkup()}
 \t<script nonce="${nonce}">
 \t\t(function () {
 \t\t\tconst vscode = acquireVsCodeApi();
+\t\t\t${ParentIssuePickerOverlay.renderBootstrapScript()}
+\t\t\t${AssigneePickerOverlay.renderBootstrapScript()}
 \t\t\t${richTextEditorBootstrapScript}
 \t\t\tinitializeJiraRichTextEditors(document);
 \t\t\tconst form = document.getElementById('create-issue-form');
 \t\t\tconst issueTypeSelect = form ? form.querySelector('select[name="issueType"]') : null;
-\t\t\tconst searchInput = document.querySelector('.jira-create-assignee-search');
-\t\t\tconst select = document.querySelector('.jira-create-assignee-select');
-\t\t\tconst applyButton = document.querySelector('.jira-create-assignee-apply');
 \t\t\tconst assignMeButton = document.querySelector('.jira-create-assign-me');
 \t\t\tconst accountInput = form ? form.querySelector('input[name="assigneeAccountId"]') : null;
 \t\t\tconst displayInput = form ? form.querySelector('input[name="assigneeDisplayName"]') : null;
@@ -1948,26 +1982,6 @@ export class JiraWebviewPanel {
 \t\t\t\t});
 \t\t\t}
 
-\t\t\tconst requestAssignees = (query) => {
-\t\t\t\tif (!select) {
-\t\t\t\t\treturn;
-\t\t\t\t}
-\t\t\t\tconst payload = buildFormPayload();
-\t\t\t\tselect.setAttribute('data-loaded', 'pending');
-\t\t\t\tselect.setAttribute('data-query', query ?? '');
-\t\t\t\tvscode.postMessage({ type: 'loadCreateAssignees', query: query ?? '', values: payload });
-\t\t\t};
-
-\t\t\tconst updateApplyState = () => {
-\t\t\t\tif (!select || !applyButton) {
-\t\t\t\t\treturn;
-\t\t\t\t}
-\t\t\t\tconst current = (select.getAttribute('data-current-account-id') || '').trim();
-\t\t\t\tconst value = (select.value || '').trim();
-\t\t\t\tconst hasChange = value !== current;
-\t\t\t\tapplyButton.disabled = select.disabled || !hasChange;
-\t\t\t};
-
 \t\t\tconst applyLocalSelection = (accountId, displayName, avatarUrl) => {
 \t\t\t\tif (accountInput) {
 \t\t\t\t\taccountInput.value = accountId || '';
@@ -1978,53 +1992,7 @@ export class JiraWebviewPanel {
 \t\t\t\tif (avatarInput) {
 \t\t\t\t\tavatarInput.value = accountId ? avatarUrl : '';
 \t\t\t\t}
-\t\t\t\tif (select) {
-\t\t\t\t\tif (accountId) {
-\t\t\t\t\t\tlet existing = Array.from(select.options).find((option) => option.value === accountId);
-\t\t\t\t\t\tconst label = displayName || accountId;
-\t\t\t\t\t\tif (!existing) {
-\t\t\t\t\t\t\texisting = new Option(label, accountId);
-\t\t\t\t\t\t\tselect.appendChild(existing);
-\t\t\t\t\t\t}
-\t\t\t\t\t\texisting.setAttribute('data-avatar-url', avatarUrl || '');
-\t\t\t\t\t\texisting.textContent = label;
-\t\t\t\t\t\texisting.selected = true;
-\t\t\t\t\t}
-\t\t\t\t\tselect.setAttribute('data-current-account-id', accountId || '');
-\t\t\t\t\tupdateApplyState();
-\t\t\t\t}
 \t\t\t};
-
-\t\t\tif (searchInput) {
-\t\t\t\tsearchInput.addEventListener('keydown', (event) => {
-\t\t\t\t\tif (event.key === 'Enter') {
-\t\t\t\t\t\tevent.preventDefault();
-\t\t\t\t\t\trequestAssignees(searchInput.value || '');
-\t\t\t\t\t}
-\t\t\t\t});
-\t\t\t}
-
-\t\t\tif (select) {
-\t\t\t\tconst ensureLoaded = () => {
-\t\t\t\t\tif (!searchInput) {
-\t\t\t\t\t\treturn;
-\t\t\t\t\t}
-\t\t\t\t\tconst loadState = select.getAttribute('data-loaded');
-\t\t\t\t\tconst pending = loadState === 'pending';
-\t\t\t\t\tconst loaded = loadState === 'true';
-\t\t\t\t\tconst lastQuery = select.getAttribute('data-query') || '';
-\t\t\t\t\tconst currentQuery = searchInput.value || '';
-\t\t\t\t\tif (!pending && (!loaded || lastQuery !== currentQuery)) {
-\t\t\t\t\t\trequestAssignees(currentQuery);
-\t\t\t\t\t}
-\t\t\t\t};
-\t\t\t\tselect.addEventListener('focus', ensureLoaded);
-\t\t\t\tselect.addEventListener('click', ensureLoaded);
-\t\t\t\tselect.addEventListener('change', () => {
-\t\t\t\t\tupdateApplyState();
-\t\t\t\t});
-\t\t\t\tupdateApplyState();
-\t\t\t}
 
 \t\t\tif (assignMeButton) {
 \t\t\t\tassignMeButton.addEventListener('click', () => {
@@ -2046,39 +2014,6 @@ export class JiraWebviewPanel {
 \t\t\t\t\t});
 \t\t\t\t});
 \t\t\t}
-
-\t\t\tif (applyButton && select) {
-\t\t\t\tapplyButton.addEventListener('click', () => {
-\t\t\t\t\tif (applyButton.disabled) {
-\t\t\t\t\t\treturn;
-\t\t\t\t\t}
-\t\t\t\t\tconst selectedOption = select.options[select.selectedIndex];
-\t\t\t\t\tconst displayName = selectedOption ? (selectedOption.textContent || '').trim() : '';
-\t\t\t\t\tconst accountId = select.value || '';
-\t\t\t\t\tconst avatarUrl = selectedOption ? selectedOption.getAttribute('data-avatar-url') || '' : '';
-\t\t\t\t\tconst resolvedDisplayName = accountId ? displayName : '';
-\t\t\t\t\tconst resolvedAvatarUrl = accountId ? avatarUrl : '';
-\t\t\t\t\tif (accountInput) {
-\t\t\t\t\t\taccountInput.value = accountId;
-\t\t\t\t\t}
-\t\t\t\t\tif (displayInput) {
-\t\t\t\t\t\tdisplayInput.value = resolvedDisplayName;
-\t\t\t\t\t}
-\t\t\t\t\tif (avatarInput) {
-\t\t\t\t\t\tavatarInput.value = resolvedAvatarUrl;
-\t\t\t\t\t}
-\t\t\t\t\tselect.setAttribute('data-current-account-id', accountId);
-\t\t\t\t\tupdateApplyState();
-\t\t\t\t\tconst payload = buildFormPayload();
-\t\t\t\t\tvscode.postMessage({
-\t\t\t\t\t\ttype: 'selectCreateAssignee',
-\t\t\t\t\t\taccountId,
-\t\t\t\t\t\tdisplayName: resolvedDisplayName,
-\t\t\t\t\t\tavatarUrl: resolvedAvatarUrl,
-\t\t\t\t\t\tvalues: payload,
-\t\t\t\t\t});
-\t\t\t\t});
-\t\t\t}
 \t\t})();
 \t</script>
 </body>
@@ -2090,9 +2025,13 @@ export class JiraWebviewPanel {
 	const content = parent
 		? renderRelatedIssueButton(parent)
 		: '<div class="muted">No parent issue.</div>';
-	return `<div class="section">
+	const actionLabel = parent ? 'Change parent' : 'Select parent';
+	return `<div class="section parent-section">
 		<div class="section-title">Parent</div>
-		${content}
+		<div class="parent-section-body">
+			${content}
+			<button type="button" class="parent-picker-trigger" data-parent-picker-open>${HtmlHelper.escapeHtml(actionLabel)}</button>
+		</div>
 	</div>`;
 }
 
@@ -2590,8 +2529,27 @@ export class JiraWebviewPanel {
 	</button>`;
 }
 
+	/**
+	 * Renders the parent issue row inside the sidebar metadata card.
+	 */
+	static renderParentMetadataSection(issue: JiraIssue): string {
+		const parent = issue.parent;
+		const content = parent
+			? renderRelatedIssueButton(parent)
+			: '<div class="muted">No parent issue.</div>';
+		const actionLabel = parent ? 'Change parent' : 'Select parent';
+		return `<div class="meta-section">
+			<div class="section-title">Parent Ticket</div>
+			<div class="parent-section-body">
+				${content}
+				<button type="button" class="parent-picker-trigger" data-parent-picker-open>${HtmlHelper.escapeHtml(actionLabel)}</button>
+			</div>
+		</div>`;
+	}
+
 	static renderMetadataPanel(
 	issue: JiraIssue,
+	parentSection: string,
 	assignee: string,
 	reporter: string,
 	updatedText: string,
@@ -2605,6 +2563,7 @@ export class JiraWebviewPanel {
 				<div class="section-title">Status</div>
 				${statusControl}
 			</div>
+			${parentSection}
 			<div class="meta-section">
 				<div class="section-title">Assignee</div>
 				${assigneeControl}
@@ -2674,7 +2633,7 @@ export class JiraWebviewPanel {
 	state: CreateIssuePanelState,
 	disabled: boolean
 ): string {
-	const fields = state.createFields ?? [];
+	const fields = (state.createFields ?? []).filter((field) => !field.isParentField && field.id !== 'parent');
 	const pending = state.createFieldsPending ?? false;
 	const error = state.createFieldsError;
 	if (!pending && !error && fields.length === 0) {
@@ -2684,26 +2643,53 @@ export class JiraWebviewPanel {
 	const disabledAttr = disabled ? 'disabled' : '';
 	const values = state.values.customFields ?? {};
 	const fieldRows = fields
-		.map((field) => renderCreateAdditionalFieldInput(field, values[field.id] ?? '', disabledAttr))
+		.map((field) => renderCreateAdditionalFieldInput(state, field, values[field.id] ?? '', disabledAttr))
 		.join('');
 	const pendingMarkup = pending ? '<div class="muted status-helper">Loading additional fields…</div>' : '';
 	const errorMarkup = error ? `<div class="status-error">${HtmlHelper.escapeHtml(error)}</div>` : '';
 
 	return `<div class="form-field create-additional-fields">
 		<div class="section-title">Additional Fields</div>
-		${pendingMarkup}
-		${errorMarkup}
-		${fieldRows}
+	${pendingMarkup}
+	${errorMarkup}
+	${fieldRows}
 	</div>`;
 }
 
+	/**
+	 * Renders the parent selector in the create form sidebar.
+	 */
+	static renderCreateParentSidebarSection(state: CreateIssuePanelState, disabled: boolean): string {
+		const parentField = (state.createFields ?? []).find((field) => field.isParentField || field.id === 'parent');
+		if (!parentField) {
+			return '';
+		}
+		const parentValue = state.values.customFields?.[parentField.id] ?? '';
+		const disabledAttr = disabled ? 'disabled' : '';
+		const content = renderCreateParentFieldInput(
+			state,
+			parentField,
+			parentValue,
+			disabledAttr,
+			'Parent Ticket'
+		);
+		return `<div class="meta-section">
+			<div class="section-title">Parent Ticket</div>
+			${content}
+		</div>`;
+	}
+
 	static renderCreateAdditionalFieldInput(
+	state: CreateIssuePanelState,
 	field: CreateIssueFieldDefinition,
 	value: string,
 	disabledAttr: string
 ): string {
 	const requiredSuffix = field.required ? ' <span class="field-required">*</span>' : '';
 	const label = `${HtmlHelper.escapeHtml(field.name)}${requiredSuffix}`;
+	if (field.isParentField) {
+		return renderCreateParentFieldInput(state, field, value, disabledAttr, label);
+	}
 	if (field.multiline) {
 		return `<label class="create-custom-field-label" for="${HtmlHelper.escapeAttribute(field.id)}">
 			<span>${label}</span>
@@ -2720,31 +2706,43 @@ export class JiraWebviewPanel {
 	</label>`;
 }
 
+	/**
+	 * Renders the parent selector field so the form can open the dedicated picker instead of accepting raw keys.
+	 */
+	static renderCreateParentFieldInput(
+		state: CreateIssuePanelState,
+		field: CreateIssueFieldDefinition,
+		value: string,
+		disabledAttr: string,
+		label: string
+	): string {
+		const selectedParent = state.selectedParentIssue;
+		const titleLabel = 'Choose a parent ticket';
+		const detailLabel = selectedParent
+			? HtmlHelper.escapeHtml(`${selectedParent.key} - ${selectedParent.summary}`)
+			: 'No parent selected &bull; Unassigned';
+		const fieldId = HtmlHelper.escapeAttribute(field.id);
+		const disabled = disabledAttr ? 'disabled' : '';
+		const ariaLabel = HtmlHelper.escapeAttribute(label);
+		return `<div class="create-custom-field-label parent-field" data-create-parent-field="${fieldId}">
+			<input type="hidden" id="${fieldId}" data-create-custom-field="${fieldId}" value="${HtmlHelper.escapeAttribute(value)}" />
+			<button
+				type="button"
+				class="parent-picker-trigger parent-picker-card"
+				data-parent-picker-open
+				aria-label="${ariaLabel}"
+				${disabled}
+				style="align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; width: 100%; min-height: 72px; padding: 10px 12px; text-align: left; border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1)); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03)); color: var(--vscode-foreground);"
+			>
+				<span class="parent-picker-card-title">${HtmlHelper.escapeHtml(titleLabel)}</span>
+				<span class="parent-picker-card-detail">${detailLabel}</span>
+			</button>
+		</div>`;
+	}
 	static renderCreateAssigneeSection(state: CreateIssuePanelState): string {
-	const pending = state.assigneePending ?? false;
-	const interactionDisabled = !!state.submitting || pending;
-	const queryValue = state.assigneeQuery ?? '';
-	const hasOptions = !!state.assigneeOptions && state.assigneeOptions.length > 0;
-	const selectLoadState = pending ? 'pending' : hasOptions ? 'true' : 'false';
 	const selection = resolveCreateAssigneeSelection(state);
-	const placeholderText = hasOptions
-		? 'Select an assignee'
-		: pending
-		? 'Loading assignable users…'
-		: state.assigneeError
-		? state.assigneeError
-		: 'Search to load assignable users.';
-	const selectOptions = hasOptions ? renderCreateAssigneeOptions(state) : '';
-	const helperText = pending
-		? 'Loading assignable users…'
-		: 'Type a name, press Enter to search, then choose a person and press OK.';
-	const errorText =
-		!pending && state.assigneeError
-			? `<div class="status-error">${HtmlHelper.escapeHtml(state.assigneeError)}</div>`
-			: '';
-	const selectedLabel = selection.label ?? 'Unassigned (assign later)';
-	const selectDisabledAttr = interactionDisabled ? 'disabled' : '';
-	const searchDisabledAttr = interactionDisabled ? 'disabled' : '';
+	const selectedLabel = selection.label ?? 'Unassigned';
+	const disabledAttr = state.submitting ? 'disabled' : '';
 	const assignMeButton =
 		state.currentUser?.accountId && state.currentUser.accountId.trim().length > 0
 			? `<div class="assignee-actions">
@@ -2754,38 +2752,29 @@ export class JiraWebviewPanel {
 					state.currentUser.displayName ?? ''
 				)}" data-avatar-url="${HtmlHelper.escapeAttribute(
 					state.currentUser.avatarUrl ?? ''
-				)}" ${interactionDisabled ? 'disabled' : ''}>Assign to Me</button>
+				)}" ${disabledAttr}>Assign to Me</button>
 			</div>`
 			: '';
-	return `<div class="assignee-card">
-		<div class="assignee-selected">
-			${renderCreateAssigneeAvatar(selection)}
-			<div class="assignee-selected-copy">
-				<div class="muted">Selected</div>
-				<div class="assignee-selected-name">${HtmlHelper.escapeHtml(selectedLabel)}</div>
-			</div>
-		</div>
-		<div class="assignee-control-details">
-			<div class="assignee-search-row">
-				<input type="text" class="jira-create-assignee-search" value="${HtmlHelper.escapeAttribute(
-					queryValue
-				)}" placeholder="Search people" ${searchDisabledAttr} />
-			</div>
-			<div class="assignee-select-row">
-				<select class="jira-create-assignee-select" data-loaded="${HtmlHelper.escapeAttribute(
-					selectLoadState
-				)}" data-query="${HtmlHelper.escapeAttribute(queryValue)}" data-current-account-id="${HtmlHelper.escapeAttribute(
-		state.values.assigneeAccountId ?? ''
-	)}" ${selectDisabledAttr}>
-					<option value="" data-avatar-url="">${HtmlHelper.escapeHtml(placeholderText)}</option>
-					${selectOptions}
-				</select>
-				<button type="button" class="jira-create-assignee-apply" disabled>OK</button>
-			</div>
-			<div class="muted assignee-helper">${HtmlHelper.escapeHtml(helperText)}</div>
-			${errorText}
-			${assignMeButton}
-		</div>
+	const errorText = state.assigneeError
+		? `<div class="status-error">${HtmlHelper.escapeHtml(state.assigneeError)}</div>`
+		: '';
+	return `<div class="assignee-card" data-create-assignee-field>
+		<button
+			type="button"
+			class="parent-picker-trigger parent-picker-card"
+			data-assignee-picker-open
+			aria-label="Assignee"
+			${disabledAttr}
+			style="align-self: stretch; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 72px; padding: 10px 12px; text-align: left; border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1)); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03)); color: var(--vscode-foreground);"
+		>
+			<span data-assignee-card-avatar>${renderCreateAssigneeAvatar(selection)}</span>
+			<span style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0;">
+				<span class="assignee-picker-card-title">${HtmlHelper.escapeHtml('Choose an assignee')}</span>
+				<span class="assignee-picker-card-detail">${HtmlHelper.escapeHtml(selectedLabel)}</span>
+			</span>
+		</button>
+		${assignMeButton}
+		${errorText}
 	</div>`;
 }
 
@@ -2817,33 +2806,8 @@ export class JiraWebviewPanel {
 	return `<div class="assignee-avatar fallback">${HtmlHelper.escapeHtml(initials)}</div>`;
 }
 
-	static renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
-	const options = state.assigneeOptions ?? [];
-	if (options.length === 0) {
-		return '';
-	}
-	const currentId = state.values.assigneeAccountId?.trim();
-	let hasCurrent = false;
-	const rendered = options
-		.map((user) => {
-			const isSelected = !!currentId && user.accountId === currentId;
-			if (isSelected) {
-				hasCurrent = true;
-			}
-			return `<option value="${HtmlHelper.escapeAttribute(user.accountId)}" data-avatar-url="${HtmlHelper.escapeAttribute(
-				user.avatarUrl ?? ''
-			)}" ${
-				isSelected ? 'selected' : ''
-			}>${HtmlHelper.escapeHtml(user.displayName)}</option>`;
-		})
-		.join('');
-	if (currentId && !hasCurrent) {
-		const fallbackLabel = state.values.assigneeDisplayName ?? `Selected (${currentId})`;
-		return `<option value="${HtmlHelper.escapeAttribute(currentId)}" data-avatar-url="${HtmlHelper.escapeAttribute(
-			state.values.assigneeAvatarUrl ?? ''
-		)}" selected>${HtmlHelper.escapeHtml(fallbackLabel)}</option>${rendered}`;
-	}
-	return rendered;
+static renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
+	return '';
 }
 
 	static deriveStatusOptionNames(options?: IssueStatusOption[]): string[] {
@@ -2879,95 +2843,41 @@ export class JiraWebviewPanel {
 	return firstNonDone;
 }
 
-	static renderAssigneeControl(
+static renderAssigneeControl(
 	issue: JiraIssue,
 	currentAssigneeLabel: string,
 	options?: IssuePanelOptions
 ): string {
-	const assigneeOptions = options?.assigneeOptions;
-	const pending = options?.assigneePending;
-	const assigneeError = options?.assigneeError;
-	const currentAccountId = issue.assigneeAccountId;
-	const queryValue = options?.assigneeQuery ?? '';
-	const searchDisabledAttr = pending ? 'disabled' : '';
-
-	if (!assigneeOptions || assigneeOptions.length === 0) {
-		const message = assigneeError
-			? assigneeError
-			: 'Search to load assignable users.';
+	const disabledAttr = options?.assigneePending ? 'disabled' : '';
+	const assignMeButton =
+		options?.currentUser?.accountId && options.currentUser.accountId.trim().length > 0
+			? `<div class="assignee-actions">
+				<button
+					type="button"
+					class="jira-assignee-assign-me"
+					data-issue-key="${HtmlHelper.escapeAttribute(issue.key)}"
+					data-account-id="${HtmlHelper.escapeAttribute(options.currentUser.accountId)}"
+					${disabledAttr}
+				>Assign to Me</button>
+			</div>`
+			: '';
 	return `<div class="assignee-card">
-		<div class="assignee-current-row">
-			${renderAssigneeAvatar(issue)}
-			<div class="assignee-current-copy">
-				<div class="muted">Current</div>
-				<div class="assignee-current-name">${HtmlHelper.escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
-			</div>
-		</div>
-		<div class="assignee-control-details">
-			<div class="assignee-search-row">
-				<input type="text" class="jira-assignee-search" data-issue-key="${HtmlHelper.escapeAttribute(
-					issue.key
-				)}" data-query="${HtmlHelper.escapeAttribute(queryValue)}" value="${HtmlHelper.escapeAttribute(
-					queryValue
-				)}" placeholder="Search people" ${searchDisabledAttr} />
-			</div>
-			<div class="assignee-select-row">
-				<select class="jira-assignee-select" data-issue-key="${HtmlHelper.escapeAttribute(
-					issue.key
-				)}" data-loaded="false" data-query="${HtmlHelper.escapeAttribute(queryValue)}" data-current-account-id="${HtmlHelper.escapeAttribute(
-					currentAccountId ?? ''
-				)}" ${searchDisabledAttr}>
-					<option value="">${HtmlHelper.escapeHtml(message)}</option>
-				</select>
-				<button class="jira-assignee-apply" data-issue-key="${HtmlHelper.escapeAttribute(
-					issue.key
-				)}" title="Apply assignee change" disabled>OK</button>
-			</div>
-		</div>
-	</div>`;
-}
-
-	const selectDisabledAttr = pending ? 'disabled' : '';
-	const selectOptions = assigneeOptions
-		.map((user) => {
-			const isCurrent =
-				(currentAccountId && user.accountId === currentAccountId) ||
-				user.displayName === issue.assigneeName;
-			return `<option value="${HtmlHelper.escapeAttribute(user.accountId)}" ${
-				isCurrent ? 'selected' : ''
-			}>${HtmlHelper.escapeHtml(user.displayName)}</option>`;
-		})
-		.join('');
-	const disabledAttr = pending ? 'disabled' : '';
-
-	return `<div class="assignee-card">
-		<div class="assignee-current-row">
-			${renderAssigneeAvatar(issue)}
-			<div class="assignee-current-copy">
-				<div class="muted">Current</div>
-				<div class="assignee-current-name">${HtmlHelper.escapeHtml(currentAssigneeLabel || 'Unassigned')}</div>
-			</div>
-		</div>
-		<div class="assignee-control-details">
-			<div class="assignee-search-row">
-				<input type="text" class="jira-assignee-search" data-issue-key="${HtmlHelper.escapeAttribute(
-					issue.key
-				)}" value="${HtmlHelper.escapeAttribute(queryValue)}" placeholder="Search people" ${searchDisabledAttr} />
-			</div>
-			<div class="assignee-select-row">
-				<select class="jira-assignee-select" data-issue-key="${HtmlHelper.escapeAttribute(
-					issue.key
-				)}" data-loaded="true" data-query="${HtmlHelper.escapeAttribute(queryValue)}" data-current-account-id="${HtmlHelper.escapeAttribute(
-					currentAccountId ?? ''
-				)}" ${selectDisabledAttr}>
-					${selectOptions}
-				</select>
-				<button class="jira-assignee-apply" data-issue-key="${HtmlHelper.escapeAttribute(
-					issue.key
-				)}" title="Apply assignee change" disabled>OK</button>
-			</div>
-			${assigneeError ? `<div class="status-error">${HtmlHelper.escapeHtml(assigneeError)}</div>` : ''}
-		</div>
+		<button
+			type="button"
+			class="parent-picker-trigger parent-picker-card"
+			data-assignee-picker-open
+			aria-label="Assignee"
+			${disabledAttr}
+			style="align-self: stretch; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 72px; padding: 10px 12px; text-align: left; border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1)); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03)); color: var(--vscode-foreground);"
+		>
+			<span data-assignee-card-avatar>${renderAssigneeAvatar(issue)}</span>
+			<span style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0;">
+				<span class="assignee-picker-card-title">${HtmlHelper.escapeHtml('Choose an assignee')}</span>
+				<span class="assignee-picker-card-detail">${HtmlHelper.escapeHtml(currentAssigneeLabel || 'Unassigned')}</span>
+			</span>
+		</button>
+		${assignMeButton}
+		${options?.assigneeError ? `<div class="status-error">${HtmlHelper.escapeHtml(options.assigneeError)}</div>` : ''}
 	</div>`;
 }
 
@@ -3076,6 +2986,7 @@ const formatDebugDetails = JiraWebviewPanel.formatDebugDetails;
 const renderIssueDetailsHtml = JiraWebviewPanel.renderIssueDetailsHtml;
 const renderCreateIssuePanelHtml = JiraWebviewPanel.renderCreateIssuePanelHtml;
 const renderParentSection = JiraWebviewPanel.renderParentSection;
+const renderParentMetadataSection = JiraWebviewPanel.renderParentMetadataSection;
 const renderChildrenSection = JiraWebviewPanel.renderChildrenSection;
 const renderDescriptionSection = JiraWebviewPanel.renderDescriptionSection;
 const deriveEditableDescriptionText = JiraWebviewPanel.deriveEditableDescriptionText;
@@ -3097,7 +3008,9 @@ const renderStatusControl = JiraWebviewPanel.renderStatusControl;
 const renderIssueTypeOptions = JiraWebviewPanel.renderIssueTypeOptions;
 const renderIssueStatusOptions = JiraWebviewPanel.renderIssueStatusOptions;
 const renderCreateAdditionalFieldsSection = JiraWebviewPanel.renderCreateAdditionalFieldsSection;
+const renderCreateParentSidebarSection = JiraWebviewPanel.renderCreateParentSidebarSection;
 const renderCreateAdditionalFieldInput = JiraWebviewPanel.renderCreateAdditionalFieldInput;
+const renderCreateParentFieldInput = JiraWebviewPanel.renderCreateParentFieldInput;
 const renderCreateAssigneeSection = JiraWebviewPanel.renderCreateAssigneeSection;
 const resolveCreateAssigneeSelection = JiraWebviewPanel.resolveCreateAssigneeSelection;
 const renderCreateAssigneeAvatar = JiraWebviewPanel.renderCreateAssigneeAvatar;

@@ -228,6 +228,18 @@ export class JiraApiTransport {
 	}
 
 	const jqlParts = [`project = ${sanitizedKey}`];
+	const excludeIssueKey = options?.excludeIssueKey?.trim();
+	if (excludeIssueKey) {
+		jqlParts.push(`key != "${escapeJqlValue(excludeIssueKey)}"`);
+	}
+	const issueTypeName = options?.issueTypeName?.trim();
+	if (issueTypeName) {
+		jqlParts.push(`issuetype = "${escapeJqlValue(issueTypeName)}"`);
+	}
+	const statusName = options?.statusName?.trim();
+	if (statusName) {
+		jqlParts.push(`status = "${escapeJqlValue(statusName)}"`);
+	}
 	if (options?.onlyUnassigned) {
 		jqlParts.push('assignee IS EMPTY');
 	} else if (options?.onlyAssignedToCurrentUser) {
@@ -490,11 +502,11 @@ export class JiraApiTransport {
 	throw lastError ?? new Error('Unable to load assignable users.');
 }
 
-	static async assignIssueInternal(
+static async assignIssueInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
-	accountId: string
+	accountId?: string
 ): Promise<void> {
 	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(issueKey)}/assignee`;
@@ -505,8 +517,8 @@ export class JiraApiTransport {
 		try {
 			const body =
 				authInfo.serverLabel === 'cloud'
-					? { accountId }
-					: { name: accountId, accountId };
+					? { accountId: accountId?.trim() || null }
+					: { name: accountId?.trim() || null, accountId: accountId?.trim() || null };
 			await axios.put(
 				endpoint,
 				body,
@@ -529,6 +541,69 @@ export class JiraApiTransport {
 	}
 
 	throw lastError ?? new Error('Unable to update assignee.');
+}
+
+	static async updateIssueParentInternal(
+	authInfo: JiraAuthInfo,
+	token: string,
+	issueKey: string,
+	parentKey?: string
+): Promise<void> {
+	const sanitizedIssueKey = issueKey?.trim();
+	if (!sanitizedIssueKey) {
+		throw new Error('Issue key is required.');
+	}
+	const sanitizedParentKey = parentKey?.trim();
+
+	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
+	const resource = `issue/${encodeURIComponent(sanitizedIssueKey)}`;
+	const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+	const requestBody = sanitizedParentKey
+		? {
+				fields: {
+					parent: JiraApiTransport.buildCreateIssueFieldValueInternal('parent', sanitizedParentKey),
+				},
+		  }
+		: {
+				update: {
+					parent: [
+						{
+							set: {
+								none: true,
+							},
+						},
+					],
+				},
+		  };
+	if (sanitizedParentKey && !requestBody.fields.parent) {
+		throw new Error('Parent issue key is required.');
+	}
+
+	let lastError: unknown;
+	for (const endpoint of endpoints) {
+		try {
+			await axios.put(
+				endpoint,
+				requestBody,
+				{
+					auth: {
+						username: authInfo.username,
+						password: token,
+					},
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+						'User-Agent': 'jira-vscode',
+					},
+				}
+			);
+			return;
+		} catch (error) {
+			lastError = error;
+		}
+	}
+
+	throw lastError ?? new Error('Unable to update parent issue.');
 }
 
 	static async updateIssueSummaryInternal(
@@ -1165,6 +1240,7 @@ static async fetchIssueCommentsInternal(
 		name,
 		required: !!raw?.required,
 		multiline,
+		isParentField,
 	};
 }
 
@@ -1402,6 +1478,8 @@ static async fetchIssueCommentsInternal(
 	const issueType = fields?.issuetype ?? {};
 	const issueTypeId = issueType?.id ? String(issueType.id) : undefined;
 	const issueTypeName = issueType?.name ?? undefined;
+	const issueTypeIconUrl = issueType?.iconUrl ?? undefined;
+	const statusIconUrl = fields?.status?.iconUrl ?? undefined;
 
 	return {
 		id: issue?.id,
@@ -1411,6 +1489,8 @@ static async fetchIssueCommentsInternal(
 		created: fields?.created ?? undefined,
 		issueTypeId,
 		issueTypeName,
+		issueTypeIconUrl,
+		statusIconUrl,
 		assigneeName: fields?.assignee?.displayName ?? fields?.assignee?.name ?? undefined,
 		assigneeUsername: fields?.assignee?.name ?? undefined,
 		assigneeKey: fields?.assignee?.key ?? undefined,
@@ -1483,6 +1563,7 @@ static async fetchIssueCommentsInternal(
 		id: String(transition.id),
 		name,
 		category: IssueModel.determineStatusCategory(categorySource),
+		iconUrl: transition?.to?.iconUrl ?? undefined,
 	};
 }
 
@@ -1504,6 +1585,7 @@ static async fetchIssueCommentsInternal(
 		id: String(idSource),
 		name,
 		category: IssueModel.determineStatusCategory(categorySource),
+		iconUrl: status?.iconUrl ?? undefined,
 	};
 }
 
@@ -1920,9 +2002,9 @@ static async fetchIssueCommentsInternal(
 		return fetchAssignableUsers(authInfo, token, scopeOrIssueKey, query, maxResults);
 	}
 
-	static assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, accountId: string): Promise<void> {
-		return assignIssue(authInfo, token, issueKey, accountId);
-	}
+static assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, accountId?: string): Promise<void> {
+	return assignIssue(authInfo, token, issueKey, accountId);
+}
 
 	static updateIssueSummary(
 		authInfo: JiraAuthInfo,
@@ -1940,6 +2022,15 @@ static async fetchIssueCommentsInternal(
 		description: string
 	): Promise<void> {
 		return updateIssueDescription(authInfo, token, issueKey, description);
+	}
+
+	static updateIssueParent(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		parentKey?: string
+	): Promise<void> {
+		return updateIssueParent(authInfo, token, issueKey, parentKey);
 	}
 
 	static fetchIssueComments(
@@ -2061,6 +2152,7 @@ const fetchAssignableUsers = JiraApiTransport.fetchAssignableUsersInternal;
 const assignIssue = JiraApiTransport.assignIssueInternal;
 const updateIssueSummary = JiraApiTransport.updateIssueSummaryInternal;
 const updateIssueDescription = JiraApiTransport.updateIssueDescriptionInternal;
+const updateIssueParent = JiraApiTransport.updateIssueParentInternal;
 const fetchIssueComments = JiraApiTransport.fetchIssueCommentsInternal;
 const fetchIssueChangelog = JiraApiTransport.fetchIssueChangelogInternal;
 const fetchNotificationGroups = JiraApiTransport.fetchNotificationGroupsInternal;

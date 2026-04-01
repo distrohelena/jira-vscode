@@ -27,6 +27,24 @@ export type JiraIssue = {
 	created?: string;
 	issueTypeId?: string;
 	issueTypeName?: string;
+	/**
+	 * Carries the issue type icon URL reported by Jira for the issue's type metadata.
+	 */
+	issueTypeIconUrl?: string;
+
+	/**
+	 * Carries the webview-safe issue type icon source resolved through the authenticated icon cache.
+	 */
+	issueTypeIconSrc?: string;
+	/**
+	 * Carries the status icon URL reported by Jira for the issue's current status metadata.
+	 */
+	statusIconUrl?: string;
+
+	/**
+	 * Carries the webview-safe status icon source resolved through the authenticated icon cache.
+	 */
+	statusIconSrc?: string;
 	assigneeName?: string;
 	assigneeUsername?: string;
 	assigneeKey?: string;
@@ -185,6 +203,10 @@ export type IssueStatusOption = {
 	id: string;
 	name: string;
 	category?: IssueStatusCategory;
+	/**
+	 * Carries the Jira status icon URL when the source payload exposes one.
+	 */
+	iconUrl?: string;
 };
 
 export type ProjectIssueTypeStatuses = {
@@ -204,6 +226,26 @@ export type IssueAssignableUser = {
 	avatarUrl?: string;
 };
 
+/**
+ * Represents the authenticated Jira user when a screen needs self-assignment shortcuts.
+ */
+export type CurrentJiraUser = {
+	/**
+	 * The Jira account identifier used for assignment actions.
+	 */
+	accountId?: string;
+
+	/**
+	 * The display name shown beside self-assignment controls.
+	 */
+	displayName?: string;
+
+	/**
+	 * The avatar image used when the UI renders the current user.
+	 */
+	avatarUrl?: string;
+};
+
 export type IssuePanelOptions = {
 	loading?: boolean;
 	error?: string;
@@ -219,6 +261,7 @@ export type IssuePanelOptions = {
 	assigneeError?: string;
 	assigneeQuery?: string;
 	assigneeAutoFocus?: boolean;
+	currentUser?: CurrentJiraUser;
 	comments?: JiraIssueComment[];
 	commentsError?: string;
 	commentsPending?: boolean;
@@ -250,6 +293,10 @@ export type CreateIssueFieldDefinition = {
 	name: string;
 	required: boolean;
 	multiline: boolean;
+	/**
+	 * Marks the Jira parent selector so the create form can render a picker instead of a plain text input.
+	 */
+	isParentField?: boolean;
 };
 
 export type CreateIssuePanelState = {
@@ -260,15 +307,15 @@ export type CreateIssuePanelState = {
 	createFieldsPending?: boolean;
 	createFieldsError?: string;
 	successIssue?: JiraIssue;
-	currentUser?: {
-		accountId?: string;
-		displayName?: string;
-		avatarUrl?: string;
-	};
+	currentUser?: CurrentJiraUser;
 	assigneeOptions?: IssueAssignableUser[];
 	assigneePending?: boolean;
 	assigneeError?: string;
 	assigneeQuery?: string;
+	/**
+	 * Carries the last resolved parent issue so the form can show a stable summary label.
+	 */
+	selectedParentIssue?: JiraRelatedIssue;
 	statusOptions?: IssueStatusOption[];
 	statusPending?: boolean;
 	statusError?: string;
@@ -436,6 +483,9 @@ export type FetchProjectIssuesOptions = {
 	onlyAssignedToCurrentUser?: boolean;
 	onlyUnassigned?: boolean;
 	searchQuery?: string;
+	issueTypeName?: string;
+	statusName?: string;
+	excludeIssueKey?: string;
 	maxResults?: number;
 	startAt?: number;
 	nextPageToken?: string;

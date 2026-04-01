@@ -14,3 +14,4 @@
 - Avoid half-measures that patch broken state; ensure systems are correctly initialized or fix the underlying cause instead of bolting on runtime fixes
 - Always implement API endpoints strictly from the official documentation, never from memory
 - Never add proactive UI/behavior changes without asking the user first and getting explicit approval.
+- Reserve enough layout space for interactive UI states so controls, labels, and panels do not shift when users hover, focus, load content, expand sections, or trigger validation messages.

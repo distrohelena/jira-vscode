@@ -3,8 +3,18 @@ import * as vscode from 'vscode';
 import { JiraIssue, JiraNodeKind, JiraProject } from '../../model/jira.type';
 import { IssueModel } from '../../model/issue.model';
 
+/**
+ * Represents one node rendered in a Jira tree view, including optional backing issue and child nodes.
+ */
 export class JiraTreeItem extends vscode.TreeItem {
+	/**
+	 * Stores the project associated with project-oriented nodes so context commands can reuse it.
+	 */
 	project?: JiraProject;
+
+	/**
+	 * Creates one tree item with the supplied Jira node metadata.
+	 */
 	constructor(
 		public readonly kind: JiraNodeKind,
 		label: string,
@@ -17,7 +27,10 @@ export class JiraTreeItem extends vscode.TreeItem {
 		this.command = command;
 	}
 
-	static createIssueTreeItem(issue: JiraIssue): JiraTreeItem {
+	/**
+	 * Builds one issue row using a resolved Jira icon when available and the theme-based status icon otherwise.
+	 */
+	static createIssueTreeItem(issue: JiraIssue, resolvedIconPath?: string): JiraTreeItem {
 		const displayKey = JiraTreeItem.normalizeIssueKeyForTree(issue.key);
 		const displaySummary = JiraTreeItem.normalizeIssueSummaryForTree(issue.summary);
 		const item = new JiraTreeItem(
@@ -28,14 +41,17 @@ export class JiraTreeItem extends vscode.TreeItem {
 			issue
 		);
 		item.tooltip = `${issue.summary}\nStatus: ${issue.statusName}\nUpdated: ${new Date(issue.updated).toLocaleString()}`;
-		JiraTreeItem.contextualizeIssue(item, issue);
+		JiraTreeItem.contextualizeIssue(item, issue, resolvedIconPath);
 		return item;
 	}
 
-	static contextualizeIssue(item: JiraTreeItem, issue: JiraIssue): void {
+	/**
+	 * Applies the shared Jira issue presentation metadata without replacing an already-resolved Jira icon.
+	 */
+	static contextualizeIssue(item: JiraTreeItem, issue: JiraIssue, resolvedIconPath?: string): void {
 		item.contextValue = 'jiraIssue';
 		item.description = JiraTreeItem.formatIssueDateForTree(issue.updated);
-		item.iconPath = JiraTreeItem.deriveIssueIcon(issue.statusName);
+		item.iconPath = resolvedIconPath ?? JiraTreeItem.deriveIssueIcon(issue.statusName);
 		if (issue.key) {
 			item.command = {
 				command: 'jira.openIssueDetails',
@@ -45,6 +61,9 @@ export class JiraTreeItem extends vscode.TreeItem {
 		}
 	}
 
+	/**
+	 * Maps Jira status names to the existing theme-based fallback icon palette.
+	 */
 	static deriveIssueIcon(statusName?: string): vscode.ThemeIcon {
 		const category = IssueModel.determineStatusCategory(statusName);
 		const iconName = 'circle-filled';
@@ -60,6 +79,9 @@ export class JiraTreeItem extends vscode.TreeItem {
 		}
 	}
 
+	/**
+	 * Normalizes Jira summaries so tree labels stay readable even when Jira returns control characters.
+	 */
 	private static normalizeIssueSummaryForTree(summary: string | undefined): string {
 		if (!summary) {
 			return 'Untitled';
@@ -72,6 +94,9 @@ export class JiraTreeItem extends vscode.TreeItem {
 		return collapsed.length > 0 ? collapsed : 'Untitled';
 	}
 
+	/**
+	 * Normalizes Jira issue keys before they are shown in tree labels.
+	 */
 	private static normalizeIssueKeyForTree(key: string | undefined): string {
 		if (!key) {
 			return 'UNKNOWN';
@@ -82,6 +107,9 @@ export class JiraTreeItem extends vscode.TreeItem {
 		return trimmed.length > 0 ? trimmed : key;
 	}
 
+	/**
+	 * Formats the issue update timestamp for the tree description while tolerating invalid Jira values.
+	 */
 	private static formatIssueDateForTree(updated: string | undefined): string {
 		if (!updated) {
 			return 'Unknown date';

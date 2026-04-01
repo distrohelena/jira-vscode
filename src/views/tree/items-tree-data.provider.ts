@@ -21,9 +21,13 @@ import {
 import { JiraAuthInfo, JiraIssue, ItemsGroupMode, ItemsSortMode, ItemsViewMode } from '../../model/jira.type';
 import { ErrorHelper } from '../../shared/error.helper';
 import { ItemsTreeIdentityService } from '../../services/items-tree-identity.service';
+import { JiraIconCacheService } from '../../services/jira-icon-cache.service';
 import { JiraTreeDataProvider } from './base-tree-data.provider';
 import { JiraTreeItem } from './tree-item.view';
 
+/**
+ * Provides the Items tree nodes, including grouping, sorting, filtering, reveal state, and Jira icon resolution.
+ */
 export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	private viewMode: ItemsViewMode;
 	private searchQuery: string;
@@ -46,6 +50,11 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	 * Tracks the issue that should be revealed after the next tree refresh finishes rebuilding nodes.
 	 */
 	private pendingRevealIssueKey?: string;
+
+	/**
+	 * Prevents multiple cache-only refreshes from being queued while one icon warm-up repaint is already scheduled.
+	 */
+	private iconWarmRefreshQueued = false;
 	private issueCache?: {
 		projectKey: string;
 		viewMode: ItemsViewMode;
@@ -60,7 +69,8 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		private readonly extensionContext: vscode.ExtensionContext,
 		authManager: JiraAuthManager,
 		focusManager: JiraFocusManager,
-		private readonly transitionPrefetcher: ProjectTransitionPrefetcher
+		private readonly transitionPrefetcher: ProjectTransitionPrefetcher,
+		private readonly iconCacheService?: JiraIconCacheService
 	) {
 		super(authManager, focusManager);
 		const stored = this.extensionContext.workspaceState.get<string>(ITEMS_VIEW_MODE_KEY);
@@ -416,6 +426,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 			this.transitionPrefetcher.prefetchIssues(selectedProject.key, relevantIssues);
 			const displayedIssues = showingScopedItems ? this.applySearchFilter(relevantIssues) : relevantIssues;
+			this.warmIssueIcons(displayedIssues);
 
 			const filtered = showingScopedItems && this.searchQuery.length > 0;
 			const inProgressCount = this.countInProgressIssues(displayedIssues);
@@ -445,7 +456,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				return this.finalizeTreeNodes(prependSearchNode(nodes));
 			}
 
-			const issueNodes = this.buildIssueNodes(displayedIssues, selectedProject.key);
+			const issueNodes = await this.buildIssueNodes(displayedIssues, selectedProject.key);
 			if (loadMoreNode) {
 				issueNodes.push(loadMoreNode);
 			}
@@ -522,10 +533,10 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	/**
 	 * Builds the root ticket nodes using the active grouping mode.
 	 */
-	private buildIssueNodes(issues: JiraIssue[], projectKey: string): JiraTreeItem[] {
+	private async buildIssueNodes(issues: JiraIssue[], projectKey: string): Promise<JiraTreeItem[]> {
 		switch (this.groupMode) {
 			case 'none':
-				return issues.map((issue) => JiraTreeItem.createIssueTreeItem(issue));
+				return Promise.all(issues.map((issue) => this.createIssueTreeItem(issue)));
 			case 'type':
 				return this.buildTypeGroupNodes(issues, projectKey);
 			case 'status':
@@ -537,9 +548,9 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	/**
 	 * Builds status-based group nodes with stable identifiers so expanded groups stay open after refreshes.
 	 */
-	private buildStatusGroupNodes(issues: JiraIssue[], projectKey: string): JiraTreeItem[] {
-		return IssueModel.groupIssuesByStatus(issues).map((group) => {
-			const childNodes = group.issues.map((issue) => JiraTreeItem.createIssueTreeItem(issue));
+	private async buildStatusGroupNodes(issues: JiraIssue[], projectKey: string): Promise<JiraTreeItem[]> {
+		return Promise.all(IssueModel.groupIssuesByStatus(issues).map(async (group) => {
+			const childNodes = await Promise.all(group.issues.map((issue) => this.createIssueTreeItem(issue)));
 			const label = group.issues.length > 0 ? `${group.statusName} (${group.issues.length})` : group.statusName;
 			const groupItem = new JiraTreeItem(
 				'statusGroup',
@@ -550,21 +561,23 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				childNodes
 			);
 			groupItem.id = ItemsTreeIdentityService.createStatusGroupId(projectKey, group.statusName);
-			groupItem.iconPath = JiraTreeItem.deriveIssueIcon(group.statusName);
+			groupItem.iconPath =
+				(await this.resolveFirstCachedIconUri(group.issues.map((issue) => issue.statusIconUrl))) ??
+				JiraTreeItem.deriveIssueIcon(group.statusName);
 			groupItem.tooltip =
 				group.issues.length === 1
 					? `1 issue in ${group.statusName}`
 					: `${group.issues.length} issues in ${group.statusName}`;
 			return groupItem;
-		});
+		}));
 	}
 
 	/**
 	 * Builds issue-type group nodes with stable identifiers so expanded groups stay open after refreshes.
 	 */
-	private buildTypeGroupNodes(issues: JiraIssue[], projectKey: string): JiraTreeItem[] {
-		return this.groupIssuesByType(issues).map((group) => {
-			const childNodes = group.issues.map((issue) => JiraTreeItem.createIssueTreeItem(issue));
+	private async buildTypeGroupNodes(issues: JiraIssue[], projectKey: string): Promise<JiraTreeItem[]> {
+		return Promise.all(this.groupIssuesByType(issues).map(async (group) => {
+			const childNodes = await Promise.all(group.issues.map((issue) => this.createIssueTreeItem(issue)));
 			const label = group.issues.length > 0 ? `${group.typeName} (${group.issues.length})` : group.typeName;
 			const groupItem = new JiraTreeItem(
 				'typeGroup',
@@ -575,15 +588,20 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				childNodes
 			);
 			groupItem.id = ItemsTreeIdentityService.createTypeGroupId(projectKey, group.typeName);
-			groupItem.iconPath = new vscode.ThemeIcon('symbol-class');
+			groupItem.iconPath =
+				(await this.resolveFirstCachedIconUri(group.issues.map((issue) => issue.issueTypeIconUrl))) ??
+				new vscode.ThemeIcon('symbol-class');
 			groupItem.tooltip =
 				group.issues.length === 1
 					? `1 issue in ${group.typeName}`
 					: `${group.issues.length} issues in ${group.typeName}`;
 			return groupItem;
-		});
+		}));
 	}
 
+	/**
+	 * Groups issues by their Jira issue type name while preserving a predictable display order.
+	 */
 	private groupIssuesByType(issues: JiraIssue[]): Array<{ typeName: string; issues: JiraIssue[] }> {
 		const groups = new Map<string, { typeName: string; issues: JiraIssue[] }>();
 		for (const issue of issues) {
@@ -599,6 +617,81 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return Array.from(groups.values()).sort((a, b) => a.typeName.localeCompare(b.typeName));
 	}
 
+	/**
+	 * Creates one issue node after resolving the preferred cached Jira icon for that issue.
+	 */
+	private async createIssueTreeItem(issue: JiraIssue): Promise<JiraTreeItem> {
+		const resolvedIconPath = await this.resolveIssueIconPath(issue);
+		return JiraTreeItem.createIssueTreeItem(issue, resolvedIconPath);
+	}
+
+	/**
+	 * Resolves the preferred Jira icon for one issue by trying type, then status, before falling back to the theme icon.
+	 */
+	private async resolveIssueIconPath(issue: JiraIssue): Promise<string | undefined> {
+		if (!this.iconCacheService) {
+			return undefined;
+		}
+		return (
+			(await this.iconCacheService.getCachedIconUri(issue.issueTypeIconUrl)) ??
+			(await this.iconCacheService.getCachedIconUri(issue.statusIconUrl))
+		);
+	}
+
+	/**
+	 * Resolves the first cached Jira icon available from the supplied URLs while preserving their precedence order.
+	 */
+	private async resolveFirstCachedIconUri(iconUrls: Array<string | undefined>): Promise<string | undefined> {
+		if (!this.iconCacheService) {
+			return undefined;
+		}
+		for (const iconUrl of iconUrls) {
+			const resolvedIconUri = await this.iconCacheService.getCachedIconUri(iconUrl);
+			if (resolvedIconUri) {
+				return resolvedIconUri;
+			}
+		}
+		return undefined;
+	}
+
+	/**
+	 * Starts background warming for the issue type and status icons used by the current tree snapshot.
+	 */
+	private warmIssueIcons(issues: JiraIssue[]): void {
+		if (!this.iconCacheService) {
+			return;
+		}
+		const iconUrls = new Set<string>();
+		for (const issue of issues) {
+			if (issue.issueTypeIconUrl?.trim()) {
+				iconUrls.add(issue.issueTypeIconUrl);
+			}
+			if (issue.statusIconUrl?.trim()) {
+				iconUrls.add(issue.statusIconUrl);
+			}
+		}
+		if (iconUrls.size === 0) {
+			return;
+		}
+
+		void Promise.all(Array.from(iconUrls, (iconUrl) => this.iconCacheService.warmIcon(iconUrl))).then((results) => {
+			if (!results.some((didWarm) => didWarm)) {
+				return;
+			}
+			if (this.iconWarmRefreshQueued) {
+				return;
+			}
+			this.iconWarmRefreshQueued = true;
+			queueMicrotask(() => {
+				this.iconWarmRefreshQueued = false;
+				this.refreshFromCache();
+			});
+		});
+	}
+
+	/**
+	 * Creates the search/filter entry shown above assigned and unassigned issue lists.
+	 */
 	private createSearchTreeItem(projectLabel: string | undefined, scopeLabel: 'assigned' | 'unassigned'): JiraTreeItem {
 		const hasQuery = this.searchQuery.length > 0;
 		const item = new JiraTreeItem(
@@ -619,6 +712,9 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return item;
 	}
 
+	/**
+	 * Creates the load-more node used when paged Jira issue results are available.
+	 */
 	private createLoadMoreTreeItem(loadedCount: number, hasRemoteSearch: boolean): JiraTreeItem {
 		const item = new JiraTreeItem(
 			'info',
@@ -638,6 +734,9 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return item;
 	}
 
+	/**
+	 * Builds the tree view description suffixes that reflect active remote search and local filtering state.
+	 */
 	private composeItemsDescription(baseDescription: string, filtered: boolean, hasRemoteSearch: boolean): string {
 		let description = baseDescription;
 		if (hasRemoteSearch) {
@@ -649,6 +748,9 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return description;
 	}
 
+	/**
+	 * Detects whether Jira returned an issue without any assignee identity populated.
+	 */
 	private isUnassignedIssue(issue: JiraIssue): boolean {
 		return !issue.assigneeAccountId?.trim() &&
 			!issue.assigneeUsername?.trim() &&
@@ -656,6 +758,9 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			!issue.assigneeName?.trim();
 	}
 
+	/**
+	 * Applies the in-memory search filter used by the scoped Items views.
+	 */
 	private applySearchFilter(issues: JiraIssue[]): JiraIssue[] {
 		const query = this.searchQuery.toLowerCase();
 		if (!query) {
@@ -673,12 +778,18 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		});
 	}
 
+	/**
+	 * Counts the issues currently shown as in progress so the tree badge stays accurate.
+	 */
 	private countInProgressIssues(issues: JiraIssue[]): number {
 		return issues.reduce((count, issue) => {
 			return IssueModel.determineStatusCategory(issue.statusName) === 'inProgress' ? count + 1 : count;
 		}, 0);
 	}
 
+	/**
+	 * Builds the badge tooltip for the current Items view and filter state.
+	 */
 	private buildInProgressTooltip(count: number, filtered: boolean, mode: ItemsViewMode): string {
 		if (filtered) {
 			return count === 1 ? '1 matching in-progress issue' : `${count} matching in-progress issues`;
@@ -692,6 +803,9 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return count === 1 ? '1 in-progress issue' : `${count} in-progress issues`;
 	}
 
+	/**
+	 * Sorts issues according to the active Items view sort mode.
+	 */
 	private sortIssuesForDisplay(issues: JiraIssue[]): JiraIssue[] {
 		if (this.sortMode === 'alphabetical') {
 			return [...issues].sort((a, b) => {
@@ -714,11 +828,17 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		return [...issues].sort((a, b) => this.getIssueCreatedTimestamp(b) - this.getIssueCreatedTimestamp(a));
 	}
 
+	/**
+	 * Returns the parsed issue update timestamp or zero when Jira sends an invalid value.
+	 */
 	private getIssueUpdatedTimestamp(issue: JiraIssue): number {
 		const parsed = issue.updated ? Date.parse(issue.updated) : NaN;
 		return Number.isNaN(parsed) ? 0 : parsed;
 	}
 
+	/**
+	 * Returns the parsed issue creation timestamp and falls back to the update timestamp when needed.
+	 */
 	private getIssueCreatedTimestamp(issue: JiraIssue): number {
 		const parsed = issue.created ? Date.parse(issue.created) : NaN;
 		if (!Number.isNaN(parsed)) {

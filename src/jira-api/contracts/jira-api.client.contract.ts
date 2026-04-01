@@ -108,9 +108,9 @@ export interface IJiraApiClient {
 	): Promise<IssueAssignableUser[]>;
 
 	/**
-	 * Assigns an issue to a user account identifier.
+	 * Assigns an issue to a user account identifier or clears the assignee.
 	 */
-	assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, accountId: string): Promise<void>;
+	assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, accountId?: string): Promise<void>;
 
 	/**
 	 * Updates an issue summary value.
@@ -121,6 +121,11 @@ export interface IJiraApiClient {
 	 * Updates an issue description value.
 	 */
 	updateIssueDescription(authInfo: JiraAuthInfo, token: string, issueKey: string, description: string): Promise<void>;
+
+	/**
+	 * Updates or clears the parent issue relationship for an issue.
+	 */
+	updateIssueParent(authInfo: JiraAuthInfo, token: string, issueKey: string, parentKey?: string): Promise<void>;
 
 	/**
 	 * Loads the latest issue comments.

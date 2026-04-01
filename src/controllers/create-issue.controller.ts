@@ -12,14 +12,22 @@ import {
 	IssueAssignableUser,
 	IssueStatusOption,
 	JiraIssue,
+	JiraRelatedIssue,
 	SelectedProjectInfo,
 } from '../model/jira.type';
 import { ErrorHelper } from '../shared/error.helper';
+import {
+	ParentIssuePickerController,
+	ParentIssuePickerSession,
+} from './parent-issue-picker.controller';
+import { AssigneePickerController, AssigneePickerSession } from './assignee-picker.controller';
 import { JiraWebviewPanel } from '../views/webview/webview.panel';
 
 export type CreateIssueControllerDeps = {
 	authManager: JiraAuthManager;
 	focusManager: JiraFocusManager;
+	assigneePicker: AssigneePickerController;
+	parentIssuePicker: ParentIssuePickerController;
 	projectStatusStore: ProjectStatusStore;
 	revealIssueInItemsView: (issueOrKey?: JiraIssue | string) => Promise<void>;
 	openIssueDetails: (issueOrKey?: JiraIssue | string) => Promise<void>;
@@ -31,7 +39,7 @@ export class CreateIssueControllerFactory {
 	}
 
 	private static createCreateIssueControllerInternal(deps: CreateIssueControllerDeps) {
-	const { authManager, focusManager, projectStatusStore, revealIssueInItemsView, openIssueDetails } = deps;
+	const { authManager, focusManager, assigneePicker, parentIssuePicker, projectStatusStore, revealIssueInItemsView, openIssueDetails } = deps;
 
 	const createIssue = async (): Promise<void> => {
 		const project = focusManager.getSelectedProject();
@@ -73,14 +81,19 @@ export class CreateIssueControllerFactory {
 				displayName: authInfo.displayName ?? authInfo.username,
 			},
 			assigneeQuery: '',
+			selectedParentIssue: undefined,
 			statusOptions: cachedStatuses,
 			statusPending: !cachedStatuses,
 		};
 
 		const panel = JiraWebviewPanel.showCreateIssuePanel(selectedProject, state);
 		let disposed = false;
+		let assigneePickerSession: AssigneePickerSession | undefined;
+		let parentPickerSession: ParentIssuePickerSession | undefined;
 		panel.onDidDispose(() => {
 			disposed = true;
+			assigneePickerSession?.dispose();
+			parentPickerSession?.dispose();
 		});
 
 		const updatePanel = (updates: Partial<CreateIssuePanelState>) => {
@@ -169,38 +182,131 @@ export class CreateIssueControllerFactory {
 			if (!message?.type) {
 				return;
 			}
-			if (message.type === 'loadCreateAssignees') {
-				const values = CreateIssueControllerFactory.sanitizeCreateIssueValues(message.values, state.values, state.statusOptions);
-					const normalizedQuery =
-						typeof message.query === 'string' ? message.query.trim() : state.assigneeQuery?.trim() ?? '';
-					updatePanel({
-						assigneePending: true,
-						assigneeError: undefined,
-						assigneeQuery: normalizedQuery,
-						values,
-					});
-				try {
-						const users = await jiraApiClient.fetchAssignableUsers(
-							authenticatedInfo,
-							authenticatedToken,
-							{ projectKey: selectedProject.key },
-							normalizedQuery
-						);
-						updatePanel({
-							assigneePending: false,
-							assigneeOptions: users,
-							assigneeQuery: normalizedQuery,
-							values,
-						});
-				} catch (error) {
-					const messageText = ErrorHelper.deriveErrorMessage(error);
-						updatePanel({
-							assigneePending: false,
-							assigneeError: `Failed to load assignable users: ${messageText}`,
-							assigneeQuery: normalizedQuery,
-							values,
-						});
+			if (assigneePickerSession && (await assigneePickerSession.handleMessage(message))) {
+				return;
+			}
+			if (parentPickerSession && (await parentPickerSession.handleMessage(message))) {
+				return;
+			}
+
+			if (message.type === 'openAssigneePicker') {
+				if (assigneePickerSession) {
+					return;
 				}
+				assigneePickerSession = assigneePicker.pickAssignee({
+					panel,
+					scopeLabel: `${selectedProject.name ?? selectedProject.key} (${selectedProject.key})`,
+					authInfo: authenticatedInfo,
+					token: authenticatedToken,
+					scopeOrIssueKey: { projectKey: selectedProject.key },
+					initialSelectedAccountId: state.values.assigneeAccountId,
+					initialSelectedUser: state.values.assigneeAccountId
+						? {
+								accountId: state.values.assigneeAccountId,
+								displayName: state.values.assigneeDisplayName ?? state.values.assigneeAccountId,
+								avatarUrl: state.values.assigneeAvatarUrl,
+						  }
+						: undefined,
+				});
+				void assigneePickerSession.promise.then((selection) => {
+					if (disposed || !selection) {
+						assigneePickerSession = undefined;
+						return;
+					}
+					if (selection.kind === 'none') {
+						state = {
+							...state,
+							values: {
+								...state.values,
+								assigneeAccountId: undefined,
+								assigneeDisplayName: undefined,
+								assigneeAvatarUrl: undefined,
+							},
+						};
+						void panel.webview.postMessage({
+							type: 'assigneePickerSelectionApplied',
+						});
+						assigneePickerSession = undefined;
+						return;
+					}
+					state = {
+						...state,
+						values: {
+							...state.values,
+							assigneeAccountId: selection.user.accountId,
+							assigneeDisplayName: selection.user.displayName,
+							assigneeAvatarUrl: selection.user.avatarUrl,
+						},
+					};
+					void panel.webview.postMessage({
+						type: 'assigneePickerSelectionApplied',
+						user: selection.user,
+					});
+					assigneePickerSession = undefined;
+				});
+				return;
+			}
+
+			if (message.type === 'openParentPicker') {
+				if (parentPickerSession) {
+					return;
+				}
+				parentPickerSession = parentIssuePicker.pickParentIssue({
+					panel,
+					project: selectedProject,
+					authInfo: authenticatedInfo,
+					token: authenticatedToken,
+					initialSelectedIssueKey: state.selectedParentIssue?.key ?? state.values.customFields?.parent ?? undefined,
+				});
+				void parentPickerSession.promise.then((selection) => {
+					if (disposed || !selection) {
+						parentPickerSession = undefined;
+						return;
+					}
+					if (selection.kind === 'none') {
+						state = {
+							...state,
+							selectedParentIssue: undefined,
+							values: {
+								...state.values,
+								customFields: {
+									...(state.values.customFields ?? {}),
+									parent: '',
+								},
+							},
+						};
+						void panel.webview.postMessage({
+							type: 'parentPickerSelectionApplied',
+						});
+						parentPickerSession = undefined;
+						return;
+					}
+					const selectedIssue = selection.issue;
+					const resolvedParent: JiraRelatedIssue = {
+						key: selectedIssue.key,
+						summary: selectedIssue.summary,
+						statusName: selectedIssue.statusName,
+						assigneeName: selectedIssue.assigneeName,
+						url: selectedIssue.url,
+						updated: selectedIssue.updated,
+					};
+					state = {
+						...state,
+						selectedParentIssue: resolvedParent,
+						values: {
+							...state.values,
+							customFields: {
+								...(state.values.customFields ?? {}),
+								parent: selectedIssue.key,
+							},
+						},
+					};
+					void panel.webview.postMessage({
+						type: 'parentPickerSelectionApplied',
+						issue: resolvedParent,
+					});
+					parentPickerSession = undefined;
+				});
 				return;
 			}
 
@@ -228,6 +334,16 @@ export class CreateIssueControllerFactory {
 						assigneeAvatarUrl: accountId ? avatarUrl || values.assigneeAvatarUrl : undefined,
 					},
 					successIssue: undefined,
+				});
+				void panel.webview.postMessage({
+					type: 'assigneePickerSelectionApplied',
+					user: accountId
+						? {
+								accountId,
+								displayName: displayName || values.assigneeDisplayName || accountId,
+								avatarUrl: avatarUrl || values.assigneeAvatarUrl,
+						  }
+						: undefined,
 				});
 				return;
 			}

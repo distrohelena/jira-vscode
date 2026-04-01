@@ -37,6 +37,10 @@ class IssuePanelTestHarness {
 			reporterAvatarUrl: overrides?.reporterAvatarUrl,
 			issueTypeId: overrides?.issueTypeId,
 			issueTypeName: overrides?.issueTypeName ?? 'Task',
+			issueTypeIconUrl: overrides?.issueTypeIconUrl,
+			issueTypeIconSrc: (overrides as any)?.issueTypeIconSrc,
+			statusIconUrl: overrides?.statusIconUrl,
+			statusIconSrc: (overrides as any)?.statusIconSrc,
 			parent: overrides?.parent,
 			children: overrides?.children,
 		};
@@ -254,5 +258,90 @@ describe('Issue panel editor interactions', () => {
 		IssuePanelTestHarness.click(cancelButton as Element, dom.window);
 
 		expect(messages.some((message) => message?.type === 'cancelCommentReply')).toBe(true);
+	});
+
+	it('opens the parent picker modal from the issue parent section', () => {
+		const { dom, messages, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
+			parent: {
+				key: 'PROJ-123',
+				summary: 'Parent issue summary',
+				statusName: 'In Progress',
+				url: 'https://jira.example.test/browse/PROJ-123',
+			},
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const parentButton = dom.window.document.querySelector('.issue-sidebar [data-parent-picker-open]');
+		const sidebarSections = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')) as HTMLElement[];
+		const parentSectionIndex = sidebarSections.findIndex((section) => section.textContent?.includes('Parent Ticket'));
+		const assigneeSectionIndex = sidebarSections.findIndex((section) => section.textContent?.includes('Assignee'));
+		expect(parentButton).toBeTruthy();
+		expect(parentSectionIndex).toBeGreaterThan(-1);
+		expect(assigneeSectionIndex).toBeGreaterThan(-1);
+		expect(parentSectionIndex).toBeLessThan(assigneeSectionIndex);
+
+		IssuePanelTestHarness.click(parentButton as Element, dom.window);
+
+		const openMessage = messages.find((message) => message?.type === 'openParentPicker');
+		expect(openMessage).toBeTruthy();
+	});
+
+	it('opens the assignee picker modal from the issue assignee section', () => {
+		const { dom, messages, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom({
+			currentUser: {
+				accountId: 'acct-123',
+				displayName: 'Helena',
+			},
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const assigneeButton = dom.window.document.querySelector('.issue-sidebar [data-assignee-picker-open]');
+		expect(assigneeButton).toBeTruthy();
+
+		IssuePanelTestHarness.click(assigneeButton as Element, dom.window);
+
+		const openMessage = messages.find((message) => message?.type === 'openAssigneePicker');
+		expect(openMessage).toBeTruthy();
+	});
+
+	it('renders authenticated local issue type and status icons in the issue header', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
+			issueTypeName: 'Bug',
+			issueTypeIconUrl: 'https://jira.example.test/icons/bug.svg',
+			issueTypeIconSrc: 'vscode-resource://test/jira-icon-cache/bug.svg',
+			statusName: 'In Progress',
+			statusIconUrl: 'https://jira.example.test/icons/in-progress.svg',
+			statusIconSrc: 'vscode-resource://test/jira-icon-cache/in-progress.svg',
+		} as any);
+		expect(scriptErrors).toEqual([]);
+
+		const header = dom.window.document.querySelector('.issue-header');
+		const issueTypeIcon = dom.window.document.querySelector('.issue-header .issue-type-icon') as HTMLImageElement | null;
+		const statusIcon = dom.window.document.querySelector('.issue-header .status-icon') as HTMLImageElement | null;
+
+		expect(header).toBeTruthy();
+		expect(issueTypeIcon).toBeTruthy();
+		expect(issueTypeIcon?.getAttribute('src')).toBe('vscode-resource://test/jira-icon-cache/bug.svg');
+		expect(statusIcon).toBeTruthy();
+		expect(statusIcon?.getAttribute('src')).toBe('vscode-resource://test/jira-icon-cache/in-progress.svg');
+	});
+
+	it('keeps the issue header icon slots and packaged status fallback when Jira icon URLs are absent', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
+			issueTypeIconUrl: undefined,
+			statusIconUrl: undefined,
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const iconSlots = Array.from(dom.window.document.querySelectorAll('.issue-header .ticket-icon-slot'));
+		const issueTypePlaceholder = dom.window.document.querySelector(
+			'.issue-header .issue-type-icon-placeholder'
+		) as HTMLSpanElement | null;
+		const statusIcon = dom.window.document.querySelector('.issue-header .status-icon') as HTMLImageElement | null;
+
+		expect(iconSlots).toHaveLength(2);
+		expect(issueTypePlaceholder).toBeTruthy();
+		expect(statusIcon).toBeTruthy();
+		expect(statusIcon?.getAttribute('src')).toContain('/media/status-inprogress.png');
 	});
 });
