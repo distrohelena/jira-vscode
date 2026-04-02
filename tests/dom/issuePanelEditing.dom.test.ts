@@ -408,10 +408,14 @@ describe('Issue panel editor interactions', () => {
 		const parentSection = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')).find(
 			(section) => section.textContent?.includes('Parent Ticket')
 		) as HTMLElement | undefined;
+		const parentCard = parentSection?.querySelector('.parent-picker-card');
+		const parentCardTitle = parentSection?.querySelector('.parent-picker-card-title') as HTMLSpanElement | null;
 		const parentCardDetail = parentSection?.querySelector('.parent-picker-card-detail') as HTMLSpanElement | null;
 		const parentSectionBody = parentSection?.querySelector('.parent-section-body');
 		const parentDetailText = parentCardDetail?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 		expect(parentSection).toBeTruthy();
+		expect(parentCard).toBeTruthy();
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
 		expect(parentCardDetail).toBeTruthy();
 		expect(parentDetailText).toContain('No parent selected');
 		expect(parentDetailText).toContain('Unassigned');
