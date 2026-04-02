@@ -513,8 +513,8 @@ describe('Issue panel editor interactions', () => {
 		expect(scriptErrors).toEqual([]);
 
 		const stylesheet = dom.window.document.head.innerHTML;
-		expect(stylesheet).toContain('.issue-sidebar [data-parent-picker-open]');
-		expect(stylesheet).toContain('.issue-sidebar [data-assignee-picker-open]');
-		expect(stylesheet).toContain('cursor: pointer');
+		expect(stylesheet).toMatch(
+			/\.issue-sidebar \[data-parent-picker-open\][^{}]*,\s*\.issue-sidebar \[data-assignee-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;[^}]*\}/s
+		);
 	});
 });
