@@ -59,28 +59,28 @@ export class SharedParentPicker {
 			: 'No parent selected &bull; Unassigned';
 		const hasCreateField = Boolean(options.fieldId);
 		const escapedAriaLabel = HtmlHelper.escapeAttribute(options.ariaLabel);
-		const escapedFieldId = hasCreateField ? HtmlHelper.escapeAttribute(options.fieldId ?? '') : '';
-		const escapedFieldValue = HtmlHelper.escapeAttribute(options.fieldValue ?? '');
-		const wrapperClassName = hasCreateField ? 'create-custom-field-label parent-field' : 'parent-field';
-		const createFieldAttribute = hasCreateField ? ` data-create-parent-field="${escapedFieldId}"` : '';
-		const hiddenInputMarkup = hasCreateField
-			? `<input type="hidden" id="${escapedFieldId}" data-create-custom-field="${escapedFieldId}" value="${escapedFieldValue}" />`
-			: '';
 		const disabledAttribute = options.disabled ? 'disabled' : '';
+		const cardMarkup = `<button
+			type="button"
+			class="parent-picker-trigger parent-picker-card"
+			data-parent-picker-open
+			aria-label="${escapedAriaLabel}"
+			${disabledAttribute}
+			style="align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; width: 100%; min-height: 72px; padding: 10px 12px; text-align: left; border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1)); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03)); color: var(--vscode-foreground);"
+		>
+			<span class="parent-picker-card-title">${HtmlHelper.escapeHtml(titleLabel)}</span>
+			<span class="parent-picker-card-detail">${detailLabel}</span>
+		</button>`;
 
-		return `<div class="${wrapperClassName}"${createFieldAttribute}>
-			${hiddenInputMarkup}
-			<button
-				type="button"
-				class="parent-picker-trigger parent-picker-card"
-				data-parent-picker-open
-				aria-label="${escapedAriaLabel}"
-				${disabledAttribute}
-				style="align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; width: 100%; min-height: 72px; padding: 10px 12px; text-align: left; border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1)); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03)); color: var(--vscode-foreground);"
-			>
-				<span class="parent-picker-card-title">${HtmlHelper.escapeHtml(titleLabel)}</span>
-				<span class="parent-picker-card-detail">${detailLabel}</span>
-			</button>
+		if (!hasCreateField) {
+			return cardMarkup;
+		}
+
+		const escapedFieldId = HtmlHelper.escapeAttribute(options.fieldId ?? '');
+		const escapedFieldValue = HtmlHelper.escapeAttribute(options.fieldValue ?? '');
+		return `<div class="create-custom-field-label parent-field" data-create-parent-field="${escapedFieldId}">
+			<input type="hidden" id="${escapedFieldId}" data-create-custom-field="${escapedFieldId}" value="${escapedFieldValue}" />
+			${cardMarkup}
 		</div>`;
 	}
 }

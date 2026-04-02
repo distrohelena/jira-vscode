@@ -313,16 +313,25 @@ describe('Create issue panel', () => {
 				summary: 'Neutral shared renderer parent',
 			},
 		});
+		const fragment = JSDOM.fragment(markup);
+		const rootElement = fragment.firstElementChild as HTMLButtonElement | null;
+		const hiddenInput = fragment.querySelector('input[type="hidden"]');
+		const parentCardTitle = rootElement?.querySelector('.parent-picker-card-title') as HTMLSpanElement | null;
+		const parentCardDetail = rootElement?.querySelector('.parent-picker-card-detail') as HTMLSpanElement | null;
 
+		expect(fragment.childElementCount).toBe(1);
+		expect(rootElement?.tagName).toBe('BUTTON');
+		expect(rootElement?.classList.contains('parent-picker-trigger')).toBe(true);
+		expect(rootElement?.classList.contains('parent-picker-card')).toBe(true);
+		expect(rootElement?.classList.contains('parent-field')).toBe(false);
+		expect(rootElement?.hasAttribute('data-parent-picker-open')).toBe(true);
+		expect(rootElement?.hasAttribute('data-create-parent-field')).toBe(false);
+		expect(rootElement?.getAttribute('aria-label')).toBe('Parent Ticket');
+		expect(hiddenInput).toBeNull();
 		expect(markup).not.toContain('create-custom-field-label');
-		expect(markup).not.toContain('data-create-parent-field');
 		expect(markup).not.toContain('data-create-custom-field');
-		expect(markup).not.toContain('type="hidden"');
-		expect(markup).toContain('class="parent-field"');
-		expect(markup).toContain('data-parent-picker-open');
-		expect(markup).toContain('class="parent-picker-trigger parent-picker-card"');
-		expect(markup).toContain('Choose a parent ticket');
-		expect(markup).toContain('PROJ-777 - Neutral shared renderer parent');
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCardDetail?.textContent).toContain('PROJ-777 - Neutral shared renderer parent');
 	});
 
 	it('opens the parent picker modal from the parent field control', () => {
