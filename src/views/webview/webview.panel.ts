@@ -715,6 +715,14 @@ export class JiraWebviewPanel {
 		.issue-sidebar {
 			position: relative;
 		}
+		.issue-sidebar [data-parent-picker-open],
+		.issue-sidebar [data-assignee-picker-open] {
+			cursor: pointer;
+		}
+		.issue-sidebar [data-parent-picker-open]:disabled,
+		.issue-sidebar [data-assignee-picker-open]:disabled {
+			cursor: not-allowed;
+		}
 		.meta-card {
 			border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1));
 			border-radius: 6px;

@@ -508,13 +508,21 @@ describe('Issue panel editor interactions', () => {
 		expect(statusIcon).toBeTruthy();
 		expect(statusIcon?.getAttribute('src')).toContain('/media/status-inprogress.png');
 	});
-	it('includes a pointer cursor rule for the issue sidebar parent and assignee picker cards', () => {
+	it('includes scoped cursor rules for the issue sidebar parent and assignee picker cards', () => {
 		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom();
 		expect(scriptErrors).toEqual([]);
 
-		const stylesheet = dom.window.document.head.innerHTML;
+		const stylesheet = Array.from(dom.window.document.querySelectorAll('style'))
+			.map((style) => style.textContent ?? '')
+			.join('\n');
+
+		expect(stylesheet).toMatch(/\.issue-sidebar \[data-parent-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;/s);
+		expect(stylesheet).toMatch(/\.issue-sidebar \[data-assignee-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;/s);
 		expect(stylesheet).toMatch(
-			/\.issue-sidebar \[data-parent-picker-open\][^{}]*,\s*\.issue-sidebar \[data-assignee-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;[^}]*\}/s
+			/\.issue-sidebar \[data-parent-picker-open\]:disabled[^{}]*\{[^}]*cursor:\s*not-allowed;/s
+		);
+		expect(stylesheet).toMatch(
+			/\.issue-sidebar \[data-assignee-picker-open\]:disabled[^{}]*\{[^}]*cursor:\s*not-allowed;/s
 		);
 	});
 });
