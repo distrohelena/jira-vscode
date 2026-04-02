@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EnvironmentRuntime } from '../../src/environment.runtime';
 import { CreateIssuePanelState } from '../../src/model/jira.type';
 import { ParentIssuePickerOverlay } from '../../src/views/webview/parent-issue-picker.overlay';
+import { SharedParentPicker } from '../../src/views/webview/shared-parent-picker';
 import { JiraWebviewPanel } from '../../src/views/webview/webview.panel';
 import { Uri } from 'vscode';
 
@@ -251,6 +252,57 @@ describe('Create issue panel', () => {
 		expect(parentCard).toBeTruthy();
 		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
 		expect(parentCardDetail?.textContent).toContain('PROJ-123 - Parent issue summary');
+	});
+
+	it('keeps the create parent field wired to the shared card contract', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom({
+			values: {
+				customFields: {
+					parent: 'PROJ-321',
+				},
+			},
+			selectedParentIssue: {
+				key: 'PROJ-321',
+				summary: 'Existing parent issue',
+			} as any,
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const parentInput = dom.window.document.querySelector(
+			'.issue-sidebar input[type="hidden"][data-create-custom-field="parent"]'
+		) as HTMLInputElement | null;
+		const parentCard = dom.window.document.querySelector(
+			'.issue-sidebar [data-parent-picker-open].parent-picker-card'
+		) as HTMLButtonElement | null;
+		const parentCardTitle = parentCard?.querySelector('.parent-picker-card-title') as HTMLSpanElement | null;
+		const parentCardDetail = parentCard?.querySelector('.parent-picker-card-detail') as HTMLSpanElement | null;
+
+		expect(parentInput?.value).toBe('PROJ-321');
+		expect(parentCard?.getAttribute('aria-label')).toBe('Parent Ticket');
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCardDetail?.textContent).toContain('PROJ-321 - Existing parent issue');
+	});
+
+	it('renders shared parent picker markup with the create field contract', () => {
+		const markup = SharedParentPicker.renderCard({
+			ariaLabel: 'Parent',
+			fieldId: 'parent',
+			fieldValue: 'PROJ-999',
+			selectedParent: {
+				key: 'PROJ-999',
+				summary: 'Shared renderer parent',
+			},
+		});
+
+		expect(markup).toContain('data-create-parent-field="parent"');
+		expect(markup).toContain('type="hidden"');
+		expect(markup).toContain('data-create-custom-field="parent"');
+		expect(markup).toContain('value="PROJ-999"');
+		expect(markup).toContain('data-parent-picker-open');
+		expect(markup).toContain('class="parent-picker-trigger parent-picker-card"');
+		expect(markup).toContain('aria-label="Parent"');
+		expect(markup).toContain('Choose a parent ticket');
+		expect(markup).toContain('PROJ-999 - Shared renderer parent');
 	});
 
 	it('opens the parent picker modal from the parent field control', () => {

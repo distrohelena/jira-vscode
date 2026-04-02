@@ -19,6 +19,7 @@ import { HtmlHelper } from '../../shared/html.helper';
 import { ViewResource } from '../view.resource';
 import { AssigneePickerOverlay } from './assignee-picker.overlay';
 import { ParentIssuePickerOverlay } from './parent-issue-picker.overlay';
+import { SharedParentPicker } from './shared-parent-picker';
 
 type RichTextEditorRenderOptions = {
 	editorId: string;
@@ -3504,28 +3505,18 @@ static renderStatusSelectOption(option: IssueStatusOption, value: string, select
 		disabledAttr: string,
 		label: string
 	): string {
-		const selectedParent = state.selectedParentIssue;
-		const titleLabel = 'Choose a parent ticket';
-		const detailLabel = selectedParent
-			? HtmlHelper.escapeHtml(`${selectedParent.key} - ${selectedParent.summary}`)
-			: 'No parent selected &bull; Unassigned';
-		const fieldId = HtmlHelper.escapeAttribute(field.id);
-		const disabled = disabledAttr ? 'disabled' : '';
-		const ariaLabel = HtmlHelper.escapeAttribute(label);
-		return `<div class="create-custom-field-label parent-field" data-create-parent-field="${fieldId}">
-			<input type="hidden" id="${fieldId}" data-create-custom-field="${fieldId}" value="${HtmlHelper.escapeAttribute(value)}" />
-			<button
-				type="button"
-				class="parent-picker-trigger parent-picker-card"
-				data-parent-picker-open
-				aria-label="${ariaLabel}"
-				${disabled}
-				style="align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; width: 100%; min-height: 72px; padding: 10px 12px; text-align: left; border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1)); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03)); color: var(--vscode-foreground);"
-			>
-				<span class="parent-picker-card-title">${HtmlHelper.escapeHtml(titleLabel)}</span>
-				<span class="parent-picker-card-detail">${detailLabel}</span>
-			</button>
-		</div>`;
+		return SharedParentPicker.renderCard({
+			ariaLabel: label,
+			fieldId: field.id,
+			fieldValue: value,
+			selectedParent: state.selectedParentIssue
+				? {
+					key: state.selectedParentIssue.key,
+					summary: state.selectedParentIssue.summary,
+				}
+				: undefined,
+			disabled: Boolean(disabledAttr),
+		});
 	}
 	static renderCreateAssigneeSection(state: CreateIssuePanelState): string {
 	const selection = resolveCreateAssigneeSelection(state);
