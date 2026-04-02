@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-import { JiraIssue } from '../model/jira.type';
+import { JiraIssue, IssueStatusOption } from '../model/jira.type';
 import { JiraIconCacheService } from './jira-icon-cache.service';
 
 /**
@@ -37,6 +37,33 @@ export class JiraWebviewIconService {
 	 */
 	async createIssuesWithResolvedIconSources(webview: vscode.Webview, issues: JiraIssue[]): Promise<JiraIssue[]> {
 		return Promise.all(issues.map((issue) => this.createIssueWithResolvedIconSources(webview, issue)));
+	}
+
+	/**
+	 * Resolves the Jira status icon source for one status option while preserving the original option data.
+	 */
+	async createStatusOptionWithResolvedIconSource(
+		webview: vscode.Webview,
+		option: IssueStatusOption
+	): Promise<IssueStatusOption> {
+		const iconSrc = await this.resolveIconSource(webview, option.iconUrl);
+		return {
+			...option,
+			iconSrc,
+		};
+	}
+
+	/**
+	 * Resolves Jira status icon sources for every option in one list.
+	 */
+	async createStatusOptionsWithResolvedIconSources(
+		webview: vscode.Webview,
+		options?: IssueStatusOption[]
+	): Promise<IssueStatusOption[] | undefined> {
+		if (!options || options.length === 0) {
+			return options;
+		}
+		return Promise.all(options.map((option) => this.createStatusOptionWithResolvedIconSource(webview, option)));
 	}
 
 	/**

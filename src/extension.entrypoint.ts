@@ -95,6 +95,7 @@ class ExtensionEntrypoint {
 		assigneePicker,
 		parentIssuePicker,
 		projectStatusStore,
+		webviewIconService,
 		revealIssueInItemsView: async (issueOrKey?: JiraIssue | string) => {
 			await itemsProvider.revealIssue(issueOrKey);
 		},

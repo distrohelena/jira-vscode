@@ -336,6 +336,35 @@ export class ParentIssuePickerOverlay {
 			object-fit: contain;
 			display: block;
 		}
+		.parent-picker-host .result-icon-slot .issue-type-icon-placeholder,
+		.parent-picker-host .preview-icon-slot .issue-type-icon-placeholder,
+		.parent-picker-host .result-icon-slot .status-icon-placeholder,
+		.parent-picker-host .preview-icon-slot .status-icon-placeholder {
+			width: 28px;
+			height: 28px;
+			border-radius: 8px;
+			border: 1px solid color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
+			background: color-mix(in srgb, var(--vscode-input-background) 82%, transparent);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			color: var(--vscode-descriptionForeground);
+			flex-shrink: 0;
+		}
+		.parent-picker-host .result-icon-slot .issue-type-icon-placeholder::before,
+		.parent-picker-host .preview-icon-slot .issue-type-icon-placeholder::before {
+			content: attr(data-placeholder-text);
+			font-size: 0.78em;
+			font-weight: 800;
+			line-height: 1;
+			text-transform: uppercase;
+		}
+		.parent-picker-host .result-icon-slot .status-icon-placeholder::before,
+		.parent-picker-host .preview-icon-slot .status-icon-placeholder::before {
+			content: '•';
+			font-size: 1.05em;
+			line-height: 1;
+		}
 		.parent-picker-host .result-copy,
 		.parent-picker-host .preview-copy {
 			display: flex;
@@ -490,6 +519,45 @@ export class ParentIssuePickerOverlay {
 					detailEl.textContent = (issue.key || '') + (issue.summary ? ' - ' + issue.summary : '');
 				}
 			};
+			const parentPickerCreateIconPlaceholder = (image) => {
+				if (!(image instanceof HTMLImageElement)) {
+					return null;
+				}
+				const placeholder = document.createElement('span');
+				const isStatusIcon = image.classList.contains('status-icon');
+				placeholder.className = isStatusIcon
+					? 'status-icon status-icon-placeholder'
+					: 'issue-type-icon issue-type-icon-placeholder';
+				placeholder.setAttribute('aria-hidden', 'true');
+				if (!isStatusIcon) {
+					placeholder.setAttribute('data-placeholder-text', image.getAttribute('data-placeholder-text') || '?');
+				}
+				return placeholder;
+			};
+			const parentPickerApplyIconFallback = (image) => {
+				if (!(image instanceof HTMLImageElement)) {
+					return;
+				}
+				const fallbackSrc = (image.getAttribute('data-fallback-src') || '').trim();
+				if (fallbackSrc && fallbackSrc !== image.getAttribute('src')) {
+					image.setAttribute('src', fallbackSrc);
+					image.removeAttribute('data-fallback-src');
+					return;
+				}
+				const placeholder = parentPickerCreateIconPlaceholder(image);
+				const parent = image.parentElement;
+				if (!placeholder || !parent) {
+					return;
+				}
+				parent.replaceChild(placeholder, image);
+			};
+			document.addEventListener('error', (event) => {
+				const target = event.target instanceof HTMLImageElement ? event.target : null;
+				if (!target || !parentPickerHost || !parentPickerHost.contains(target)) {
+					return;
+				}
+				parentPickerApplyIconFallback(target);
+			}, true);
 			document.addEventListener('click', (event) => {
 				const target = event.target instanceof Element ? event.target : null;
 				if (!target) {
@@ -714,11 +782,7 @@ export class ParentIssuePickerOverlay {
 					.filter((value): value is string => !!value);
 				const isSelected = selectedIssueKey && selectedIssueKey.trim().toUpperCase() === key.toUpperCase();
 				const selectedClass = isSelected ? 'selected' : '';
-				const issueTypeIconMarkup = issue.issueTypeIconSrc?.trim()
-					? `<img class="issue-type-icon" src="${HtmlHelper.escapeAttribute(issue.issueTypeIconSrc)}" alt="${HtmlHelper.escapeHtml(
-							issue.issueTypeName ?? 'Issue type'
-						)} icon" />`
-					: '<span class="issue-type-icon issue-type-icon-placeholder" aria-hidden="true"></span>';
+				const issueTypeIconMarkup = ParentIssuePickerOverlay.renderIssueTypeIconMarkup(issue);
 				const statusIconMarkup = ParentIssuePickerOverlay.renderStatusIconMarkup(issue, statusIconFallbacks);
 				return `<li class="parent-picker-result">
 					<button type="button" class="parent-picker-result-button ${selectedClass}" data-parent-picker-result data-parent-issue-key="${HtmlHelper.escapeAttribute(
@@ -774,11 +838,7 @@ export class ParentIssuePickerOverlay {
 		if (issue.assigneeName) {
 			meta.push(`Assignee: ${issue.assigneeName}`);
 		}
-		const issueTypeIconMarkup = issue.issueTypeIconSrc?.trim()
-			? `<img class="issue-type-icon" src="${HtmlHelper.escapeAttribute(issue.issueTypeIconSrc)}" alt="${HtmlHelper.escapeHtml(
-					issue.issueTypeName ?? 'Issue type'
-				)} icon" />`
-			: '<span class="issue-type-icon issue-type-icon-placeholder" aria-hidden="true"></span>';
+		const issueTypeIconMarkup = ParentIssuePickerOverlay.renderIssueTypeIconMarkup(issue);
 		const statusIconMarkup = ParentIssuePickerOverlay.renderStatusIconMarkup(issue, statusIconFallbacks);
 
 		return `<div>
@@ -848,6 +908,51 @@ export class ParentIssuePickerOverlay {
 	}
 
 	/**
+	 * Renders the issue type icon markup, falling back to a visible placeholder when no icon is available.
+	 */
+	private static renderIssueTypeIconMarkup(issue: JiraIssue): string {
+		const issueTypeIconSrc = issue.issueTypeIconSrc?.trim();
+		const placeholderText = ParentIssuePickerOverlay.getIssueTypePlaceholderText(issue.issueTypeName);
+		if (issueTypeIconSrc) {
+			return `<img class="issue-type-icon" src="${HtmlHelper.escapeAttribute(issueTypeIconSrc)}" data-placeholder-text="${HtmlHelper.escapeAttribute(
+				placeholderText
+			)}" alt="${HtmlHelper.escapeHtml(issue.issueTypeName ?? 'Issue type')} icon" />`;
+		}
+		return ParentIssuePickerOverlay.renderIssueTypePlaceholderMarkup(placeholderText);
+	}
+
+	/**
+	 * Builds the issue type placeholder markup used when a Jira issue type icon is unavailable.
+	 */
+	private static renderIssueTypePlaceholderMarkup(placeholderText: string): string {
+		return `<span class="issue-type-icon issue-type-icon-placeholder" data-placeholder-text="${HtmlHelper.escapeAttribute(
+			placeholderText
+		)}" aria-hidden="true"></span>`;
+	}
+
+	/**
+	 * Derives the short label rendered inside the issue type placeholder.
+	 */
+	private static getIssueTypePlaceholderText(issueTypeName?: string): string {
+		const normalizedIssueTypeName = issueTypeName?.trim();
+		if (!normalizedIssueTypeName) {
+			return '?';
+		}
+		return normalizedIssueTypeName.charAt(0).toUpperCase();
+	}
+
+	/**
+	 * Resolves the packaged status fallback icon that matches the issue status category.
+	 */
+	private static resolveStatusFallbackIconSrc(
+		issue: JiraIssue,
+		statusIconFallbacks?: Partial<Record<IssueStatusCategory, string>>
+	): string | undefined {
+		const category = IssueModel.determineStatusCategory(issue.statusName);
+		return statusIconFallbacks?.[category] ?? statusIconFallbacks?.default;
+	}
+
+	/**
 	 * Renders the status icon slot using the resolved Jira source first and the packaged fallback source second.
 	 */
 	private static renderStatusIconMarkup(
@@ -855,13 +960,15 @@ export class ParentIssuePickerOverlay {
 		statusIconFallbacks?: Partial<Record<IssueStatusCategory, string>>
 	): string {
 		const statusIconSrc = issue.statusIconSrc?.trim();
+		const fallbackIconSrc = ParentIssuePickerOverlay.resolveStatusFallbackIconSrc(issue, statusIconFallbacks);
 		if (statusIconSrc) {
-			return `<img class="status-icon" src="${HtmlHelper.escapeAttribute(statusIconSrc)}" alt="${HtmlHelper.escapeHtml(
+			const fallbackAttribute = fallbackIconSrc?.trim()
+				? ` data-fallback-src="${HtmlHelper.escapeAttribute(fallbackIconSrc)}"`
+				: '';
+			return `<img class="status-icon" src="${HtmlHelper.escapeAttribute(statusIconSrc)}"${fallbackAttribute} alt="${HtmlHelper.escapeHtml(
 				issue.statusName ?? 'Issue status'
 			)} status icon" />`;
 		}
-		const category = IssueModel.determineStatusCategory(issue.statusName);
-		const fallbackIconSrc = statusIconFallbacks?.[category] ?? statusIconFallbacks?.default;
 		if (fallbackIconSrc?.trim()) {
 			return `<img class="status-icon" src="${HtmlHelper.escapeAttribute(fallbackIconSrc)}" alt="${HtmlHelper.escapeHtml(
 				issue.statusName ?? 'Issue status'

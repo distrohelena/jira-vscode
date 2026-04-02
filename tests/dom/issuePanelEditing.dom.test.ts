@@ -114,6 +114,96 @@ class IssuePanelTestHarness {
 }
 
 describe('Issue panel editor interactions', () => {
+	it('renders status icons in the issue status picker and posts the selected transition', () => {
+		const { dom, messages, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(
+			{
+				statusOptions: [
+					{
+						id: 'transition-1',
+						name: 'Code Review',
+						category: 'inProgress',
+						iconSrc: 'vscode-resource://test/jira-icon-cache/code-review.svg',
+					} as any,
+					{
+						id: 'transition-2',
+						name: 'Done',
+						category: 'done',
+					},
+				],
+			},
+			{
+				statusName: 'In Progress',
+				statusIconSrc: 'vscode-resource://test/jira-icon-cache/current-status.svg',
+			} as any
+		);
+		expect(scriptErrors).toEqual([]);
+
+		const trigger = dom.window.document.querySelector(
+			'.issue-status-picker .jira-status-picker-trigger'
+		) as HTMLButtonElement | null;
+		const nativeSelect = dom.window.document.querySelector(
+			'.issue-status-picker select, .jira-status-select'
+		) as HTMLSelectElement | null;
+		const triggerIcon = trigger?.querySelector('.status-icon') as HTMLImageElement | null;
+		expect(trigger).toBeTruthy();
+		expect(nativeSelect).toBeNull();
+		expect(triggerIcon).toBeTruthy();
+		expect(triggerIcon?.getAttribute('src')).toBe('vscode-resource://test/jira-icon-cache/current-status.svg');
+
+		trigger!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+
+		const transitionOption = dom.window.document.querySelector(
+			'.issue-status-picker .jira-status-picker-option[data-transition-id="transition-1"]'
+		) as HTMLButtonElement | null;
+		const transitionIcon = transitionOption?.querySelector('.status-icon') as HTMLImageElement | null;
+		const doneOption = dom.window.document.querySelector(
+			'.issue-status-picker .jira-status-picker-option[data-transition-id="transition-2"]'
+		) as HTMLButtonElement | null;
+		const doneIcon = doneOption?.querySelector('.status-icon') as HTMLImageElement | null;
+		expect(transitionOption).toBeTruthy();
+		expect(transitionIcon).toBeTruthy();
+		expect(transitionIcon?.getAttribute('src')).toBe('vscode-resource://test/jira-icon-cache/code-review.svg');
+		expect(doneOption).toBeTruthy();
+		expect(doneIcon).toBeTruthy();
+		expect(doneIcon?.getAttribute('src')).toContain('/media/status-done.png');
+
+		IssuePanelTestHarness.click(transitionOption as Element, dom.window);
+
+		const changeMessage = messages.find((message) => message?.type === 'changeStatus');
+		expect(changeMessage).toBeTruthy();
+		expect(changeMessage.transitionId).toBe('transition-1');
+		expect(changeMessage.issueKey).toBe('PROJ-1000');
+	});
+
+	it('falls back to the packaged current-status icon when the issue status image fails to load', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(
+			{
+				statusOptions: [
+					{
+						id: 'transition-1',
+						name: 'Done',
+						category: 'done',
+					},
+				],
+			},
+			{
+				statusName: 'In Progress',
+				statusIconSrc: 'https://jira.example.test/icons/current-status.svg',
+			} as any
+		);
+		expect(scriptErrors).toEqual([]);
+
+		const triggerIcon = dom.window.document.querySelector(
+			'.issue-status-picker .jira-status-picker-trigger .status-icon'
+		) as HTMLImageElement | null;
+		expect(triggerIcon).toBeTruthy();
+		expect(triggerIcon?.getAttribute('src')).toBe('https://jira.example.test/icons/current-status.svg');
+
+		triggerIcon!.dispatchEvent(new dom.window.Event('error'));
+
+		expect(triggerIcon?.getAttribute('src')).toBe('file:///workspace/jira-vscode/media/status-inprogress.png');
+	});
+
 	it('opens title editor on title click', () => {
 		const { dom, scriptErrors, messages } = IssuePanelTestHarness.renderIssuePanelDom();
 		expect(scriptErrors).toEqual([]);

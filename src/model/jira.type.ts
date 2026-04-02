@@ -207,6 +207,10 @@ export type IssueStatusOption = {
 	 * Carries the Jira status icon URL when the source payload exposes one.
 	 */
 	iconUrl?: string;
+	/**
+	 * Carries the webview-safe Jira status icon source resolved through the authenticated icon cache.
+	 */
+	iconSrc?: string;
 };
 
 export type ProjectIssueTypeStatuses = {

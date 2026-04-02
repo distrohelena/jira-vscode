@@ -16,6 +16,7 @@ import {
 	SelectedProjectInfo,
 } from '../model/jira.type';
 import { ErrorHelper } from '../shared/error.helper';
+import { JiraWebviewIconService } from '../services/jira-webview-icon.service';
 import {
 	ParentIssuePickerController,
 	ParentIssuePickerSession,
@@ -29,6 +30,7 @@ export type CreateIssueControllerDeps = {
 	assigneePicker: AssigneePickerController;
 	parentIssuePicker: ParentIssuePickerController;
 	projectStatusStore: ProjectStatusStore;
+	webviewIconService: JiraWebviewIconService;
 	revealIssueInItemsView: (issueOrKey?: JiraIssue | string) => Promise<void>;
 	openIssueDetails: (issueOrKey?: JiraIssue | string) => Promise<void>;
 };
@@ -39,7 +41,16 @@ export class CreateIssueControllerFactory {
 	}
 
 	private static createCreateIssueControllerInternal(deps: CreateIssueControllerDeps) {
-	const { authManager, focusManager, assigneePicker, parentIssuePicker, projectStatusStore, revealIssueInItemsView, openIssueDetails } = deps;
+	const {
+		authManager,
+		focusManager,
+		assigneePicker,
+		parentIssuePicker,
+		projectStatusStore,
+		webviewIconService,
+		revealIssueInItemsView,
+		openIssueDetails,
+	} = deps;
 
 	const createIssue = async (): Promise<void> => {
 		const project = focusManager.getSelectedProject();
@@ -104,7 +115,23 @@ export class CreateIssueControllerFactory {
 			JiraWebviewPanel.renderCreateIssuePanel(panel, selectedProject, state);
 		};
 
-			if (!cachedStatuses) {
+		/**
+		 * Resolves Jira-owned status option icons for the active create-issue webview.
+		 */
+		const resolveStatusOptionsForWebview = async (
+			options?: IssueStatusOption[]
+		): Promise<IssueStatusOption[] | undefined> => {
+			return webviewIconService.createStatusOptionsWithResolvedIconSources(panel.webview, options);
+		};
+
+			if (cachedStatuses) {
+				void resolveStatusOptionsForWebview(cachedStatuses).then((resolvedStatuses) => {
+					if (disposed || !resolvedStatuses) {
+						return;
+					}
+					updatePanel({ statusOptions: resolvedStatuses, statusPending: false });
+				});
+			} else {
 				void loadProjectStatuses(selectedProject.key);
 			}
 			void loadCreateFields(state.values.issueType, state.values);
@@ -124,8 +151,9 @@ export class CreateIssueControllerFactory {
 				const currentStatus = state.values.status?.trim().toLowerCase();
 				const hasCurrentSelection =
 					currentStatus && availableNames.some((name) => name.toLowerCase() === currentStatus);
+				const resolvedStatuses = await resolveStatusOptionsForWebview(statuses);
 				updatePanel({
-					statusOptions: statuses,
+					statusOptions: resolvedStatuses ?? statuses,
 					statusPending: false,
 					statusError: undefined,
 					values: hasCurrentSelection

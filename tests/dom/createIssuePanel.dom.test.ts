@@ -99,6 +99,101 @@ const renderCreateIssuePanelDom = (overrides?: Partial<CreateIssuePanelState>): 
 };
 
 describe('Create issue panel', () => {
+	it('renders status icons in the starting status picker and submits the selected status', () => {
+		const { dom, messages, scriptErrors } = renderCreateIssuePanelDom({
+			values: {
+				status: 'In Progress',
+			},
+			statusOptions: [
+				{
+					id: 'status-1',
+					name: 'To Do',
+					category: 'open',
+				},
+				{
+					id: 'status-2',
+					name: 'In Progress',
+					category: 'inProgress',
+					iconSrc: 'vscode-resource://test/jira-icon-cache/in-progress.svg',
+				} as any,
+			],
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const trigger = dom.window.document.querySelector(
+			'.create-status-picker .jira-status-picker-trigger'
+		) as HTMLButtonElement | null;
+		const hiddenInput = dom.window.document.querySelector(
+			'.create-status-picker input[name="status"]'
+		) as HTMLInputElement | null;
+		const nativeSelect = dom.window.document.querySelector(
+			'.create-status-picker select, select[name="status"]'
+		) as HTMLSelectElement | null;
+		const triggerIcon = trigger?.querySelector('.status-icon') as HTMLImageElement | null;
+		const form = dom.window.document.getElementById('create-issue-form') as HTMLFormElement | null;
+		const summaryInput = dom.window.document.querySelector('input[name="summary"]') as HTMLInputElement | null;
+		expect(trigger).toBeTruthy();
+		expect(hiddenInput).toBeTruthy();
+		expect(nativeSelect).toBeNull();
+		expect(hiddenInput?.value).toBe('In Progress');
+		expect(triggerIcon).toBeTruthy();
+		expect(triggerIcon?.getAttribute('src')).toBe('vscode-resource://test/jira-icon-cache/in-progress.svg');
+		expect(dom.window.document.head.innerHTML).toContain('.create-status-picker .jira-status-picker-trigger');
+		expect(dom.window.document.head.innerHTML).toContain('min-height: 40px');
+
+		trigger!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+
+		const todoOption = dom.window.document.querySelector(
+			'.create-status-picker .jira-status-picker-option[data-status-value="To Do"]'
+		) as HTMLButtonElement | null;
+		const todoOptionIcon = todoOption?.querySelector('.status-icon') as HTMLImageElement | null;
+		expect(todoOption).toBeTruthy();
+		expect(todoOptionIcon).toBeTruthy();
+		expect(todoOptionIcon?.getAttribute('src')).toContain('/media/status-open.png');
+
+		todoOption!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+
+		const updatedTriggerText = trigger?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+		expect(hiddenInput?.value).toBe('To Do');
+		expect(updatedTriggerText).toContain('To Do');
+
+		expect(summaryInput).toBeTruthy();
+		expect(form).toBeTruthy();
+		summaryInput!.value = 'Ticket with changed status';
+		form!.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+		const createMessage = messages.find((entry) => entry?.type === 'createIssue');
+		expect(createMessage).toBeTruthy();
+		expect(createMessage.values.status).toBe('To Do');
+	});
+
+	it('falls back to the packaged status icon when the selected starting status image fails to load', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom({
+			values: {
+				status: 'In Progress',
+			},
+			statusOptions: [
+				{
+					id: 'status-2',
+					name: 'In Progress',
+					category: 'inProgress',
+					iconSrc: 'https://jira.example.test/icons/in-progress.svg',
+				} as any,
+			],
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const triggerIcon = dom.window.document.querySelector(
+			'.create-status-picker .jira-status-picker-trigger .status-icon'
+		) as HTMLImageElement | null;
+		expect(triggerIcon).toBeTruthy();
+		expect(triggerIcon?.getAttribute('src')).toBe('https://jira.example.test/icons/in-progress.svg');
+
+		triggerIcon!.dispatchEvent(new dom.window.Event('error'));
+
+		expect(triggerIcon?.getAttribute('src')).toBe('file:///workspace/jira-vscode/media/status-inprogress.png');
+	});
+
 	it('posts parent metadata from Jira create fields when the form is submitted', () => {
 		const { dom, messages, scriptErrors } = renderCreateIssuePanelDom();
 		expect(scriptErrors).toEqual([]);
@@ -420,6 +515,93 @@ describe('Create issue panel', () => {
 		expect(previewIssueTypePlaceholder).toBeTruthy();
 		expect(previewStatusIcon).toBeTruthy();
 		expect(previewStatusIcon?.getAttribute('src')).toBe('vscode-resource://test/media/status-inprogress.png');
+	});
+
+	it('replaces broken parent picker result icons with visible issue-type placeholders and packaged status fallbacks', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		dom.window.dispatchEvent(
+			new dom.window.MessageEvent('message', {
+				data: {
+					type: 'parentPickerRender',
+					html: ParentIssuePickerOverlay.renderOverlayHtml({
+						projectKey: 'PROJ',
+						projectLabel: 'Project',
+						searchQuery: '',
+						issueTypeName: '',
+						statusName: '',
+						loading: false,
+						loadingMore: false,
+						statusIconFallbacks: {
+							inProgress: 'vscode-resource://test/media/status-inprogress.png',
+							open: 'vscode-resource://test/media/status-open.png',
+							done: 'vscode-resource://test/media/status-done.png',
+							default: 'vscode-resource://test/media/status-default.png',
+						},
+						issues: [
+							{
+								id: '1003',
+								key: 'PROJ-1003',
+								summary: 'Broken icon candidate',
+								statusName: 'In Progress',
+								url: 'https://jira.example.test/browse/PROJ-1003',
+								updated: '2026-03-18T12:00:00.000Z',
+								issueTypeName: 'Story',
+								issueTypeIconSrc: 'https://jira.example.test/icons/missing-story.svg',
+								statusIconSrc: 'https://jira.example.test/icons/missing-status.svg',
+							},
+						],
+						hasMore: false,
+						selectedIssueKey: 'PROJ-1003',
+					}),
+				},
+			})
+		);
+
+		const resultIssueTypeIcon = dom.window.document.querySelector(
+			'.parent-picker-result [data-parent-issue-key="PROJ-1003"] .issue-type-icon'
+		) as HTMLImageElement | null;
+		const resultStatusIcon = dom.window.document.querySelector(
+			'.parent-picker-result [data-parent-issue-key="PROJ-1003"] .status-icon'
+		) as HTMLImageElement | null;
+		const previewIssueTypeIcon = dom.window.document.querySelector(
+			'.parent-picker-preview .issue-type-icon'
+		) as HTMLImageElement | null;
+		const previewStatusIcon = dom.window.document.querySelector(
+			'.parent-picker-preview .status-icon'
+		) as HTMLImageElement | null;
+
+		expect(resultIssueTypeIcon).toBeTruthy();
+		expect(resultStatusIcon).toBeTruthy();
+		expect(previewIssueTypeIcon).toBeTruthy();
+		expect(previewStatusIcon).toBeTruthy();
+
+		resultIssueTypeIcon!.dispatchEvent(new dom.window.Event('error'));
+		resultStatusIcon!.dispatchEvent(new dom.window.Event('error'));
+		previewIssueTypeIcon!.dispatchEvent(new dom.window.Event('error'));
+		previewStatusIcon!.dispatchEvent(new dom.window.Event('error'));
+
+		const resultIssueTypePlaceholder = dom.window.document.querySelector(
+			'.parent-picker-result [data-parent-issue-key="PROJ-1003"] .issue-type-icon-placeholder'
+		) as HTMLSpanElement | null;
+		const swappedResultStatusIcon = dom.window.document.querySelector(
+			'.parent-picker-result [data-parent-issue-key="PROJ-1003"] .status-icon'
+		) as HTMLImageElement | null;
+		const previewIssueTypePlaceholder = dom.window.document.querySelector(
+			'.parent-picker-preview .issue-type-icon-placeholder'
+		) as HTMLSpanElement | null;
+		const swappedPreviewStatusIcon = dom.window.document.querySelector(
+			'.parent-picker-preview .status-icon'
+		) as HTMLImageElement | null;
+
+		expect(resultIssueTypePlaceholder).toBeTruthy();
+		expect(resultIssueTypePlaceholder?.getAttribute('data-placeholder-text')).toBe('S');
+		expect(swappedResultStatusIcon?.getAttribute('src')).toBe('vscode-resource://test/media/status-inprogress.png');
+		expect(previewIssueTypePlaceholder).toBeTruthy();
+		expect(previewIssueTypePlaceholder?.getAttribute('data-placeholder-text')).toBe('S');
+		expect(swappedPreviewStatusIcon?.getAttribute('src')).toBe('vscode-resource://test/media/status-inprogress.png');
+		expect(dom.window.document.head.innerHTML).toContain('issue-type-icon-placeholder::before');
 	});
 
 	it('renders dynamic parent picker status options from the current project context', () => {

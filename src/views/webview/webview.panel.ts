@@ -5,6 +5,7 @@ import {
 	CreateIssueFormValues,
 	CreateIssuePanelState,
 	IssueAssignableUser,
+	IssueStatusCategory,
 	IssuePanelOptions,
 	IssueStatusOption,
 	JiraIssue,
@@ -127,7 +128,7 @@ export class JiraWebviewPanel {
 	const parentSection = errorMessage ? '' : renderParentMetadataSection(issue);
 	const childrenSection = errorMessage ? '' : renderChildrenSection(issue);
 	const cspSource = webview.cspSource;
-	const metadataPanel = renderMetadataPanel(issue, parentSection, assignee, reporter, updatedText, options);
+	const metadataPanel = renderMetadataPanel(webview, issue, parentSection, assignee, reporter, updatedText, options);
 	const issueTypeLabel = (issue.issueTypeName?.trim() || 'Issue').toUpperCase();
 	const effectiveStatusIconSrc = statusIconSrc?.trim();
 	const effectiveIssueTypeIconSrc = issue.issueTypeIconSrc?.trim();
@@ -169,6 +170,10 @@ export class JiraWebviewPanel {
 	const commentsSection = renderCommentsSection(options);
 	const richTextEditorStyles = renderRichTextEditorStyles();
 	const richTextEditorBootstrapScript = renderRichTextEditorBootstrapScript();
+	const statusPickerStyles = renderStatusPickerStylesV2();
+	const statusPickerBootstrapScript = renderStatusPickerBootstrapScriptV2(
+		JiraWebviewPanel.buildStatusIconFallbacks(webview)
+	);
 	const summaryText = issue.summary ?? 'Loading issue details…';
 	const summaryValue = issue.summary ?? '';
 	const summaryEditPending = options?.summaryEditPending ?? false;
@@ -813,22 +818,6 @@ export class JiraWebviewPanel {
 				opacity: 0.6;
 				cursor: not-allowed;
 			}
-			.status-select-wrapper {
-				display: flex;
-				flex-direction: column;
-				gap: 6px;
-			}
-			.jira-status-select {
-				width: 100%;
-				background: var(--vscode-input-background);
-				color: var(--vscode-input-foreground);
-				border: 1px solid var(--vscode-input-border);
-				border-radius: 4px;
-				padding: 4px 8px;
-			}
-			.jira-status-select:disabled {
-				opacity: 0.7;
-			}
 			.assignee-avatar {
 				width: 56px;
 				height: 56px;
@@ -880,11 +869,12 @@ export class JiraWebviewPanel {
 				border-radius: 6px;
 				padding: 12px;
 			}
-			.status-error {
-				color: var(--vscode-errorForeground);
-				font-size: 0.9em;
-			}
-			${richTextEditorStyles}
+		.status-error {
+			color: var(--vscode-errorForeground);
+			font-size: 0.9em;
+		}
+		${statusPickerStyles}
+		${richTextEditorStyles}
 			${ParentIssuePickerOverlay.renderStyles()}
 			${AssigneePickerOverlay.renderStyles()}
 			@media (max-width: 900px) {
@@ -951,7 +941,9 @@ export class JiraWebviewPanel {
 						}
 					};
 					${richTextEditorBootstrapScript}
+					${statusPickerBootstrapScript}
 					initializeJiraRichTextEditors(document);
+					initializeJiraStatusPickers(document, vscode);
 					const summaryBlock = document.querySelector('.issue-summary-block');
 					logDebug('issuePanel.init', {
 						hasSummaryBlock: !!summaryBlock,
@@ -1507,6 +1499,10 @@ export class JiraWebviewPanel {
 	const statusError = state.statusError;
 	const richTextEditorStyles = renderRichTextEditorStyles();
 	const richTextEditorBootstrapScript = renderRichTextEditorBootstrapScript();
+	const statusPickerStyles = renderStatusPickerStylesV2();
+	const statusPickerBootstrapScript = renderStatusPickerBootstrapScriptV2(
+		JiraWebviewPanel.buildStatusIconFallbacks(webview)
+	);
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -1823,6 +1819,7 @@ export class JiraWebviewPanel {
 \t\t\tcolor: var(--vscode-errorForeground);
 \t\t\tfont-size: 0.9em;
 \t\t}
+\t\t${statusPickerStyles}
 \t\t${richTextEditorStyles}
 \t\t${ParentIssuePickerOverlay.renderStyles()}
 \t\t${AssigneePickerOverlay.renderStyles()}
@@ -1888,9 +1885,7 @@ export class JiraWebviewPanel {
 \t\t\t\t\t</div>
 \t\t\t\t\t<div class="meta-section">
 \t\t\t\t\t\t<div class="section-title">Starting Status</div>
-\t\t\t\t\t\t<select name="status" ${disabledAttr}>
-\t\t\t\t\t\t\t${renderIssueStatusOptions(values.status, state.statusOptions)}
-\t\t\t\t\t\t</select>
+\t\t\t\t\t\t${renderCreateStatusPickerControl(webview, values.status, state.statusOptions, !!state.submitting)}
 \t\t\t\t\t\t${statusPending ? '<div class="muted status-helper">Loading project statuses…</div>' : ''}
 \t\t\t\t\t\t${statusError ? `<div class="status-error">${HtmlHelper.escapeHtml(statusError)}</div>` : ''}
 \t\t\t\t\t</div>
@@ -1922,8 +1917,10 @@ export class JiraWebviewPanel {
 \t\t\tconst vscode = acquireVsCodeApi();
 \t\t\t${ParentIssuePickerOverlay.renderBootstrapScript()}
 \t\t\t${AssigneePickerOverlay.renderBootstrapScript()}
-\t\t\t${richTextEditorBootstrapScript}
-\t\t\tinitializeJiraRichTextEditors(document);
+			${richTextEditorBootstrapScript}
+			${statusPickerBootstrapScript}
+			initializeJiraRichTextEditors(document);
+			initializeJiraStatusPickers(document, vscode);
 \t\t\tconst form = document.getElementById('create-issue-form');
 \t\t\tconst issueTypeSelect = form ? form.querySelector('select[name="issueType"]') : null;
 \t\t\tconst assignMeButton = document.querySelector('.jira-create-assign-me');
@@ -2547,7 +2544,8 @@ export class JiraWebviewPanel {
 		</div>`;
 	}
 
-	static renderMetadataPanel(
+static renderMetadataPanel(
+	webview: vscode.Webview,
 	issue: JiraIssue,
 	parentSection: string,
 	assignee: string,
@@ -2555,7 +2553,7 @@ export class JiraWebviewPanel {
 	updatedText: string,
 	options?: IssuePanelOptions
 ): string {
-	const statusControl = renderStatusControl(issue, options);
+	const statusControl = renderStatusControlV2(webview, issue, options);
 	const assigneeControl = renderAssigneeControl(issue, assignee, options);
 	return `<div class="issue-sidebar">
 		<div class="meta-card">
@@ -2580,6 +2578,357 @@ export class JiraWebviewPanel {
 		</div>`;
 }
 
+	/**
+	 * Builds the packaged status icon fallback map used by the custom status picker when Jira icons are unavailable.
+	 */
+	static buildStatusIconFallbacks(webview: vscode.Webview): Record<IssueStatusCategory, string> {
+		return {
+			done: ViewResource.getStatusIconWebviewSrc(webview, 'done') ?? '',
+			inProgress: ViewResource.getStatusIconWebviewSrc(webview, 'inProgress') ?? '',
+			open: ViewResource.getStatusIconWebviewSrc(webview, 'open') ?? '',
+			default: ViewResource.getStatusIconWebviewSrc(webview, 'default') ?? '',
+		};
+	}
+
+	/**
+	 * Renders the shared CSS used by the custom Jira status pickers.
+	 */
+	static renderStatusPickerStyles(): string {
+		return `
+			.status-select-wrapper {
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+			}
+			.jira-status-picker {
+				position: relative;
+				width: 100%;
+			}
+			.status-picker-source-hidden {
+				display: none !important;
+			}
+			.jira-status-picker-trigger {
+				width: 100%;
+				min-height: 36px;
+				display: inline-flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 10px;
+				background: var(--vscode-input-background);
+				color: var(--vscode-input-foreground);
+				border: 1px solid var(--vscode-input-border);
+				border-radius: 4px;
+				padding: 7px 10px;
+				text-align: left;
+				cursor: pointer;
+			}
+			.jira-status-picker-trigger:disabled {
+				opacity: 0.7;
+				cursor: not-allowed;
+			}
+			.jira-status-picker-trigger-content,
+			.jira-status-picker-option-content {
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				min-width: 0;
+			}
+			.jira-status-picker-trigger-label,
+			.jira-status-picker-option-label {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.jira-status-picker-chevron {
+				flex-shrink: 0;
+				color: var(--vscode-descriptionForeground);
+			}
+			.jira-status-picker-menu {
+				position: absolute;
+				top: calc(100% + 4px);
+				left: 0;
+				right: 0;
+				z-index: 20;
+				display: flex;
+				flex-direction: column;
+				gap: 4px;
+				padding: 6px;
+				background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background));
+				border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border));
+				border-radius: 6px;
+				box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+			}
+			.jira-status-picker-menu[hidden] {
+				display: none;
+			}
+			.jira-status-picker-option {
+				width: 100%;
+				min-height: 34px;
+				display: flex;
+				align-items: center;
+				background: transparent;
+				color: var(--vscode-input-foreground);
+				border: 1px solid transparent;
+				border-radius: 4px;
+				padding: 6px 8px;
+				cursor: pointer;
+				text-align: left;
+			}
+			.jira-status-picker-option:hover:not(:disabled),
+			.jira-status-picker-option:focus-visible:not(:disabled) {
+				background: color-mix(in srgb, var(--vscode-list-hoverBackground, var(--vscode-inputOption-activeBackground)) 100%, transparent);
+				border-color: color-mix(in srgb, var(--vscode-focusBorder, var(--vscode-input-border)) 60%, transparent);
+				outline: none;
+			}
+			.jira-status-picker-option:disabled {
+				opacity: 0.6;
+				cursor: not-allowed;
+			}
+			.jira-status-picker .status-icon,
+			.jira-status-picker .status-icon-placeholder {
+				width: 16px;
+				height: 16px;
+				flex-shrink: 0;
+			}
+			.jira-status-picker .status-icon-placeholder {
+				display: inline-block;
+				border-radius: 50%;
+				background: color-mix(in srgb, var(--vscode-descriptionForeground) 45%, transparent);
+			}`;
+	}
+
+	/**
+	 * Renders the shared bootstrap script that upgrades native status selects into custom icon pickers.
+	 */
+	static renderStatusPickerBootstrapScript(statusIconFallbacks: Record<IssueStatusCategory, string>): string {
+		return `
+			const jiraStatusPickerFallbacks = ${JSON.stringify(statusIconFallbacks)};
+			const deriveJiraStatusCategory = (statusName) => {
+				const status = typeof statusName === 'string' ? statusName.toLowerCase().trim() : '';
+				if (!status) {
+					return 'default';
+				}
+				if (
+					status.includes('done') ||
+					status.includes('closed') ||
+					status.includes('resolved') ||
+					status.includes('complete')
+				) {
+					return 'done';
+				}
+				if (
+					status.includes('progress') ||
+					status.includes('doing') ||
+					status.includes('active') ||
+					status.includes('working')
+				) {
+					return 'inProgress';
+				}
+				if (
+					status.includes('todo') ||
+					status.includes('to do') ||
+					status.includes('open') ||
+					status.includes('backlog')
+				) {
+					return 'open';
+				}
+				return 'default';
+			};
+			const resolveJiraStatusIconSrc = (iconSrc, category, label) => {
+				if (typeof iconSrc === 'string' && iconSrc.trim()) {
+					return iconSrc.trim();
+				}
+				const resolvedCategory = category || deriveJiraStatusCategory(label);
+				return jiraStatusPickerFallbacks[resolvedCategory] || jiraStatusPickerFallbacks.default || '';
+			};
+			const createJiraStatusIcon = (iconSrc, label) => {
+				if (iconSrc) {
+					const image = document.createElement('img');
+					image.className = 'status-icon';
+					image.src = iconSrc;
+					image.alt = (label || 'Status') + ' status icon';
+					return image;
+				}
+				const placeholder = document.createElement('span');
+				placeholder.className = 'status-icon status-icon-placeholder';
+				placeholder.setAttribute('aria-hidden', 'true');
+				return placeholder;
+			};
+			const applyJiraStatusTriggerState = (trigger, label, iconSrc) => {
+				const content = trigger.querySelector('.jira-status-picker-trigger-content');
+				if (!content) {
+					return;
+				}
+				content.innerHTML = '';
+				content.appendChild(createJiraStatusIcon(iconSrc, label));
+				const labelSpan = document.createElement('span');
+				labelSpan.className = 'jira-status-picker-trigger-label';
+				labelSpan.textContent = label || '';
+				content.appendChild(labelSpan);
+			};
+			const closeJiraStatusPicker = (picker) => {
+				const trigger = picker.querySelector('.jira-status-picker-trigger');
+				const menu = picker.querySelector('.jira-status-picker-menu');
+				if (!trigger || !menu) {
+					return;
+				}
+				menu.hidden = true;
+				trigger.setAttribute('aria-expanded', 'false');
+			};
+			const closeAllJiraStatusPickers = (root) => {
+				root.querySelectorAll('.jira-status-picker').forEach((picker) => closeJiraStatusPicker(picker));
+			};
+			const createJiraStatusPickerOption = (entry, picker, select, hiddenInput) => {
+				const optionButton = document.createElement('button');
+				optionButton.type = 'button';
+				optionButton.className = 'jira-status-picker-option';
+				optionButton.setAttribute('data-status-label', entry.label);
+				if (entry.transitionId) {
+					optionButton.setAttribute('data-transition-id', entry.transitionId);
+				}
+				if (entry.statusValue) {
+					optionButton.setAttribute('data-status-value', entry.statusValue);
+				}
+				const content = document.createElement('span');
+				content.className = 'jira-status-picker-option-content';
+				content.appendChild(createJiraStatusIcon(entry.iconSrc, entry.label));
+				const labelSpan = document.createElement('span');
+				labelSpan.className = 'jira-status-picker-option-label';
+				labelSpan.textContent = entry.label;
+				content.appendChild(labelSpan);
+				optionButton.appendChild(content);
+				optionButton.addEventListener('click', () => {
+					if (optionButton.disabled || select.disabled) {
+						return;
+					}
+					select.value = entry.value;
+					if (hiddenInput) {
+						hiddenInput.value = entry.statusValue || entry.label;
+					}
+					const trigger = picker.querySelector('.jira-status-picker-trigger');
+					if (trigger) {
+						applyJiraStatusTriggerState(trigger, entry.label, entry.iconSrc);
+					}
+					closeJiraStatusPicker(picker);
+					if (picker.classList.contains('issue-status-picker')) {
+						select.disabled = true;
+						if (trigger) {
+							trigger.disabled = true;
+						}
+						picker.querySelectorAll('.jira-status-picker-option').forEach((button) => {
+							button.disabled = true;
+						});
+						select.dispatchEvent(new Event('change', { bubbles: true }));
+					}
+				});
+				return optionButton;
+			};
+			const buildJiraStatusPicker = (root, select) => {
+				if (!select || select.getAttribute('data-jira-status-picker-initialized') === 'true') {
+					return;
+				}
+				const wrapper = document.createElement('div');
+				wrapper.className = 'status-select-wrapper jira-status-picker';
+				const isIssuePicker = select.classList.contains('jira-status-select');
+				wrapper.classList.add(isIssuePicker ? 'issue-status-picker' : 'create-status-picker');
+				const trigger = document.createElement('button');
+				trigger.type = 'button';
+				trigger.className = 'jira-status-picker-trigger';
+				trigger.disabled = select.disabled;
+				trigger.setAttribute('aria-haspopup', 'listbox');
+				trigger.setAttribute('aria-expanded', 'false');
+				const triggerContent = document.createElement('span');
+				triggerContent.className = 'jira-status-picker-trigger-content';
+				const triggerChevron = document.createElement('span');
+				triggerChevron.className = 'jira-status-picker-chevron';
+				triggerChevron.setAttribute('aria-hidden', 'true');
+				triggerChevron.textContent = '▾';
+				trigger.appendChild(triggerContent);
+				trigger.appendChild(triggerChevron);
+				const menu = document.createElement('div');
+				menu.className = 'jira-status-picker-menu';
+				menu.hidden = true;
+				let hiddenInput;
+				if (!isIssuePicker) {
+					hiddenInput = document.createElement('input');
+					hiddenInput.type = 'hidden';
+					hiddenInput.name = select.name;
+					hiddenInput.value = select.value;
+					select.removeAttribute('name');
+					wrapper.appendChild(hiddenInput);
+				}
+				const optionEntries = Array.from(select.options)
+					.filter((option) => !option.disabled && option.value)
+					.map((option) => {
+						const label = (option.getAttribute('data-status-label') || option.textContent || '').trim();
+						const statusValue = option.getAttribute('data-status-value') || label;
+						const category = option.getAttribute('data-status-category') || '';
+						const iconSrc = resolveJiraStatusIconSrc(
+							option.getAttribute('data-status-icon-src') || '',
+							category,
+							label
+						);
+						return {
+							value: option.value,
+							label,
+							statusValue,
+							iconSrc,
+							transitionId: isIssuePicker ? option.value : '',
+						};
+					});
+				optionEntries.forEach((entry) => {
+					menu.appendChild(createJiraStatusPickerOption(entry, wrapper, select, hiddenInput));
+				});
+				const currentLabel = isIssuePicker
+					? (select.getAttribute('data-current-status-label') || '').trim()
+					: optionEntries.find((entry) => entry.statusValue === select.value || entry.value === select.value)?.label || '';
+				const currentCategory = isIssuePicker ? select.getAttribute('data-current-status-category') || '' : '';
+				const currentIconSrc = isIssuePicker
+					? resolveJiraStatusIconSrc(
+						select.getAttribute('data-current-status-icon-src') || '',
+						currentCategory,
+						currentLabel
+					  )
+					: optionEntries.find((entry) => entry.statusValue === select.value || entry.value === select.value)?.iconSrc || '';
+				applyJiraStatusTriggerState(trigger, currentLabel, currentIconSrc);
+				trigger.addEventListener('click', () => {
+					if (trigger.disabled) {
+						return;
+					}
+					const nextExpanded = trigger.getAttribute('aria-expanded') !== 'true';
+					closeAllJiraStatusPickers(root);
+					menu.hidden = !nextExpanded;
+					trigger.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+				});
+				wrapper.appendChild(trigger);
+				wrapper.appendChild(menu);
+				select.classList.add('status-picker-source-hidden');
+				select.setAttribute('data-jira-status-picker-initialized', 'true');
+				select.parentNode.insertBefore(wrapper, select.nextSibling);
+				wrapper.appendChild(select);
+			};
+			const initializeJiraStatusPickers = (root) => {
+				root.querySelectorAll('select[name="status"], .jira-status-select').forEach((select) => {
+					buildJiraStatusPicker(root, select);
+				});
+				root.addEventListener('click', (event) => {
+					const target = event.target;
+					if (!(target instanceof Element) || target.closest('.jira-status-picker')) {
+						return;
+					}
+					closeAllJiraStatusPickers(root);
+				});
+				root.addEventListener('keydown', (event) => {
+					if (event.key === 'Escape') {
+						closeAllJiraStatusPickers(root);
+					}
+				});
+			};`;
+	}
+
+	/**
+	 * Renders the issue-details status picker using a native select as the underlying state source.
+	 */
 	static renderStatusControl(issue: JiraIssue, options?: IssuePanelOptions): string {
 	const transitions = options?.statusOptions;
 	const pending = options?.statusPending;
@@ -2596,15 +2945,21 @@ export class JiraWebviewPanel {
 	}
 
 	const selectOptions = transitions
-		.map(
-			(option) =>
-				`<option value="${HtmlHelper.escapeAttribute(option.id)}">${HtmlHelper.escapeHtml(option.name)}</option>`
-		)
+		.map((option) => JiraWebviewPanel.renderStatusSelectOption(option, option.id, false))
 		.join('');
 	const disabledAttr = pending ? 'disabled' : '';
+	const currentStatusCategory = IssueModel.determineStatusCategory(issue.statusName);
+	const currentStatusIconSrc = issue.statusIconSrc?.trim() ?? '';
 
 	return `<div class="status-select-wrapper">
-		<select class="jira-status-select" data-issue-key="${HtmlHelper.escapeAttribute(issue.key)}" ${disabledAttr}>
+		<select
+			class="jira-status-select"
+			data-issue-key="${HtmlHelper.escapeAttribute(issue.key)}"
+			data-current-status-label="${HtmlHelper.escapeAttribute(issue.statusName)}"
+			data-current-status-category="${HtmlHelper.escapeAttribute(currentStatusCategory)}"
+			data-current-status-icon-src="${HtmlHelper.escapeAttribute(currentStatusIconSrc)}"
+			${disabledAttr}
+		>
 			<option value="" disabled selected>Current: ${HtmlHelper.escapeHtml(issue.statusName)}</option>
 			${selectOptions}
 		</select>
@@ -2619,15 +2974,448 @@ export class JiraWebviewPanel {
 	}).join('');
 }
 
+	/**
+	 * Renders the create-issue status options with metadata that the custom picker script can upgrade into icon rows.
+	 */
 	static renderIssueStatusOptions(selected: string, options?: IssueStatusOption[]): string {
-	const names = deriveStatusOptionNames(options);
-	return names
-		.map((option) => {
-			const isSelected = option === selected;
-			return `<option value="${HtmlHelper.escapeAttribute(option)}" ${isSelected ? 'selected' : ''}>${HtmlHelper.escapeHtml(option)}</option>`;
+	const renderOptions =
+		options && options.length > 0
+			? options
+			: ISSUE_STATUS_OPTIONS.map((name) => ({
+					id: name,
+					name,
+			  }));
+	const seen = new Set<string>();
+	return renderOptions
+		.filter((option) => {
+			const name = option?.name?.trim();
+			if (!name) {
+				return false;
+			}
+			const key = name.toLowerCase();
+			if (seen.has(key)) {
+				return false;
+			}
+			seen.add(key);
+			return true;
 		})
+		.map((option) => JiraWebviewPanel.renderStatusSelectOption(option, option.name, option.name === selected))
 		.join('');
 }
+
+	/**
+	 * Renders one native select option carrying the icon metadata needed by the custom picker bootstrap.
+	 */
+static renderStatusSelectOption(option: IssueStatusOption, value: string, selected: boolean): string {
+	const label = option.name?.trim() ?? value;
+	const category = option.category ?? IssueModel.determineStatusCategory(label);
+	const selectedAttr = selected ? 'selected' : '';
+	const iconSrcAttr = HtmlHelper.escapeAttribute(option.iconSrc?.trim() ?? '');
+	return `<option
+		value="${HtmlHelper.escapeAttribute(value)}"
+		data-status-label="${HtmlHelper.escapeAttribute(label)}"
+		data-status-value="${HtmlHelper.escapeAttribute(label)}"
+		data-status-category="${HtmlHelper.escapeAttribute(category)}"
+		data-status-icon-src="${iconSrcAttr}"
+		${selectedAttr}
+	>${HtmlHelper.escapeHtml(label)}</option>`;
+}
+
+	/**
+	 * Renders the updated shared CSS used by the single status picker control.
+	 */
+	static renderStatusPickerStylesV2(): string {
+		return `
+			.status-select-wrapper {
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+			}
+			.jira-status-picker {
+				position: relative;
+				width: 100%;
+			}
+			.jira-status-picker-trigger {
+				width: 100%;
+				min-height: 28px;
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 8px;
+				background: var(--vscode-input-background);
+				color: var(--vscode-input-foreground);
+				border: 1px solid var(--vscode-input-border);
+				border-radius: 4px;
+				padding: 4px 8px;
+				font-family: var(--vscode-font-family);
+				font-size: var(--vscode-font-size);
+				line-height: 1.4;
+				text-align: left;
+				cursor: pointer;
+			}
+			.create-status-picker .jira-status-picker-trigger {
+				min-height: 40px;
+			}
+			.jira-status-picker-trigger:disabled {
+				opacity: 0.7;
+				cursor: not-allowed;
+			}
+			.jira-status-picker-trigger:focus-visible,
+			.jira-status-picker-option:focus-visible {
+				outline: 1px solid var(--vscode-focusBorder, var(--vscode-input-border));
+				outline-offset: 0;
+			}
+			.jira-status-picker-trigger-content,
+			.jira-status-picker-option-content {
+				display: inline-flex;
+				align-items: center;
+				gap: 8px;
+				min-width: 0;
+			}
+			.jira-status-picker-trigger-label,
+			.jira-status-picker-option-label {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.jira-status-picker-chevron {
+				flex-shrink: 0;
+				color: var(--vscode-descriptionForeground);
+				font-size: 0.85em;
+			}
+			.jira-status-picker-menu {
+				position: absolute;
+				top: calc(100% + 4px);
+				left: 0;
+				right: 0;
+				z-index: 20;
+				display: flex;
+				flex-direction: column;
+				gap: 2px;
+				padding: 4px;
+				background: var(--vscode-dropdown-background, var(--vscode-input-background));
+				border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border));
+				border-radius: 4px;
+				box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+			}
+			.jira-status-picker-menu[hidden] {
+				display: none;
+			}
+			.jira-status-picker-option {
+				width: 100%;
+				min-height: 28px;
+				display: flex;
+				align-items: center;
+				background: transparent;
+				color: var(--vscode-input-foreground);
+				border: 1px solid transparent;
+				border-radius: 4px;
+				padding: 4px 8px;
+				font-family: var(--vscode-font-family);
+				font-size: var(--vscode-font-size);
+				line-height: 1.4;
+				cursor: pointer;
+				text-align: left;
+			}
+			.jira-status-picker-option:hover:not(:disabled) {
+				background: var(--vscode-list-hoverBackground, rgba(255,255,255,0.04));
+			}
+			.jira-status-picker-option:disabled {
+				opacity: 0.6;
+				cursor: not-allowed;
+			}
+			.jira-status-picker .status-icon,
+			.jira-status-picker .status-icon-placeholder {
+				width: 16px;
+				height: 16px;
+				flex-shrink: 0;
+			}
+			.jira-status-picker .status-icon-placeholder {
+				display: inline-block;
+				border-radius: 50%;
+				background: color-mix(in srgb, var(--vscode-descriptionForeground) 45%, transparent);
+			}`;
+	}
+
+	/**
+	 * Renders the updated bootstrap script that wires the direct status picker markup.
+	 */
+	static renderStatusPickerBootstrapScriptV2(_statusIconFallbacks: Record<IssueStatusCategory, string>): string {
+		return `
+			const attachJiraStatusImageFallback = (image) => {
+				if (!(image instanceof HTMLImageElement) || image.getAttribute('data-status-fallback-initialized') === 'true') {
+					return;
+				}
+				image.addEventListener('error', () => {
+					const fallbackSrc = (image.getAttribute('data-fallback-src') || '').trim();
+					const currentSrc = image.getAttribute('src') || '';
+					if (!fallbackSrc || fallbackSrc === currentSrc) {
+						return;
+					}
+					image.setAttribute('src', fallbackSrc);
+				});
+				image.setAttribute('data-status-fallback-initialized', 'true');
+			};
+			const attachJiraStatusImageFallbacks = (root) => {
+				root.querySelectorAll('.status-icon[data-fallback-src]').forEach((image) => {
+					attachJiraStatusImageFallback(image);
+				});
+			};
+			const closeJiraStatusPicker = (picker) => {
+				const trigger = picker.querySelector('.jira-status-picker-trigger');
+				const menu = picker.querySelector('.jira-status-picker-menu');
+				if (!trigger || !menu) {
+					return;
+				}
+				menu.hidden = true;
+				trigger.setAttribute('aria-expanded', 'false');
+			};
+			const closeAllJiraStatusPickers = (root) => {
+				root.querySelectorAll('.jira-status-picker').forEach((picker) => closeJiraStatusPicker(picker));
+			};
+			const initializeJiraStatusPickers = (root, vscode) => {
+				root.querySelectorAll('.jira-status-picker').forEach((picker) => {
+					if (picker.getAttribute('data-status-picker-initialized') === 'true') {
+						return;
+					}
+					const trigger = picker.querySelector('.jira-status-picker-trigger');
+					const menu = picker.querySelector('.jira-status-picker-menu');
+					const hiddenInput = picker.querySelector('input[name="status"]');
+					const issueKey = picker.getAttribute('data-issue-key') || '';
+					const mode = picker.getAttribute('data-status-picker') || 'create';
+					if (!trigger || !menu) {
+						return;
+					}
+					trigger.addEventListener('click', () => {
+						if (trigger.disabled) {
+							return;
+						}
+						const nextExpanded = trigger.getAttribute('aria-expanded') !== 'true';
+						closeAllJiraStatusPickers(root);
+						menu.hidden = !nextExpanded;
+						trigger.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+					});
+					picker.querySelectorAll('.jira-status-picker-option').forEach((option) => {
+						option.addEventListener('click', () => {
+							if (option.disabled || trigger.disabled) {
+								return;
+							}
+							const optionContent = option.querySelector('.jira-status-picker-option-content');
+							const triggerContent = trigger.querySelector('.jira-status-picker-trigger-content');
+							if (optionContent && triggerContent) {
+								triggerContent.innerHTML = optionContent.innerHTML;
+								attachJiraStatusImageFallbacks(triggerContent);
+							}
+							closeJiraStatusPicker(picker);
+							if (mode === 'issue') {
+								const transitionId = option.getAttribute('data-transition-id') || '';
+								if (!transitionId || !issueKey) {
+									return;
+								}
+								trigger.disabled = true;
+								picker.querySelectorAll('.jira-status-picker-option').forEach((button) => {
+									button.disabled = true;
+								});
+								vscode.postMessage({ type: 'changeStatus', transitionId, issueKey });
+								return;
+							}
+							if (hiddenInput) {
+								hiddenInput.value = option.getAttribute('data-status-value') || '';
+							}
+						});
+					});
+					attachJiraStatusImageFallbacks(picker);
+					picker.setAttribute('data-status-picker-initialized', 'true');
+				});
+				root.addEventListener('click', (event) => {
+					const target = event.target;
+					if (!(target instanceof Element) || target.closest('.jira-status-picker')) {
+						return;
+					}
+					closeAllJiraStatusPickers(root);
+				});
+				root.addEventListener('keydown', (event) => {
+					if (event.key === 'Escape') {
+						closeAllJiraStatusPickers(root);
+					}
+				});
+			};`;
+	}
+
+	/**
+	 * Resolves the effective category for one rendered status option.
+	 */
+	static resolveStatusOptionCategoryV2(option: IssueStatusOption): IssueStatusCategory {
+		return option.category ?? IssueModel.determineStatusCategory(option.name);
+	}
+
+	/**
+	 * Resolves the effective icon source for one rendered status option.
+	 */
+	static resolveStatusOptionIconSrcV2(webview: vscode.Webview, option: IssueStatusOption): string {
+		const iconSrc = option.iconSrc?.trim();
+		if (iconSrc) {
+			return iconSrc;
+		}
+		return ViewResource.getStatusIconWebviewSrc(webview, JiraWebviewPanel.resolveStatusOptionCategoryV2(option)) ?? '';
+	}
+
+	/**
+	 * Resolves the packaged fallback icon source for one rendered status option.
+	 */
+	static resolveStatusOptionFallbackIconSrcV2(webview: vscode.Webview, option: IssueStatusOption): string {
+		return ViewResource.getStatusIconWebviewSrc(webview, JiraWebviewPanel.resolveStatusOptionCategoryV2(option)) ?? '';
+	}
+
+	/**
+	 * Renders one status icon image with an optional packaged fallback source.
+	 */
+	static renderStatusIconMarkupV2(label: string, iconSrc: string, fallbackIconSrc?: string): string {
+		if (!iconSrc) {
+			return '<span class="status-icon status-icon-placeholder" aria-hidden="true"></span>';
+		}
+		const fallbackAttribute =
+			fallbackIconSrc && fallbackIconSrc !== iconSrc
+				? ` data-fallback-src="${HtmlHelper.escapeAttribute(fallbackIconSrc)}"`
+				: '';
+		return `<img class="status-icon" src="${HtmlHelper.escapeAttribute(iconSrc)}"${fallbackAttribute} alt="${HtmlHelper.escapeHtml(
+			label
+		)} status icon" />`;
+	}
+
+	/**
+	 * Renders the icon-plus-label fragment shared by status picker triggers and options.
+	 */
+	static renderStatusPickerDisplayContentV2(label: string, iconSrc: string, fallbackIconSrc?: string): string {
+		const iconMarkup = JiraWebviewPanel.renderStatusIconMarkupV2(label, iconSrc, fallbackIconSrc);
+		return `<span class="jira-status-picker-trigger-content">${iconMarkup}<span class="jira-status-picker-trigger-label">${HtmlHelper.escapeHtml(
+			label
+		)}</span></span>`;
+	}
+
+	/**
+	 * Renders one direct status picker option button.
+	 */
+	static renderStatusPickerOptionButtonV2(
+		label: string,
+		iconSrc: string,
+		fallbackIconSrc: string,
+		attributes: string,
+		disabled: boolean
+	): string {
+		return `<button type="button" class="jira-status-picker-option" ${attributes} ${disabled ? 'disabled' : ''}>
+			<span class="jira-status-picker-option-content">
+				${JiraWebviewPanel.renderStatusIconMarkupV2(label, iconSrc, fallbackIconSrc)}
+				<span class="jira-status-picker-option-label">${HtmlHelper.escapeHtml(label)}</span>
+			</span>
+		</button>`;
+	}
+
+	/**
+	 * Renders the create-issue status picker as a single custom control.
+	 */
+	static renderCreateStatusPickerControl(
+		webview: vscode.Webview,
+		selected: string,
+		options?: IssueStatusOption[],
+		disabled = false
+	): string {
+		const renderOptions =
+			options && options.length > 0
+				? options
+				: ISSUE_STATUS_OPTIONS.map((name) => ({
+						id: name,
+						name,
+				  }));
+		const seen = new Set<string>();
+		const deduplicatedOptions = renderOptions.filter((option) => {
+			const name = option?.name?.trim();
+			if (!name) {
+				return false;
+			}
+			const key = name.toLowerCase();
+			if (seen.has(key)) {
+				return false;
+			}
+			seen.add(key);
+			return true;
+		});
+		const selectedOption =
+			deduplicatedOptions.find((option) => option.name === selected) ??
+			deduplicatedOptions[0] ?? {
+				id: selected,
+				name: selected,
+			};
+		const selectedIconSrc = JiraWebviewPanel.resolveStatusOptionIconSrcV2(webview, selectedOption);
+		const selectedFallbackIconSrc = JiraWebviewPanel.resolveStatusOptionFallbackIconSrcV2(webview, selectedOption);
+		const optionButtons = deduplicatedOptions
+			.map((option) =>
+				JiraWebviewPanel.renderStatusPickerOptionButtonV2(
+					option.name,
+					JiraWebviewPanel.resolveStatusOptionIconSrcV2(webview, option),
+					JiraWebviewPanel.resolveStatusOptionFallbackIconSrcV2(webview, option),
+					`data-status-value="${HtmlHelper.escapeAttribute(option.name)}" data-status-label="${HtmlHelper.escapeAttribute(option.name)}"`,
+					disabled
+				)
+			)
+			.join('');
+		return `<div class="status-select-wrapper jira-status-picker create-status-picker" data-status-picker="create">
+			<input type="hidden" name="status" value="${HtmlHelper.escapeAttribute(selectedOption.name)}" />
+			<button type="button" class="jira-status-picker-trigger" aria-haspopup="listbox" aria-expanded="false" ${disabled ? 'disabled' : ''}>
+				${JiraWebviewPanel.renderStatusPickerDisplayContentV2(selectedOption.name, selectedIconSrc, selectedFallbackIconSrc)}
+				<span class="jira-status-picker-chevron" aria-hidden="true">▾</span>
+			</button>
+			<div class="jira-status-picker-menu" hidden>
+				${optionButtons}
+			</div>
+		</div>`;
+	}
+
+	/**
+	 * Renders the issue-details status picker as a single custom control.
+	 */
+	static renderStatusControlV2(webview: vscode.Webview, issue: JiraIssue, options?: IssuePanelOptions): string {
+		const transitions = options?.statusOptions;
+		const pending = options?.statusPending ?? false;
+		const statusError = options?.statusError;
+		if (!transitions || transitions.length === 0) {
+			const message = statusError
+				? statusError
+				: options?.loading
+				? 'Loading available statusesâ€¦'
+				: 'No status transitions available.';
+			return `<div>${HtmlHelper.escapeHtml(issue.statusName)}</div>
+		<div class="muted">${HtmlHelper.escapeHtml(message)}</div>`;
+		}
+		const currentStatusIconSrc =
+			issue.statusIconSrc?.trim() ??
+			(ViewResource.getStatusIconWebviewSrc(webview, IssueModel.determineStatusCategory(issue.statusName)) ?? '');
+		const currentStatusFallbackIconSrc =
+			ViewResource.getStatusIconWebviewSrc(webview, IssueModel.determineStatusCategory(issue.statusName)) ?? '';
+		const optionButtons = transitions
+			.map((option) =>
+				JiraWebviewPanel.renderStatusPickerOptionButtonV2(
+					option.name,
+					JiraWebviewPanel.resolveStatusOptionIconSrcV2(webview, option),
+					JiraWebviewPanel.resolveStatusOptionFallbackIconSrcV2(webview, option),
+					`data-transition-id="${HtmlHelper.escapeAttribute(option.id)}" data-status-label="${HtmlHelper.escapeAttribute(option.name)}"`,
+					pending
+				)
+			)
+			.join('');
+		return `<div class="status-select-wrapper jira-status-picker issue-status-picker" data-status-picker="issue" data-issue-key="${HtmlHelper.escapeAttribute(
+			issue.key
+		)}">
+			<button type="button" class="jira-status-picker-trigger" aria-haspopup="listbox" aria-expanded="false" ${pending ? 'disabled' : ''}>
+				${JiraWebviewPanel.renderStatusPickerDisplayContentV2(issue.statusName, currentStatusIconSrc, currentStatusFallbackIconSrc)}
+				<span class="jira-status-picker-chevron" aria-hidden="true">▾</span>
+			</button>
+			<div class="jira-status-picker-menu" hidden>
+				${optionButtons}
+			</div>
+			${statusError ? `<div class="status-error">${HtmlHelper.escapeHtml(statusError)}</div>` : ''}
+		</div>`;
+	}
 
 	static renderCreateAdditionalFieldsSection(
 	state: CreateIssuePanelState,
@@ -3004,9 +3792,15 @@ const renderCommentReplyBanner = JiraWebviewPanel.renderCommentReplyBanner;
 const renderCommentAvatar = JiraWebviewPanel.renderCommentAvatar;
 const renderRelatedIssueButton = JiraWebviewPanel.renderRelatedIssueButton;
 const renderMetadataPanel = JiraWebviewPanel.renderMetadataPanel;
+const renderStatusPickerStyles = JiraWebviewPanel.renderStatusPickerStyles;
+const renderStatusPickerBootstrapScript = JiraWebviewPanel.renderStatusPickerBootstrapScript;
+const renderStatusPickerStylesV2 = JiraWebviewPanel.renderStatusPickerStylesV2;
+const renderStatusPickerBootstrapScriptV2 = JiraWebviewPanel.renderStatusPickerBootstrapScriptV2;
 const renderStatusControl = JiraWebviewPanel.renderStatusControl;
+const renderStatusControlV2 = JiraWebviewPanel.renderStatusControlV2;
 const renderIssueTypeOptions = JiraWebviewPanel.renderIssueTypeOptions;
 const renderIssueStatusOptions = JiraWebviewPanel.renderIssueStatusOptions;
+const renderCreateStatusPickerControl = JiraWebviewPanel.renderCreateStatusPickerControl;
 const renderCreateAdditionalFieldsSection = JiraWebviewPanel.renderCreateAdditionalFieldsSection;
 const renderCreateParentSidebarSection = JiraWebviewPanel.renderCreateParentSidebarSection;
 const renderCreateAdditionalFieldInput = JiraWebviewPanel.renderCreateAdditionalFieldInput;

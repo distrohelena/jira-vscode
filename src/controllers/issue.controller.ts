@@ -235,6 +235,15 @@ export class IssueControllerFactory {
 		};
 
 		/**
+		 * Resolves Jira-owned status option icons for the active issue-details webview.
+		 */
+		const resolveStatusOptionsForWebview = async (
+			options?: IssueStatusOption[]
+		): Promise<IssueStatusOption[] | undefined> => {
+			return webviewIconService.createStatusOptionsWithResolvedIconSources(panel.webview, options);
+		};
+
+		/**
 		 * Resolves Jira-owned icon URLs for the active issue header through the authenticated local cache.
 		 */
 		const resolveIssueForWebview = async (issue: JiraIssue): Promise<JiraIssue> => {
@@ -258,6 +267,23 @@ export class IssueControllerFactory {
 			assigneePickerSession?.dispose();
 			parentPickerSession?.dispose();
 		});
+
+		if (initialStatusOptions && initialStatusOptions.length > 0) {
+			void resolveStatusOptionsForWebview(initialStatusOptions).then((resolvedOptions) => {
+				if (disposed || !resolvedOptions || resolvedOptions.length === 0) {
+					return;
+				}
+				if (panelState.transitions && panelState.transitions.length > 0) {
+					panelState.transitions = resolvedOptions;
+				} else {
+					panelState.statusPrefill = resolvedOptions;
+				}
+				renderPanel({
+					statusOptions: resolvedOptions,
+					statusPending: !panelState.transitions,
+				});
+			});
+		}
 
 		void refreshComments(true);
 		await loadIssueDetails();
@@ -323,15 +349,16 @@ export class IssueControllerFactory {
 				}
 
 				panelState.issue = issue;
-				panelState.transitions = transitionResult.transitions;
+				panelState.transitions = await resolveStatusOptionsForWebview(transitionResult.transitions);
 				if (issueProjectKeyResolved) {
 					const issueTypeCriteria = {
 						issueTypeId: issue.issueTypeId,
 						issueTypeName: issue.issueTypeName,
 					};
-					panelState.statusPrefill =
+					panelState.statusPrefill = await resolveStatusOptionsForWebview(
 						projectStatusStore.getIssueTypeStatuses(issueProjectKeyResolved, issueTypeCriteria) ??
-						projectStatusStore.get(issueProjectKeyResolved);
+							projectStatusStore.get(issueProjectKeyResolved)
+					);
 				}
 				panelState.loadingIssue = false;
 				panelState.summaryEditPending = false;
@@ -400,15 +427,16 @@ export class IssueControllerFactory {
 					return;
 				}
 				panelState.issue = updatedIssue;
-				panelState.transitions = transitionResult.transitions;
+				panelState.transitions = await resolveStatusOptionsForWebview(transitionResult.transitions);
 				if (updatedProjectKey) {
 					const issueTypeCriteria = {
 						issueTypeId: updatedIssue.issueTypeId,
 						issueTypeName: updatedIssue.issueTypeName,
 					};
-					panelState.statusPrefill =
+					panelState.statusPrefill = await resolveStatusOptionsForWebview(
 						projectStatusStore.getIssueTypeStatuses(updatedProjectKey, issueTypeCriteria) ??
-						projectStatusStore.get(updatedProjectKey);
+							projectStatusStore.get(updatedProjectKey)
+					);
 				}
 				renderPanel({
 					statusOptions: panelState.transitions ?? panelState.statusPrefill,
