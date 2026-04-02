@@ -2532,16 +2532,19 @@ export class JiraWebviewPanel {
 	 */
 	static renderParentMetadataSection(issue: JiraIssue): string {
 		const parent = issue.parent;
-		const content = parent
-			? renderRelatedIssueButton(parent)
-			: '<div class="muted">No parent issue.</div>';
-		const actionLabel = parent ? 'Change parent' : 'Select parent';
+		const selectedParent = parent
+			? {
+				key: parent.key,
+				summary: parent.summary,
+			}
+			: undefined;
+		const parentPickerCard = SharedParentPicker.renderCard({
+			ariaLabel: 'Choose a parent ticket',
+			selectedParent,
+		});
 		return `<div class="meta-section">
 			<div class="section-title">Parent Ticket</div>
-			<div class="parent-section-body">
-				${content}
-				<button type="button" class="parent-picker-trigger" data-parent-picker-open>${HtmlHelper.escapeHtml(actionLabel)}</button>
-			</div>
+			${parentPickerCard}
 		</div>`;
 	}
 

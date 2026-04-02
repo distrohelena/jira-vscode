@@ -366,6 +366,7 @@ describe('Issue panel editor interactions', () => {
 		const parentSectionIndex = sidebarSections.findIndex((section) => section.textContent?.includes('Parent Ticket'));
 		const assigneeSectionIndex = sidebarSections.findIndex((section) => section.textContent?.includes('Assignee'));
 		expect(parentButton).toBeTruthy();
+		expect(parentButton?.classList.contains('parent-picker-card')).toBe(true);
 		expect(parentSectionIndex).toBeGreaterThan(-1);
 		expect(assigneeSectionIndex).toBeGreaterThan(-1);
 		expect(parentSectionIndex).toBeLessThan(assigneeSectionIndex);
