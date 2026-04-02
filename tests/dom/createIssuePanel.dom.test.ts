@@ -232,6 +232,27 @@ describe('Create issue panel', () => {
 		expect(message.values.customFields.parent).toBe('PROJ-123');
 	});
 
+	it('renders the shared parent ticket card when a parent issue is already selected', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom({
+			selectedParentIssue: {
+				key: 'PROJ-123',
+				summary: 'Parent issue summary',
+			} as any,
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const parentCard = dom.window.document.querySelector('.issue-sidebar .parent-picker-card') as HTMLButtonElement | null;
+		const parentCardTitle = dom.window.document.querySelector(
+			'.issue-sidebar .parent-picker-card-title'
+		) as HTMLSpanElement | null;
+		const parentCardDetail = dom.window.document.querySelector(
+			'.issue-sidebar .parent-picker-card-detail'
+		) as HTMLSpanElement | null;
+		expect(parentCard).toBeTruthy();
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCardDetail?.textContent).toContain('PROJ-123 - Parent issue summary');
+	});
+
 	it('opens the parent picker modal from the parent field control', () => {
 		const { dom, messages, scriptErrors } = renderCreateIssuePanelDom({
 			createFields: [

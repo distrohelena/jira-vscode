@@ -376,6 +376,48 @@ describe('Issue panel editor interactions', () => {
 		expect(openMessage).toBeTruthy();
 	});
 
+	it('renders the shared parent ticket card for an existing parent issue', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
+			parent: {
+				key: 'PROJ-123',
+				summary: 'Parent issue summary',
+				statusName: 'In Progress',
+				url: 'https://jira.example.test/browse/PROJ-123',
+			},
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const parentSection = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')).find(
+			(section) => section.textContent?.includes('Parent Ticket')
+		) as HTMLElement | undefined;
+		const parentCard = parentSection?.querySelector('.parent-picker-card');
+		const parentCardTitle = parentSection?.querySelector('.parent-picker-card-title') as HTMLSpanElement | null;
+		const parentCardDetail = parentSection?.querySelector('.parent-picker-card-detail') as HTMLSpanElement | null;
+		const parentSectionBody = parentSection?.querySelector('.parent-section-body');
+		expect(parentSection).toBeTruthy();
+		expect(parentCard).toBeTruthy();
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCardDetail?.textContent).toContain('PROJ-123 - Parent issue summary');
+		expect(parentSectionBody).toBeNull();
+	});
+
+	it('renders the empty parent state as a shared card shell without the legacy row layout', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const parentSection = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')).find(
+			(section) => section.textContent?.includes('Parent Ticket')
+		) as HTMLElement | undefined;
+		const parentCardDetail = parentSection?.querySelector('.parent-picker-card-detail') as HTMLSpanElement | null;
+		const parentSectionBody = parentSection?.querySelector('.parent-section-body');
+		const parentDetailText = parentCardDetail?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+		expect(parentSection).toBeTruthy();
+		expect(parentCardDetail).toBeTruthy();
+		expect(parentDetailText).toContain('No parent selected');
+		expect(parentDetailText).toContain('Unassigned');
+		expect(parentSectionBody).toBeNull();
+	});
+
 	it('opens the assignee picker modal from the issue assignee section', () => {
 		const { dom, messages, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom({
 			currentUser: {
