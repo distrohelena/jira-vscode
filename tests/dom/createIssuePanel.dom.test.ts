@@ -305,6 +305,26 @@ describe('Create issue panel', () => {
 		expect(markup).toContain('PROJ-999 - Shared renderer parent');
 	});
 
+	it('renders neutral shared parent picker markup when no create field is supplied', () => {
+		const markup = SharedParentPicker.renderCard({
+			ariaLabel: 'Parent Ticket',
+			selectedParent: {
+				key: 'PROJ-777',
+				summary: 'Neutral shared renderer parent',
+			},
+		});
+
+		expect(markup).not.toContain('create-custom-field-label');
+		expect(markup).not.toContain('data-create-parent-field');
+		expect(markup).not.toContain('data-create-custom-field');
+		expect(markup).not.toContain('type="hidden"');
+		expect(markup).toContain('class="parent-field"');
+		expect(markup).toContain('data-parent-picker-open');
+		expect(markup).toContain('class="parent-picker-trigger parent-picker-card"');
+		expect(markup).toContain('Choose a parent ticket');
+		expect(markup).toContain('PROJ-777 - Neutral shared renderer parent');
+	});
+
 	it('opens the parent picker modal from the parent field control', () => {
 		const { dom, messages, scriptErrors } = renderCreateIssuePanelDom({
 			createFields: [

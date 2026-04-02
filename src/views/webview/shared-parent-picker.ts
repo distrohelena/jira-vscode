@@ -57,16 +57,18 @@ export class SharedParentPicker {
 		const detailLabel = options.selectedParent
 			? HtmlHelper.escapeHtml(`${options.selectedParent.key} - ${options.selectedParent.summary}`)
 			: 'No parent selected &bull; Unassigned';
+		const hasCreateField = Boolean(options.fieldId);
 		const escapedAriaLabel = HtmlHelper.escapeAttribute(options.ariaLabel);
-		const escapedFieldId = options.fieldId ? HtmlHelper.escapeAttribute(options.fieldId) : '';
+		const escapedFieldId = hasCreateField ? HtmlHelper.escapeAttribute(options.fieldId ?? '') : '';
 		const escapedFieldValue = HtmlHelper.escapeAttribute(options.fieldValue ?? '');
-		const createFieldAttribute = options.fieldId ? ` data-create-parent-field="${escapedFieldId}"` : '';
-		const hiddenInputMarkup = options.fieldId
+		const wrapperClassName = hasCreateField ? 'create-custom-field-label parent-field' : 'parent-field';
+		const createFieldAttribute = hasCreateField ? ` data-create-parent-field="${escapedFieldId}"` : '';
+		const hiddenInputMarkup = hasCreateField
 			? `<input type="hidden" id="${escapedFieldId}" data-create-custom-field="${escapedFieldId}" value="${escapedFieldValue}" />`
 			: '';
 		const disabledAttribute = options.disabled ? 'disabled' : '';
 
-		return `<div class="create-custom-field-label parent-field"${createFieldAttribute}>
+		return `<div class="${wrapperClassName}"${createFieldAttribute}>
 			${hiddenInputMarkup}
 			<button
 				type="button"
