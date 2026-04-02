@@ -402,6 +402,33 @@ describe('Issue panel editor interactions', () => {
 		expect(parentSectionBody).toBeNull();
 	});
 
+	it('keeps a direct parent issue opening affordance alongside the shared parent picker card', () => {
+		const { dom, messages, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
+			parent: {
+				key: 'PROJ-123',
+				summary: 'Parent issue summary',
+				statusName: 'In Progress',
+				url: 'https://jira.example.test/browse/PROJ-123',
+			},
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const parentSection = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')).find(
+			(section) => section.textContent?.includes('Parent Ticket')
+		) as HTMLElement | undefined;
+		const parentCard = parentSection?.querySelector('.parent-picker-card');
+		const parentIssueLink = parentSection?.querySelector('.issue-link') as HTMLButtonElement | null;
+		expect(parentCard).toBeTruthy();
+		expect(parentIssueLink).toBeTruthy();
+		expect(parentIssueLink?.textContent).toContain('PROJ-123');
+
+		IssuePanelTestHarness.click(parentIssueLink as Element, dom.window);
+
+		const openMessage = messages.find((message) => message?.type === 'openIssue');
+		expect(openMessage).toBeTruthy();
+		expect(openMessage.key).toBe('PROJ-123');
+	});
+
 	it('renders the empty parent state as a shared card shell without the legacy row layout', () => {
 		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom();
 		expect(scriptErrors).toEqual([]);

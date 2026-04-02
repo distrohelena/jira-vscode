@@ -2542,9 +2542,11 @@ export class JiraWebviewPanel {
 			ariaLabel: 'Choose a parent ticket',
 			selectedParent,
 		});
+		const parentIssueLink = parent ? `<div style="margin-top: 8px;">${renderRelatedIssueButton(parent)}</div>` : '';
 		return `<div class="meta-section">
 			<div class="section-title">Parent Ticket</div>
 			${parentPickerCard}
+			${parentIssueLink}
 		</div>`;
 	}
 

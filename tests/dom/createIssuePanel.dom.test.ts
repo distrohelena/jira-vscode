@@ -334,6 +334,21 @@ describe('Create issue panel', () => {
 		expect(parentCardDetail?.textContent).toContain('PROJ-777 - Neutral shared renderer parent');
 	});
 
+	it('omits the detail separator when the shared parent picker summary is empty', () => {
+		const markup = SharedParentPicker.renderCard({
+			ariaLabel: 'Parent Ticket',
+			selectedParent: {
+				key: 'PROJ-777',
+				summary: '   ',
+			},
+		});
+		const fragment = JSDOM.fragment(markup);
+		const parentCardDetail = fragment.querySelector('.parent-picker-card-detail') as HTMLSpanElement | null;
+
+		expect(parentCardDetail?.textContent?.trim()).toBe('PROJ-777');
+		expect(parentCardDetail?.textContent).not.toContain(' - ');
+	});
+
 	it('opens the parent picker modal from the parent field control', () => {
 		const { dom, messages, scriptErrors } = renderCreateIssuePanelDom({
 			createFields: [

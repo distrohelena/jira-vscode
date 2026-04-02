@@ -55,7 +55,7 @@ export class SharedParentPicker {
 	static renderCard(options: SharedParentPickerRenderOptions): string {
 		const titleLabel = 'Choose a parent ticket';
 		const detailLabel = options.selectedParent
-			? HtmlHelper.escapeHtml(`${options.selectedParent.key} - ${options.selectedParent.summary}`)
+			? HtmlHelper.escapeHtml(SharedParentPicker.formatDetailLabel(options.selectedParent))
 			: 'No parent selected &bull; Unassigned';
 		const hasCreateField = Boolean(options.fieldId);
 		const escapedAriaLabel = HtmlHelper.escapeAttribute(options.ariaLabel);
@@ -82,5 +82,13 @@ export class SharedParentPicker {
 			<input type="hidden" id="${escapedFieldId}" data-create-custom-field="${escapedFieldId}" value="${escapedFieldValue}" />
 			${cardMarkup}
 		</div>`;
+	}
+
+	/**
+	 * Formats the selected parent detail text so empty summaries collapse to the issue key alone.
+	 */
+	static formatDetailLabel(selection: SharedParentPickerSelection): string {
+		const summary = selection.summary.trim();
+		return summary ? `${selection.key} - ${summary}` : selection.key;
 	}
 }
