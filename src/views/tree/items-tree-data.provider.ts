@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { stat } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 import { JiraAuthManager } from '../../model/auth.manager';
 import { JiraFocusManager } from '../../model/focus.manager';
@@ -633,8 +635,8 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			return undefined;
 		}
 		return (
-			(await this.iconCacheService.getCachedIconUri(issue.issueTypeIconUrl)) ??
-			(await this.iconCacheService.getCachedIconUri(issue.statusIconUrl))
+			(await this.resolveUsableCachedIconUri(issue.issueTypeIconUrl)) ??
+			(await this.resolveUsableCachedIconUri(issue.statusIconUrl))
 		);
 	}
 
@@ -646,12 +648,51 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			return undefined;
 		}
 		for (const iconUrl of iconUrls) {
-			const resolvedIconUri = await this.iconCacheService.getCachedIconUri(iconUrl);
+			const resolvedIconUri = await this.resolveUsableCachedIconUri(iconUrl);
 			if (resolvedIconUri) {
 				return resolvedIconUri;
 			}
 		}
 		return undefined;
+	}
+
+	/**
+	 * Resolves one cached Jira icon URI and discards values that no longer point to a readable local file.
+	 */
+	private async resolveUsableCachedIconUri(iconUrl: string | undefined): Promise<string | undefined> {
+		if (!this.iconCacheService) {
+			return undefined;
+		}
+		const resolvedIconUri = await this.iconCacheService.getCachedIconUri(iconUrl);
+		return (await this.isUsableTreeIconUri(resolvedIconUri)) ? resolvedIconUri : undefined;
+	}
+
+	/**
+	 * Verifies that one cached tree icon URI still points to an on-disk file before the tree view tries to render it.
+	 */
+	private async isUsableTreeIconUri(iconUri: string | undefined): Promise<boolean> {
+		const trimmedIconUri = iconUri?.trim();
+		if (!trimmedIconUri) {
+			return false;
+		}
+
+		let parsedIconUri: URL;
+		try {
+			parsedIconUri = new URL(trimmedIconUri);
+		} catch {
+			return false;
+		}
+
+		if (parsedIconUri.protocol !== 'file:') {
+			return false;
+		}
+
+		try {
+			const iconFileStats = await stat(fileURLToPath(parsedIconUri));
+			return iconFileStats.isFile();
+		} catch {
+			return false;
+		}
 	}
 
 	/**
