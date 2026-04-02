@@ -456,6 +456,38 @@ describe('Create issue panel', () => {
 		expect(clearedText).toContain('Unassigned');
 	});
 
+	it('collapses whitespace-only parent summaries during live picker selection updates', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const parentButton = dom.window.document.querySelector(
+			'.issue-sidebar [data-parent-picker-open]'
+		) as HTMLButtonElement | null;
+		const parentInput = dom.window.document.querySelector(
+			'.issue-sidebar [data-create-custom-field="parent"]'
+		) as HTMLInputElement | null;
+		const parentCardDetail = parentButton?.querySelector('.parent-picker-card-detail') as HTMLSpanElement | null;
+		expect(parentButton).toBeTruthy();
+		expect(parentInput).toBeTruthy();
+		expect(parentCardDetail).toBeTruthy();
+
+		dom.window.dispatchEvent(
+			new dom.window.MessageEvent('message', {
+				data: {
+					type: 'parentPickerSelectionApplied',
+					issue: {
+						key: 'PROJ-999',
+						summary: '   ',
+					},
+				},
+			})
+		);
+
+		expect(parentInput?.value).toBe('PROJ-999');
+		expect(parentCardDetail?.textContent?.trim()).toBe('PROJ-999');
+		expect(parentCardDetail?.textContent).not.toContain(' - ');
+	});
+
 	it('syncs the selected parent into a nonliteral parent field id', () => {
 		const parentFieldId = 'customfield_10016';
 		const { dom, scriptErrors } = renderCreateIssuePanelDom({

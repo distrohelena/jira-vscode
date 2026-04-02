@@ -516,7 +516,8 @@ export class ParentIssuePickerOverlay {
 					titleEl.textContent = 'Choose a parent ticket';
 				}
 				if (detailEl) {
-					detailEl.textContent = (issue.key || '') + (issue.summary ? ' - ' + issue.summary : '');
+					const summaryText = typeof issue.summary === 'string' ? issue.summary.trim() : '';
+					detailEl.textContent = summaryText ? (issue.key || '') + ' - ' + summaryText : (issue.key || '');
 				}
 			};
 			const parentPickerCreateIconPlaceholder = (image) => {
