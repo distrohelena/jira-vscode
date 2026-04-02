@@ -508,4 +508,13 @@ describe('Issue panel editor interactions', () => {
 		expect(statusIcon).toBeTruthy();
 		expect(statusIcon?.getAttribute('src')).toContain('/media/status-inprogress.png');
 	});
+	it('includes a pointer cursor rule for the issue sidebar parent and assignee picker cards', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const stylesheet = dom.window.document.head.innerHTML;
+		expect(stylesheet).toContain('.issue-sidebar [data-parent-picker-open]');
+		expect(stylesheet).toContain('.issue-sidebar [data-assignee-picker-open]');
+		expect(stylesheet).toContain('cursor: pointer');
+	});
 });
