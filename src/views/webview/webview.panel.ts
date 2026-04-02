@@ -715,12 +715,12 @@ export class JiraWebviewPanel {
 		.issue-sidebar {
 			position: relative;
 		}
-		.issue-sidebar [data-parent-picker-open],
-		.issue-sidebar [data-assignee-picker-open] {
+		.issue-sidebar[data-issue-details-sidebar] [data-parent-picker-open],
+		.issue-sidebar[data-issue-details-sidebar] [data-assignee-picker-open] {
 			cursor: pointer;
 		}
-		.issue-sidebar [data-parent-picker-open]:disabled,
-		.issue-sidebar [data-assignee-picker-open]:disabled {
+		.issue-sidebar[data-issue-details-sidebar] [data-parent-picker-open]:disabled,
+		.issue-sidebar[data-issue-details-sidebar] [data-assignee-picker-open]:disabled {
 			cursor: not-allowed;
 		}
 		.meta-card {
@@ -2569,7 +2569,7 @@ static renderMetadataPanel(
 ): string {
 	const statusControl = renderStatusControlV2(webview, issue, options);
 	const assigneeControl = renderAssigneeControl(issue, assignee, options);
-	return `<div class="issue-sidebar">
+	return `<div class="issue-sidebar" data-issue-details-sidebar>
 		<div class="meta-card">
 			<div class="meta-section">
 				<div class="section-title">Status</div>

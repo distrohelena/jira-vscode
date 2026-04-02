@@ -512,17 +512,23 @@ describe('Issue panel editor interactions', () => {
 		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom();
 		expect(scriptErrors).toEqual([]);
 
+		const detailsSidebar = dom.window.document.querySelector('.issue-sidebar[data-issue-details-sidebar]');
 		const stylesheet = Array.from(dom.window.document.querySelectorAll('style'))
 			.map((style) => style.textContent ?? '')
 			.join('\n');
 
-		expect(stylesheet).toMatch(/\.issue-sidebar \[data-parent-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;/s);
-		expect(stylesheet).toMatch(/\.issue-sidebar \[data-assignee-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;/s);
+		expect(detailsSidebar).toBeTruthy();
 		expect(stylesheet).toMatch(
-			/\.issue-sidebar \[data-parent-picker-open\]:disabled[^{}]*\{[^}]*cursor:\s*not-allowed;/s
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-parent-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;/s
 		);
 		expect(stylesheet).toMatch(
-			/\.issue-sidebar \[data-assignee-picker-open\]:disabled[^{}]*\{[^}]*cursor:\s*not-allowed;/s
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-assignee-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;/s
+		);
+		expect(stylesheet).toMatch(
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-parent-picker-open\]:disabled[^{}]*\{[^}]*cursor:\s*not-allowed;/s
+		);
+		expect(stylesheet).toMatch(
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-assignee-picker-open\]:disabled[^{}]*\{[^}]*cursor:\s*not-allowed;/s
 		);
 	});
 });

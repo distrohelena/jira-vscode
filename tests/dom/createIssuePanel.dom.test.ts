@@ -409,6 +409,30 @@ describe('Create issue panel', () => {
 		expect(host?.innerHTML).toContain('Select Parent Ticket');
 	});
 
+	it('does not include the issue-details-only cursor rule in the create stylesheet', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const detailsSidebar = dom.window.document.querySelector('.issue-sidebar[data-issue-details-sidebar]');
+		const stylesheet = Array.from(dom.window.document.querySelectorAll('style'))
+			.map((style) => style.textContent ?? '')
+			.join('\n');
+
+		expect(detailsSidebar).toBeNull();
+		expect(stylesheet).not.toMatch(
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-parent-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;/s
+		);
+		expect(stylesheet).not.toMatch(
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-assignee-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;/s
+		);
+		expect(stylesheet).not.toMatch(
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-parent-picker-open\]:disabled[^{}]*\{[^}]*cursor:\s*not-allowed;/s
+		);
+		expect(stylesheet).not.toMatch(
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-assignee-picker-open\]:disabled[^{}]*\{[^}]*cursor:\s*not-allowed;/s
+		);
+	});
+
 	it('updates the parent card when the picker applies and clears a selection', () => {
 		const { dom, scriptErrors } = renderCreateIssuePanelDom();
 		expect(scriptErrors).toEqual([]);
