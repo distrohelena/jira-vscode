@@ -385,6 +385,25 @@ describe('Create issue panel', () => {
 		expect(openMessage).toBeTruthy();
 	});
 
+	it('renders the create assignee action as a shared assign-to-me button', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom({
+			currentUser: {
+				accountId: 'acct-123',
+				displayName: 'Helena',
+				avatarUrl: 'https://jira.example.test/avatar.png',
+			},
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const assignMeButton = dom.window.document.querySelector(
+			'.issue-sidebar .assignee-actions .jira-create-assign-me'
+		) as HTMLButtonElement | null;
+		expect(assignMeButton).toBeTruthy();
+		expect(assignMeButton?.textContent?.trim()).toBe('Assign to Me');
+		expect(assignMeButton?.getAttribute('data-account-id')).toBe('acct-123');
+		expect(assignMeButton?.classList.contains('jira-shared-assign-me')).toBe(true);
+	});
+
 	it('renders the parent picker overlay inside the existing webview', () => {
 		const { dom, scriptErrors } = renderCreateIssuePanelDom();
 		expect(scriptErrors).toEqual([]);
