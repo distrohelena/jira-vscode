@@ -385,6 +385,25 @@ describe('Create issue panel', () => {
 		expect(openMessage).toBeTruthy();
 	});
 
+	it('renders the create assignee action as a shared assign-to-me button', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom({
+			currentUser: {
+				accountId: 'acct-123',
+				displayName: 'Helena',
+				avatarUrl: 'https://jira.example.test/avatar.png',
+			},
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const assignMeButton = dom.window.document.querySelector(
+			'.issue-sidebar .assignee-actions .jira-create-assign-me'
+		) as HTMLButtonElement | null;
+		expect(assignMeButton).toBeTruthy();
+		expect(assignMeButton?.textContent?.trim()).toBe('Assign to Me');
+		expect(assignMeButton?.getAttribute('data-account-id')).toBe('acct-123');
+		expect(assignMeButton?.classList.contains('jira-shared-assign-me')).toBe(true);
+	});
+
 	it('renders the parent picker overlay inside the existing webview', () => {
 		const { dom, scriptErrors } = renderCreateIssuePanelDom();
 		expect(scriptErrors).toEqual([]);
@@ -407,6 +426,30 @@ describe('Create issue panel', () => {
 
 		expect(host?.classList.contains('active')).toBe(true);
 		expect(host?.innerHTML).toContain('Select Parent Ticket');
+	});
+
+	it('does not include the issue-details-only cursor rule in the create stylesheet', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const detailsSidebar = dom.window.document.querySelector('.issue-sidebar[data-issue-details-sidebar]');
+		const stylesheet = Array.from(dom.window.document.querySelectorAll('style'))
+			.map((style) => style.textContent ?? '')
+			.join('\n');
+
+		expect(detailsSidebar).toBeNull();
+		expect(stylesheet).not.toMatch(
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-parent-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;/s
+		);
+		expect(stylesheet).not.toMatch(
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-assignee-picker-open\][^{}]*\{[^}]*cursor:\s*pointer;/s
+		);
+		expect(stylesheet).not.toMatch(
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-parent-picker-open\]:disabled[^{}]*\{[^}]*cursor:\s*not-allowed;/s
+		);
+		expect(stylesheet).not.toMatch(
+			/\.issue-sidebar\[data-issue-details-sidebar\]\s+\[data-assignee-picker-open\]:disabled[^{}]*\{[^}]*cursor:\s*not-allowed;/s
+		);
 	});
 
 	it('updates the parent card when the picker applies and clears a selection', () => {
