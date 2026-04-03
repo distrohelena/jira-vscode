@@ -733,6 +733,10 @@ export class JiraWebviewPanel {
 				flex-direction: column;
 				gap: 8px;
 			}
+			.issue-sidebar [data-parent-picker-open],
+			.issue-sidebar [data-assignee-picker-open] {
+				cursor: pointer;
+			}
 			.assignee-current-row {
 				display: flex;
 				flex-direction: row;
