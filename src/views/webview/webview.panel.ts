@@ -33,6 +33,33 @@ type RichTextEditorRenderOptions = {
 	ariaLabel?: string;
 };
 
+/**
+ * Carries the shared visual contract for the Assign to Me quick-action button.
+ */
+type AssignToMeButtonOptions = {
+	/** Supplies the CSS class that the caller-side click handler already targets. */
+	buttonClassName: string;
+	/** Supplies the caller-specific data attributes required by the action handler. */
+	attributes: string;
+	/** Disables the button while the surrounding assignee action is pending. */
+	disabled: boolean;
+};
+
+/**
+ * Renders the shared Assign to Me button used by the create and issue-detail assignee sections.
+ */
+function renderAssignToMeButton(options: AssignToMeButtonOptions): string {
+	const disabledAttr = options.disabled ? 'disabled' : '';
+	return `<div class="assignee-actions">
+		<button
+			type="button"
+			class="jira-shared-assign-me ${options.buttonClassName}"
+			${options.attributes}
+			${disabledAttr}
+		>Assign to Me</button>
+	</div>`;
+}
+
 export class JiraWebviewPanel {
 	static showIssueDetailsPanel(
 		issueKey: string,
@@ -1701,6 +1728,7 @@ export class JiraWebviewPanel {
 \t\t\tjustify-content: flex-start;
 \t\t\twidth: 100%;
 \t\t}
+\t\t.jira-shared-assign-me,
 \t\t.jira-create-assign-me,
 \t\t.jira-assignee-assign-me {
 \t\t\tpadding: 8px 14px;
@@ -1713,11 +1741,13 @@ export class JiraWebviewPanel {
 \t\t\twidth: 100%;
 \t\t\ttransition: background-color 120ms ease, border-color 120ms ease;
 \t\t}
+\t\t.jira-shared-assign-me:hover:not(:disabled),
 \t\t.jira-create-assign-me:hover:not(:disabled),
 \t\t.jira-assignee-assign-me:hover:not(:disabled) {
 \t\t\tbackground: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent);
 \t\t\tborder-color: color-mix(in srgb, var(--vscode-textLink-foreground) 32%, transparent);
 \t\t}
+\t\t.jira-shared-assign-me:disabled,
 \t\t.jira-create-assign-me:disabled,
 \t\t.jira-assignee-assign-me:disabled {
 \t\t\topacity: 0.6;
@@ -3537,15 +3567,13 @@ static renderStatusSelectOption(option: IssueStatusOption, value: string, select
 	const disabledAttr = state.submitting ? 'disabled' : '';
 	const assignMeButton =
 		state.currentUser?.accountId && state.currentUser.accountId.trim().length > 0
-			? `<div class="assignee-actions">
-				<button type="button" class="jira-create-assign-me" data-account-id="${HtmlHelper.escapeAttribute(
-					state.currentUser.accountId
-				)}" data-display-name="${HtmlHelper.escapeAttribute(
-					state.currentUser.displayName ?? ''
-				)}" data-avatar-url="${HtmlHelper.escapeAttribute(
-					state.currentUser.avatarUrl ?? ''
-				)}" ${disabledAttr}>Assign to Me</button>
-			</div>`
+			? renderAssignToMeButton({
+				buttonClassName: 'jira-create-assign-me',
+				attributes: `data-account-id="${HtmlHelper.escapeAttribute(state.currentUser.accountId)}"
+				data-display-name="${HtmlHelper.escapeAttribute(state.currentUser.displayName ?? '')}"
+				data-avatar-url="${HtmlHelper.escapeAttribute(state.currentUser.avatarUrl ?? '')}"`,
+				disabled: Boolean(state.submitting),
+			})
 			: '';
 	const errorText = state.assigneeError
 		? `<div class="status-error">${HtmlHelper.escapeHtml(state.assigneeError)}</div>`
@@ -3635,23 +3663,20 @@ static renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
 	return firstNonDone;
 }
 
-static renderAssigneeControl(
-	issue: JiraIssue,
-	currentAssigneeLabel: string,
-	options?: IssuePanelOptions
-): string {
-	const disabledAttr = options?.assigneePending ? 'disabled' : '';
-	const assignMeButton =
-		options?.currentUser?.accountId && options.currentUser.accountId.trim().length > 0
-			? `<div class="assignee-actions">
-				<button
-					type="button"
-					class="jira-assignee-assign-me"
-					data-issue-key="${HtmlHelper.escapeAttribute(issue.key)}"
-					data-account-id="${HtmlHelper.escapeAttribute(options.currentUser.accountId)}"
-					${disabledAttr}
-				>Assign to Me</button>
-			</div>`
+	static renderAssigneeControl(
+		issue: JiraIssue,
+		currentAssigneeLabel: string,
+		options?: IssuePanelOptions
+	): string {
+		const disabledAttr = options?.assigneePending ? 'disabled' : '';
+		const assignMeButton =
+			options?.currentUser?.accountId && options.currentUser.accountId.trim().length > 0
+			? renderAssignToMeButton({
+				buttonClassName: 'jira-assignee-assign-me',
+				attributes: `data-issue-key="${HtmlHelper.escapeAttribute(issue.key)}"
+				data-account-id="${HtmlHelper.escapeAttribute(options.currentUser.accountId)}"`,
+				disabled: Boolean(options?.assigneePending),
+			})
 			: '';
 	return `<div class="assignee-card">
 		<button
