@@ -160,19 +160,25 @@ export class JiraWebviewPanel {
 	const issueTypeLabel = (issue.issueTypeName?.trim() || 'Issue').toUpperCase();
 	const effectiveStatusIconSrc = statusIconSrc?.trim();
 	const effectiveIssueTypeIconSrc = issue.issueTypeIconSrc?.trim();
-	const issueTypeIconMarkup = `<div class="ticket-icon-slot">
-		${
-			effectiveIssueTypeIconSrc
-				? `<img class="issue-type-icon" src="${HtmlHelper.escapeAttribute(effectiveIssueTypeIconSrc)}" alt="${HtmlHelper.escapeHtml(
-						issue.issueTypeName ?? 'Issue type'
-					)} icon" />`
-				: '<span class="issue-type-icon issue-type-icon-placeholder" aria-hidden="true"></span>'
-		}
-	</div>`;
+	const packagedStatusFallbackIconSrc =
+		ViewResource.getStatusIconWebviewSrc(webview, IssueModel.determineStatusCategory(issue.statusName)) ?? '';
+	const statusFallbackAttribute =
+		effectiveStatusIconSrc && packagedStatusFallbackIconSrc && effectiveStatusIconSrc !== packagedStatusFallbackIconSrc
+			? ` data-fallback-src="${HtmlHelper.escapeAttribute(packagedStatusFallbackIconSrc)}"`
+			: '';
+	const issueTypeIconMarkup = effectiveIssueTypeIconSrc
+		? `<div class="ticket-icon-slot">
+			<img class="issue-type-icon" src="${HtmlHelper.escapeAttribute(effectiveIssueTypeIconSrc)}" alt="${HtmlHelper.escapeHtml(
+				issue.issueTypeName ?? 'Issue type'
+			)} icon" />
+		</div>`
+		: '';
 	const statusIconMarkup = `<div class="ticket-icon-slot">
 		${
 			effectiveStatusIconSrc
-				? `<img class="status-icon" src="${HtmlHelper.escapeAttribute(effectiveStatusIconSrc)}" alt="${HtmlHelper.escapeHtml(
+				? `<img class="status-icon" src="${HtmlHelper.escapeAttribute(
+						effectiveStatusIconSrc
+				  )}"${statusFallbackAttribute} alt="${HtmlHelper.escapeHtml(
 						issue.statusName ?? 'Issue status'
 					)} status icon" />`
 				: '<span class="status-icon status-icon-placeholder" aria-hidden="true"></span>'
@@ -283,9 +289,26 @@ export class JiraWebviewPanel {
 	}
 	.ticket-icon-slot .issue-type-icon,
 	.ticket-icon-slot .status-icon,
-	.ticket-icon-slot .issue-type-icon-placeholder,
 	.ticket-icon-slot .status-icon-placeholder {
 		display: block;
+		width: 56px;
+		height: 56px;
+	}
+	.ticket-icon-slot .status-icon-placeholder {
+		border-radius: 14px;
+		border: 1px solid color-mix(in srgb, var(--vscode-foreground) 16%, transparent);
+		background: color-mix(in srgb, var(--vscode-input-background) 82%, transparent);
+	}
+	.ticket-icon-slot .status-icon-placeholder::before {
+		content: '•';
+		display: flex;
+		width: 100%;
+		height: 100%;
+		align-items: center;
+		justify-content: center;
+		font-size: 1.35em;
+		line-height: 1;
+		color: var(--vscode-descriptionForeground);
 	}
 	.ticket-type-label {
 		margin-top: 4px;
@@ -768,6 +791,36 @@ export class JiraWebviewPanel {
 				flex-direction: column;
 				gap: 8px;
 			}
+			.assignee-actions {
+				display: flex;
+				justify-content: flex-start;
+				width: 100%;
+			}
+			.jira-shared-assign-me,
+			.jira-create-assign-me,
+			.jira-assignee-assign-me {
+				padding: 8px 14px;
+				border-radius: 999px;
+				border: 1px solid color-mix(in srgb, var(--vscode-foreground) 18%, transparent);
+				background: transparent;
+				color: var(--vscode-foreground);
+				cursor: pointer;
+				min-width: 0;
+				width: 100%;
+				transition: background-color 120ms ease, border-color 120ms ease;
+			}
+			.jira-shared-assign-me:hover:not(:disabled),
+			.jira-create-assign-me:hover:not(:disabled),
+			.jira-assignee-assign-me:hover:not(:disabled) {
+				background: color-mix(in srgb, var(--vscode-textLink-foreground) 10%, transparent);
+				border-color: color-mix(in srgb, var(--vscode-textLink-foreground) 32%, transparent);
+			}
+			.jira-shared-assign-me:disabled,
+			.jira-create-assign-me:disabled,
+			.jira-assignee-assign-me:disabled {
+				opacity: 0.6;
+				cursor: not-allowed;
+			}
 			.issue-sidebar [data-parent-picker-open],
 			.issue-sidebar [data-assignee-picker-open] {
 				cursor: pointer;
@@ -984,6 +1037,37 @@ export class JiraWebviewPanel {
 					${statusPickerBootstrapScript}
 					initializeJiraRichTextEditors(document);
 					initializeJiraStatusPickers(document, vscode);
+					const applyIssueHeaderIconFallback = (image) => {
+						if (!(image instanceof HTMLImageElement)) {
+							return;
+						}
+						const fallbackSrc = (image.getAttribute('data-fallback-src') || '').trim();
+						const currentSrc = image.getAttribute('src') || '';
+						if (fallbackSrc && fallbackSrc !== currentSrc) {
+							image.setAttribute('src', fallbackSrc);
+							image.removeAttribute('data-fallback-src');
+							return;
+						}
+						const parent = image.parentElement;
+						if (!parent) {
+							return;
+						}
+						if (image.classList.contains('status-icon')) {
+							const placeholder = document.createElement('span');
+							placeholder.className = 'status-icon status-icon-placeholder';
+							placeholder.setAttribute('aria-hidden', 'true');
+							parent.replaceChild(placeholder, image);
+							return;
+						}
+						parent.remove();
+					};
+					document.addEventListener('error', (event) => {
+						const target = event.target instanceof HTMLImageElement ? event.target : null;
+						if (!target || !target.closest('.issue-header .ticket-icon-slot')) {
+							return;
+						}
+						applyIssueHeaderIconFallback(target);
+					}, true);
 					const summaryBlock = document.querySelector('.issue-summary-block');
 					logDebug('issuePanel.init', {
 						hasSummaryBlock: !!summaryBlock,

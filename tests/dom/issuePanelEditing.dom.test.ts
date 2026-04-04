@@ -486,6 +486,24 @@ describe('Issue panel editor interactions', () => {
 		expect(assignMeButton?.classList.contains('jira-shared-assign-me')).toBe(true);
 	});
 
+	it('styles the edit assign-to-me action with the shared pill rules', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom({
+			currentUser: {
+				accountId: 'acct-123',
+				displayName: 'Helena',
+			},
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const stylesheet = Array.from(dom.window.document.querySelectorAll('style'))
+			.map((style) => style.textContent ?? '')
+			.join('\n');
+
+		expect(stylesheet).toMatch(
+			/\.jira-shared-assign-me,\s*[\r\n\t .,\w-]*\.jira-assignee-assign-me\s*\{[^}]*border-radius:\s*999px;[^}]*width:\s*100%;/s
+		);
+	});
+
 	it('keeps the edit assign-to-me action wired to changeAssignee', () => {
 		const { dom, messages, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom({
 			currentUser: {
@@ -537,16 +555,39 @@ describe('Issue panel editor interactions', () => {
 		});
 		expect(scriptErrors).toEqual([]);
 
-		const iconSlots = Array.from(dom.window.document.querySelectorAll('.issue-header .ticket-icon-slot'));
-		const issueTypePlaceholder = dom.window.document.querySelector(
-			'.issue-header .issue-type-icon-placeholder'
-		) as HTMLSpanElement | null;
 		const statusIcon = dom.window.document.querySelector('.issue-header .status-icon') as HTMLImageElement | null;
 
-		expect(iconSlots).toHaveLength(2);
-		expect(issueTypePlaceholder).toBeTruthy();
+		expect(dom.window.document.querySelector('.issue-header .issue-type-icon')).toBeNull();
+		expect(dom.window.document.querySelector('.issue-header .issue-type-icon-placeholder')).toBeNull();
 		expect(statusIcon).toBeTruthy();
 		expect(statusIcon?.getAttribute('src')).toContain('/media/status-inprogress.png');
+	});
+
+	it('removes broken issue header type icons and keeps the packaged status fallback', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
+			issueTypeName: 'Subtask',
+			issueTypeIconUrl: 'https://jira.example.test/icons/subtask.svg',
+			issueTypeIconSrc: 'https://jira.example.test/icons/missing-subtask.svg',
+			statusName: 'In Progress',
+			statusIconUrl: 'https://jira.example.test/icons/in-progress.svg',
+			statusIconSrc: 'https://jira.example.test/icons/missing-status.svg',
+		} as any);
+		expect(scriptErrors).toEqual([]);
+
+		const issueTypeIcon = dom.window.document.querySelector('.issue-header .issue-type-icon') as HTMLImageElement | null;
+		const statusIcon = dom.window.document.querySelector('.issue-header .status-icon') as HTMLImageElement | null;
+		expect(issueTypeIcon).toBeTruthy();
+		expect(statusIcon).toBeTruthy();
+
+		issueTypeIcon!.dispatchEvent(new dom.window.Event('error'));
+		statusIcon!.dispatchEvent(new dom.window.Event('error'));
+
+		const fallbackStatusIcon = dom.window.document.querySelector('.issue-header .status-icon') as HTMLImageElement | null;
+
+		expect(dom.window.document.querySelector('.issue-header .issue-type-icon')).toBeNull();
+		expect(dom.window.document.querySelector('.issue-header .issue-type-icon-placeholder')).toBeNull();
+		expect(fallbackStatusIcon).toBeTruthy();
+		expect(fallbackStatusIcon?.getAttribute('src')).toBe('file:///workspace/jira-vscode/media/status-inprogress.png');
 	});
 	it('includes scoped cursor rules for the issue sidebar parent and assignee picker cards', () => {
 		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom();
