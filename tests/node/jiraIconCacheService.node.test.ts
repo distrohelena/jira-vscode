@@ -56,6 +56,31 @@ function getExpectedCachedFilePath(storageRoot: string, iconUrl: string): string
 }
 
 /**
+ * Returns the deterministic cached file path when the cache derives the extension from the downloaded payload.
+ */
+function getExpectedCachedFilePathForContentType(
+	storageRoot: string,
+	iconUrl: string,
+	contentType: string
+): string {
+	const trimmedIconUrl = iconUrl.trim();
+	const normalizedIconUrl = new URL(trimmedIconUrl);
+	const hadEmptyQuery = trimmedIconUrl.includes('?') && normalizedIconUrl.search === '';
+	normalizedIconUrl.hash = '';
+	if (hadEmptyQuery) {
+		normalizedIconUrl.search = '';
+	}
+	normalizedIconUrl.username = '';
+	normalizedIconUrl.password = '';
+	const extension =
+		contentType.toLowerCase().includes('image/svg+xml')
+			? '.svg'
+			: /\.[^.\/]+$/.exec(normalizedIconUrl.pathname)?.[0]?.toLowerCase() ?? '.png';
+	const hash = createHash('sha256').update(normalizedIconUrl.toString()).digest('hex');
+	return join(storageRoot, 'jira-icon-cache', `${hash}${extension}`);
+}
+
+/**
  * Describes the subset of the VS Code API required by the tree modules under test.
  */
 type VscodeTestModule = {
@@ -494,6 +519,58 @@ test('getCachedIconUri returns the cached file URI when the icon already exists 
 	}
 });
 
+test('resolveIconUri stores SVG payloads with an SVG cache path even when Jira serves them from a PNG URL', async () => {
+	const storageRoot = await createStorageRoot('svg-content-type');
+	const iconUrl = 'https://example.atlassian.net/images/icons/statuses/inprogress.png';
+	const expectedCachedFilePath = getExpectedCachedFilePathForContentType(
+		storageRoot,
+		iconUrl,
+		'image/svg+xml'
+	);
+	const service = new JiraIconCacheService(storageRoot, async () => {
+		return {
+			bytes: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
+			contentType: 'image/svg+xml',
+		};
+	});
+
+	try {
+		const result = await service.resolveIconUri(iconUrl);
+
+		assert.equal(result, pathToFileURL(expectedCachedFilePath).href);
+		assert.equal((await stat(expectedCachedFilePath)).isFile(), true);
+	} finally {
+		await rm(storageRoot, { recursive: true, force: true });
+	}
+});
+
+test('getCachedIconUri repairs a legacy cached SVG payload saved with a PNG extension', async () => {
+	const storageRoot = await createStorageRoot('legacy-svg-png');
+	const iconUrl = 'https://example.atlassian.net/images/icons/statuses/todo.png';
+	const legacyCachedFilePath = getExpectedCachedFilePath(storageRoot, iconUrl);
+	const repairedCachedFilePath = getExpectedCachedFilePathForContentType(
+		storageRoot,
+		iconUrl,
+		'image/svg+xml'
+	);
+	const service = new JiraIconCacheService(storageRoot, async () => {
+		throw new Error('download should not run while repairing a legacy cache entry');
+	});
+
+	try {
+		await mkdir(join(storageRoot, 'jira-icon-cache'), { recursive: true });
+		await writeFile(legacyCachedFilePath, '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+
+		const result = await service.getCachedIconUri(iconUrl);
+
+		assert.equal(result, pathToFileURL(repairedCachedFilePath).href);
+		assert.equal((await stat(repairedCachedFilePath)).isFile(), true);
+		await assert.rejects(() => stat(legacyCachedFilePath));
+	} finally {
+		await rm(storageRoot, { recursive: true, force: true });
+	}
+});
+
 test('resolveIconUri returns undefined for invalid icon URLs', async () => {
 	const storageRoot = await createStorageRoot('invalid');
 	let downloadCount = 0;
@@ -531,22 +608,30 @@ test('resolveIconUri returns undefined when the download fails', async () => {
 	}
 });
 
-test('createIssueTreeItem uses the visible status theme icon for issue rows', () => {
+test('createIssueTreeItem preserves a resolved Jira issue icon for issue rows', () => {
 	const { JiraTreeItem, vscode } = loadTreeModules();
 	const issue = createIssueFixture();
 
-	const item = JiraTreeItem.createIssueTreeItem(issue, vscode.Uri.parse('file:///cached/bug.svg') as any);
+	const item = JiraTreeItem.createIssueTreeItem(issue, vscode.Uri.parse('file:///cached/type.svg') as any);
 
-	assert.equal((item.iconPath as { id: string }).id, 'circle-filled');
-	assert.equal(item.iconPath instanceof vscode.ThemeIcon, true);
+	assert.equal((item.iconPath as TreeIconDescriptor).light.toString(), 'file:///cached/type.svg');
+	assert.equal((item.iconPath as TreeIconDescriptor).dark.toString(), 'file:///cached/type.svg');
 });
 
-test('buildIssueNodes uses status theme icons for issue rows', async () => {
+test('buildIssueNodes prefers the cached Jira issue type icon for issue rows', async () => {
 	const { JiraItemsTreeDataProvider, vscode } = loadTreeModules();
 	const resolveCalls: Array<string | undefined> = [];
+	const issueTypeIcon = await createTreeIconFixture('preferred-type', 'bug.svg');
+	const statusIcon = await createTreeIconFixture('preferred-status-fallback', 'in-progress.svg');
 	const provider = createItemsProvider(JiraItemsTreeDataProvider, {
 		async getCachedIconUri(iconUrl: string | undefined): Promise<string | undefined> {
 			resolveCalls.push(iconUrl);
+			if (iconUrl?.includes('/bug.svg')) {
+				return issueTypeIcon.iconUri;
+			}
+			if (iconUrl?.includes('/in-progress.svg')) {
+				return statusIcon.iconUri;
+			}
 			return undefined;
 		},
 		async warmIcon(): Promise<boolean> {
@@ -560,20 +645,41 @@ test('buildIssueNodes uses status theme icons for issue rows', async () => {
 		const preferredTypeNodes = await (provider as any).buildIssueNodes([createIssueFixture()], 'PROJ');
 		const preferredTypeNode = preferredTypeNodes[0];
 
-		assert.equal((preferredTypeNode.iconPath as { id: string }).id, 'circle-filled');
-		assert.equal(preferredTypeNode.iconPath instanceof vscode.ThemeIcon, true);
-		assert.deepEqual(resolveCalls, []);
+		assert.equal((preferredTypeNode.iconPath as TreeIconDescriptor).light.toString(), issueTypeIcon.iconUri);
+		assert.equal((preferredTypeNode.iconPath as TreeIconDescriptor).dark.toString(), issueTypeIcon.iconUri);
+		assert.deepEqual(resolveCalls, ['https://example.atlassian.net/icons/bug.svg']);
 
+		resolveCalls.length = 0;
+		const fallbackStatusNodes = await (provider as any).buildIssueNodes([
+			createIssueFixture({
+				key: 'PROJ-STATUS',
+				issueTypeIconUrl: 'https://example.atlassian.net/icons/missing-type.svg',
+			}),
+		], 'PROJ');
+		assert.equal((fallbackStatusNodes[0].iconPath as TreeIconDescriptor).light.toString(), statusIcon.iconUri);
+		assert.equal((fallbackStatusNodes[0].iconPath as TreeIconDescriptor).dark.toString(), statusIcon.iconUri);
+		assert.deepEqual(resolveCalls, [
+			'https://example.atlassian.net/icons/missing-type.svg',
+			'https://example.atlassian.net/icons/in-progress.svg',
+		]);
+
+		resolveCalls.length = 0;
 		const issueNodes = await (provider as any).buildIssueNodes([
 			createIssueFixture({
 				key: 'PROJ-2',
-				issueTypeIconUrl: 'https://example.atlassian.net/icons/missing.svg',
+				issueTypeIconUrl: 'https://example.atlassian.net/icons/missing-type.svg',
+				statusIconUrl: 'https://example.atlassian.net/icons/missing.svg',
 			}),
 		], 'PROJ');
 		assert.equal((issueNodes[0].iconPath as { id: string }).id, 'circle-filled');
 		assert.equal(issueNodes[0].iconPath instanceof vscode.ThemeIcon, true);
-		assert.deepEqual(resolveCalls, []);
+		assert.deepEqual(resolveCalls, [
+			'https://example.atlassian.net/icons/missing-type.svg',
+			'https://example.atlassian.net/icons/missing.svg',
+		]);
 	} finally {
+		await issueTypeIcon.cleanup();
+		await statusIcon.cleanup();
 	}
 });
 
@@ -601,10 +707,18 @@ test('buildIssueNodes falls back to theme icons when no icon cache service is su
 	assert.equal(typeGroups[0].iconPath instanceof vscode.ThemeIcon, true);
 });
 
-test('group nodes use visible status theme icons while preserving grouped child issue nodes', async () => {
+test('group nodes use status icons for status groups and issue type icons for type groups and child rows', async () => {
 	const { JiraItemsTreeDataProvider, vscode } = loadTreeModules();
+	const issueTypeIcon = await createTreeIconFixture('group-type', 'bug.svg');
+	const statusIcon = await createTreeIconFixture('group-status', 'in-progress.svg');
 	const provider = createItemsProvider(JiraItemsTreeDataProvider, {
-		async getCachedIconUri(): Promise<string | undefined> {
+		async getCachedIconUri(iconUrl: string | undefined): Promise<string | undefined> {
+			if (iconUrl?.includes('/bug.svg')) {
+				return issueTypeIcon.iconUri;
+			}
+			if (iconUrl?.includes('/in-progress.svg')) {
+				return statusIcon.iconUri;
+			}
 			return undefined;
 		},
 		async warmIcon(): Promise<boolean> {
@@ -613,27 +727,32 @@ test('group nodes use visible status theme icons while preserving grouped child 
 	});
 	const issue = createIssueFixture();
 
-	const statusGroups = await (provider as any).buildStatusGroupNodes([issue], 'PROJ');
-	assert.equal(statusGroups.length, 1);
-	assert.equal((statusGroups[0].iconPath as { id: string }).id, 'circle-filled');
-	assert.equal(statusGroups[0].iconPath instanceof vscode.ThemeIcon, true);
-	assert.equal(statusGroups[0].children?.length, 1);
-	assert.equal(
-		typeof statusGroups[0].children?.[0].label === 'string' &&
-			statusGroups[0].children?.[0].label.includes('PROJ-1') &&
-			statusGroups[0].children?.[0].label.includes('Investigate cached icons'),
-		true
-	);
-	assert.equal((statusGroups[0].children?.[0].iconPath as { id: string }).id, 'circle-filled');
-	assert.equal(statusGroups[0].children?.[0].iconPath instanceof vscode.ThemeIcon, true);
+	try {
+		const statusGroups = await (provider as any).buildStatusGroupNodes([issue], 'PROJ');
+		assert.equal(statusGroups.length, 1);
+		assert.equal((statusGroups[0].iconPath as TreeIconDescriptor).light.toString(), statusIcon.iconUri);
+		assert.equal((statusGroups[0].iconPath as TreeIconDescriptor).dark.toString(), statusIcon.iconUri);
+		assert.equal(statusGroups[0].children?.length, 1);
+		assert.equal(
+			typeof statusGroups[0].children?.[0].label === 'string' &&
+				statusGroups[0].children?.[0].label.includes('PROJ-1') &&
+				statusGroups[0].children?.[0].label.includes('Investigate cached icons'),
+			true
+		);
+		assert.equal((statusGroups[0].children?.[0].iconPath as TreeIconDescriptor).light.toString(), issueTypeIcon.iconUri);
+		assert.equal((statusGroups[0].children?.[0].iconPath as TreeIconDescriptor).dark.toString(), issueTypeIcon.iconUri);
 
-	const typeGroups = await (provider as any).buildTypeGroupNodes([issue], 'PROJ');
-	assert.equal(typeGroups.length, 1);
-	assert.equal((typeGroups[0].iconPath as { id: string }).id, 'circle-filled');
-	assert.equal(typeGroups[0].iconPath instanceof vscode.ThemeIcon, true);
-	assert.equal(typeGroups[0].children?.length, 1);
-	assert.equal((typeGroups[0].children?.[0].iconPath as { id: string }).id, 'circle-filled');
-	assert.equal(typeGroups[0].children?.[0].iconPath instanceof vscode.ThemeIcon, true);
+		const typeGroups = await (provider as any).buildTypeGroupNodes([issue], 'PROJ');
+		assert.equal(typeGroups.length, 1);
+		assert.equal((typeGroups[0].iconPath as TreeIconDescriptor).light.toString(), issueTypeIcon.iconUri);
+		assert.equal((typeGroups[0].iconPath as TreeIconDescriptor).dark.toString(), issueTypeIcon.iconUri);
+		assert.equal(typeGroups[0].children?.length, 1);
+		assert.equal((typeGroups[0].children?.[0].iconPath as TreeIconDescriptor).light.toString(), issueTypeIcon.iconUri);
+		assert.equal((typeGroups[0].children?.[0].iconPath as TreeIconDescriptor).dark.toString(), issueTypeIcon.iconUri);
+	} finally {
+		await issueTypeIcon.cleanup();
+		await statusIcon.cleanup();
+	}
 });
 
 test('items tree falls back to theme icons when cached Jira icon URIs are unusable', async () => {
@@ -697,7 +816,7 @@ test('items tree falls back to the packaged status icon when the cached Jira ico
 	}
 });
 
-test('loadItems renders immediately with fallback icons on cold cache and repaints from cache after warm completes', async () => {
+test('loadItems renders immediately with fallback icons on cold cache and repaints from cache after both icon warm-ups complete', async () => {
 	const { JiraItemsTreeDataProvider, vscode, jiraApiClient } = loadTreeModules();
 	const authInfo = {
 		baseUrl: 'https://example.atlassian.net',
@@ -759,21 +878,21 @@ test('loadItems renders immediately with fallback icons on cold cache and repain
 		const initialNodes = renderRace as Array<{ issue?: { key: string }; iconPath?: { id?: string } }>;
 		const initialIssueNode = initialNodes.find((node) => node.issue?.key === issue.key);
 		assert.equal(initialIssueNode?.iconPath?.id, 'circle-filled');
-		assert.equal(warmCallCount, 0);
+		assert.equal(warmCallCount, 2);
 		assert.equal(refreshEvents.length, 0);
 
 		releaseWarm();
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
-		assert.equal(refreshEvents.length, 0);
+		assert.equal(refreshEvents.length, 1);
 	} finally {
 		jiraApiClient.fetchProjectIssuesPage = originalFetchProjectIssuesPage;
 	}
 });
 
-test('loadItems repaint after warm reuses cached icons without forcing another Jira fetch', async () => {
+test('loadItems repaint after warm reuses cached issue type icons without forcing another Jira fetch', async () => {
 	const { JiraItemsTreeDataProvider, jiraApiClient } = loadTreeModules();
-	const bugIcon = await createTreeIconFixture('load-items-repaint', 'bug.svg');
+	const issueTypeIcon = await createTreeIconFixture('load-items-repaint', 'bug.svg');
 	const authInfo = {
 		baseUrl: 'https://example.atlassian.net',
 		username: 'helena@example.com',
@@ -800,7 +919,7 @@ test('loadItems repaint after warm reuses cached icons without forcing another J
 		} as any,
 		{
 			async getCachedIconUri(iconUrl: string | undefined): Promise<string | undefined> {
-				return cached && iconUrl?.includes('/bug.svg') ? bugIcon.iconUri : undefined;
+				return cached && iconUrl?.includes('/bug.svg') ? issueTypeIcon.iconUri : undefined;
 			},
 			async warmIcon(): Promise<boolean> {
 				cached = true;
@@ -827,10 +946,11 @@ test('loadItems repaint after warm reuses cached icons without forcing another J
 
 		const refreshedNodes = await (provider as any).loadItems(authInfo);
 		const refreshedIssueNode = refreshedNodes.find((node: any) => node.issue?.key === issue.key);
-		assert.equal((refreshedIssueNode?.iconPath as { id: string }).id, 'circle-filled');
+		assert.equal((refreshedIssueNode?.iconPath as TreeIconDescriptor).light.toString(), issueTypeIcon.iconUri);
+		assert.equal((refreshedIssueNode?.iconPath as TreeIconDescriptor).dark.toString(), issueTypeIcon.iconUri);
 		assert.equal(fetchCount, 1);
 	} finally {
-		await bugIcon.cleanup();
+		await issueTypeIcon.cleanup();
 		jiraApiClient.fetchProjectIssuesPage = originalFetchProjectIssuesPage;
 	}
 });

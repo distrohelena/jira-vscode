@@ -569,7 +569,10 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				childNodes
 			);
 			groupItem.id = ItemsTreeIdentityService.createStatusGroupId(projectKey, group.statusName);
-			groupItem.iconPath = JiraTreeItem.deriveIssueIcon(group.statusName);
+			const resolvedStatusGroupIconPath = await this.resolveFirstCachedIconUri(group.issues.map((issue) => issue.statusIconUrl));
+			groupItem.iconPath = resolvedStatusGroupIconPath
+				? JiraTreeItem.createTreeIconPath(resolvedStatusGroupIconPath)
+				: JiraTreeItem.deriveIssueIcon(group.statusName);
 			groupItem.tooltip =
 				group.issues.length === 1
 					? `1 issue in ${group.statusName}`
@@ -594,7 +597,10 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				childNodes
 			);
 			groupItem.id = ItemsTreeIdentityService.createTypeGroupId(projectKey, group.typeName);
-			groupItem.iconPath = JiraTreeItem.deriveIssueIcon(group.issues[0]?.statusName);
+			const resolvedTypeGroupIconPath = await this.resolveFirstCachedIconUri(group.issues.map((issue) => issue.issueTypeIconUrl));
+			groupItem.iconPath = resolvedTypeGroupIconPath
+				? JiraTreeItem.createTreeIconPath(resolvedTypeGroupIconPath)
+				: JiraTreeItem.deriveIssueIcon(group.issues[0]?.statusName);
 			groupItem.tooltip =
 				group.issues.length === 1
 					? `1 issue in ${group.typeName}`
@@ -622,10 +628,13 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	}
 
 	/**
-	 * Creates one issue node using the shared status-based tree icon fallback.
+	 * Creates one issue node using the ticket's cached Jira issue type icon first, then the status icon when needed.
 	 */
 	private async createIssueTreeItem(issue: JiraIssue): Promise<JiraTreeItem> {
-		return JiraTreeItem.createIssueTreeItem(issue);
+		const resolvedIconPath =
+			(await this.resolveUsableCachedIconUri(issue.issueTypeIconUrl)) ??
+			(await this.resolveUsableCachedIconUri(issue.statusIconUrl));
+		return JiraTreeItem.createIssueTreeItem(issue, resolvedIconPath);
 	}
 
 	/**
@@ -692,7 +701,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	 * Starts background warming for the issue type and status icons used by the current tree snapshot.
 	 */
 	private warmIssueIcons(issues: JiraIssue[]): void {
-		if (!this.iconCacheService || this.groupMode === 'none') {
+		if (!this.iconCacheService) {
 			return;
 		}
 		const iconUrls = new Set<string>();

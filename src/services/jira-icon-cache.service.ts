@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -56,8 +56,7 @@ export class JiraIconCacheService {
 			return undefined;
 		}
 
-		const cachedFilePath = this.getCachedIconFilePath(normalizedIconUrl);
-		return this.tryGetCachedIconFileUri(cachedFilePath);
+		return this.tryGetCachedIconFileUri(normalizedIconUrl);
 	}
 
 	/**
@@ -129,16 +128,17 @@ export class JiraIconCacheService {
 	private async resolveIconUriInternal(
 		normalizedIconUrl: URL
 	): Promise<{ iconUri?: string; didWriteToCache: boolean } | undefined> {
-		const cachedFilePath = this.getCachedIconFilePath(normalizedIconUrl);
-		if (await this.tryGetCachedIconFileUri(cachedFilePath)) {
+		const cachedIconUri = await this.tryGetCachedIconFileUri(normalizedIconUrl);
+		if (cachedIconUri) {
 			return {
-				iconUri: pathToFileURL(cachedFilePath).href,
+				iconUri: cachedIconUri,
 				didWriteToCache: false,
 			};
 		}
 
 		try {
 			const download = await this.iconDownloader(normalizedIconUrl.toString());
+			const cachedFilePath = this.getDownloadedCachedIconFilePath(normalizedIconUrl, download);
 			await mkdir(this.iconCacheDirectoryPath, { recursive: true });
 			await writeFile(cachedFilePath, download.bytes);
 			return {
@@ -170,9 +170,13 @@ export class JiraIconCacheService {
 	}
 
 	/**
-	 * Returns the cached file URI when the file already exists on disk.
+	 * Returns the cached file URI when a matching cache entry already exists on disk.
 	 */
-	private async tryGetCachedIconFileUri(cachedFilePath: string): Promise<string | undefined> {
+	private async tryGetCachedIconFileUri(normalizedIconUrl: URL): Promise<string | undefined> {
+		const cachedFilePath = await this.findCachedIconFilePath(normalizedIconUrl);
+		if (!cachedFilePath) {
+			return undefined;
+		}
 		try {
 			const fileStats = await stat(cachedFilePath);
 			return fileStats.isFile() ? pathToFileURL(cachedFilePath).href : undefined;
@@ -182,25 +186,177 @@ export class JiraIconCacheService {
 	}
 
 	/**
-	 * Builds the deterministic file path used for one normalized icon URL.
+	 * Locates the on-disk cache entry for one normalized icon URL and repairs legacy extension mismatches.
 	 */
-	private getCachedIconFilePath(normalizedIconUrl: URL): string {
-		return join(this.iconCacheDirectoryPath, this.getCachedIconFileName(normalizedIconUrl));
+	private async findCachedIconFilePath(normalizedIconUrl: URL): Promise<string | undefined> {
+		try {
+			const cacheEntries = await readdir(this.iconCacheDirectoryPath);
+			const cacheFileStem = this.getCachedIconFileStem(normalizedIconUrl);
+			for (const cacheEntry of cacheEntries) {
+				if (!cacheEntry.startsWith(`${cacheFileStem}.`)) {
+					continue;
+				}
+				const candidatePath = join(this.iconCacheDirectoryPath, cacheEntry);
+				const repairedPath = await this.repairCachedIconFilePath(candidatePath);
+				if (repairedPath) {
+					return repairedPath;
+				}
+			}
+		} catch {
+			return undefined;
+		}
+
+		return undefined;
 	}
 
 	/**
-	 * Builds the deterministic file name used to keep one icon URL stable on disk.
+	 * Repairs one cached icon file when its on-disk extension does not match the actual downloaded payload.
 	 */
-	private getCachedIconFileName(normalizedIconUrl: URL): string {
-		const extension = this.getIconFileExtension(normalizedIconUrl);
-		const hash = createHash('sha256').update(normalizedIconUrl.toString()).digest('hex');
-		return `${hash}${extension}`;
+	private async repairCachedIconFilePath(cachedFilePath: string): Promise<string | undefined> {
+		try {
+			const fileStats = await stat(cachedFilePath);
+			if (!fileStats.isFile()) {
+				return undefined;
+			}
+		} catch {
+			return undefined;
+		}
+
+		const detectedExtension = await this.detectCachedIconFileExtension(cachedFilePath);
+		const currentExtension = extname(cachedFilePath).trim().toLowerCase();
+		if (!detectedExtension || detectedExtension === currentExtension) {
+			return cachedFilePath;
+		}
+
+		const repairedFilePath = `${cachedFilePath.slice(0, -currentExtension.length)}${detectedExtension}`;
+		if (repairedFilePath === cachedFilePath) {
+			return cachedFilePath;
+		}
+
+		try {
+			const repairedFileStats = await stat(repairedFilePath);
+			if (repairedFileStats.isFile()) {
+				await rm(cachedFilePath, { force: true });
+				return repairedFilePath;
+			}
+		} catch {
+			// the repaired cache entry does not exist yet, so rename below can create it
+		}
+
+		try {
+			await rename(cachedFilePath, repairedFilePath);
+			return repairedFilePath;
+		} catch {
+			return cachedFilePath;
+		}
 	}
 
 	/**
-	 * Preserves the icon file extension when the Jira URL already carries one, then falls back to PNG.
+	 * Detects the actual image extension stored in one cached file by inspecting its bytes.
 	 */
-	private getIconFileExtension(normalizedIconUrl: URL): string {
+	private async detectCachedIconFileExtension(cachedFilePath: string): Promise<string | undefined> {
+		try {
+			const cachedBytes = await readFile(cachedFilePath);
+			return this.detectIconFileExtensionFromPayload(cachedBytes);
+		} catch {
+			return undefined;
+		}
+	}
+
+	/**
+	 * Builds the deterministic cache path for a freshly downloaded Jira icon.
+	 */
+	private getDownloadedCachedIconFilePath(normalizedIconUrl: URL, download: JiraIconDownloadResult): string {
+		return join(
+			this.iconCacheDirectoryPath,
+			`${this.getCachedIconFileStem(normalizedIconUrl)}${this.getDownloadedIconFileExtension(normalizedIconUrl, download)}`
+		);
+	}
+
+	/**
+	 * Returns the deterministic hash stem shared by every cache file for the same normalized Jira URL.
+	 */
+	private getCachedIconFileStem(normalizedIconUrl: URL): string {
+		return createHash('sha256').update(normalizedIconUrl.toString()).digest('hex');
+	}
+
+	/**
+	 * Chooses the cache file extension from the downloaded payload before falling back to the original Jira URL suffix.
+	 */
+	private getDownloadedIconFileExtension(normalizedIconUrl: URL, download: JiraIconDownloadResult): string {
+		const extensionFromContentType = this.getIconFileExtensionFromContentType(download.contentType);
+		if (extensionFromContentType) {
+			return extensionFromContentType;
+		}
+
+		const extensionFromPayload = this.detectIconFileExtensionFromPayload(download.bytes);
+		if (extensionFromPayload) {
+			return extensionFromPayload;
+		}
+
+		return this.getIconFileExtensionFromUrl(normalizedIconUrl);
+	}
+
+	/**
+	 * Maps known image content types onto stable cache file extensions.
+	 */
+	private getIconFileExtensionFromContentType(contentType: string | undefined): string | undefined {
+		const normalizedContentType = contentType?.split(';', 1)[0]?.trim().toLowerCase();
+		switch (normalizedContentType) {
+			case 'image/svg+xml':
+				return '.svg';
+			case 'image/png':
+				return '.png';
+			case 'image/jpeg':
+				return '.jpg';
+			case 'image/gif':
+				return '.gif';
+			case 'image/webp':
+				return '.webp';
+			default:
+				return undefined;
+		}
+	}
+
+	/**
+	 * Detects the icon file extension directly from the downloaded bytes when the server omits a useful content type.
+	 */
+	private detectIconFileExtensionFromPayload(bytes: Uint8Array): string | undefined {
+		if (bytes.length >= 8 &&
+			bytes[0] === 0x89 &&
+			bytes[1] === 0x50 &&
+			bytes[2] === 0x4e &&
+			bytes[3] === 0x47 &&
+			bytes[4] === 0x0d &&
+			bytes[5] === 0x0a &&
+			bytes[6] === 0x1a &&
+			bytes[7] === 0x0a) {
+			return '.png';
+		}
+
+		if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+			return '.jpg';
+		}
+
+		if (bytes.length >= 6) {
+			const header = Buffer.from(bytes.subarray(0, 16)).toString('utf8').toUpperCase();
+			if (header.startsWith('GIF87A') || header.startsWith('GIF89A')) {
+				return '.gif';
+			}
+		}
+
+		const textPrefix = Buffer.from(bytes.subarray(0, Math.min(bytes.length, 256))).toString('utf8').trimStart().toLowerCase();
+		if (textPrefix.startsWith('<svg') || (textPrefix.startsWith('<?xml') && textPrefix.includes('<svg'))) {
+			return '.svg';
+		}
+
+		return undefined;
+	}
+
+	/**
+	 * Preserves the icon file extension from the Jira URL when the payload does not reveal a better option.
+	 */
+	private getIconFileExtensionFromUrl(normalizedIconUrl: URL): string {
 		const extension = extname(normalizedIconUrl.pathname).trim().toLowerCase();
 		if (!extension || extension === '.') {
 			return '.png';

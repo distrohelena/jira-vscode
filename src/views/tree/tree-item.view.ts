@@ -8,6 +8,16 @@ import { IssueModel } from '../../model/issue.model';
  */
 export class JiraTreeItem extends vscode.TreeItem {
 	/**
+	 * Builds the light and dark icon descriptor used by VS Code tree items for custom Jira images.
+	 */
+	static createTreeIconPath(iconUri: vscode.Uri): { light: vscode.Uri; dark: vscode.Uri } {
+		return {
+			light: iconUri,
+			dark: iconUri,
+		};
+	}
+
+	/**
 	 * Stores the project associated with project-oriented nodes so context commands can reuse it.
 	 */
 	project?: JiraProject;
@@ -28,9 +38,9 @@ export class JiraTreeItem extends vscode.TreeItem {
 	}
 
 	/**
-	 * Builds one issue row using a resolved Jira icon when available and the theme-based status icon otherwise.
+	 * Builds one issue row using a resolved Jira issue icon when available and the theme-based status icon otherwise.
 	 */
-	static createIssueTreeItem(issue: JiraIssue, _resolvedIconPath?: vscode.Uri): JiraTreeItem {
+	static createIssueTreeItem(issue: JiraIssue, resolvedIconPath?: vscode.Uri): JiraTreeItem {
 		const displayKey = JiraTreeItem.normalizeIssueKeyForTree(issue.key);
 		const displaySummary = JiraTreeItem.normalizeIssueSummaryForTree(issue.summary);
 		const item = new JiraTreeItem(
@@ -41,17 +51,19 @@ export class JiraTreeItem extends vscode.TreeItem {
 			issue
 		);
 		item.tooltip = `${issue.summary}\nStatus: ${issue.statusName}\nUpdated: ${new Date(issue.updated).toLocaleString()}`;
-		JiraTreeItem.contextualizeIssue(item, issue);
+		JiraTreeItem.contextualizeIssue(item, issue, resolvedIconPath);
 		return item;
 	}
 
 	/**
-	 * Applies the shared Jira issue presentation metadata using the built-in status icon fallback that VS Code reliably renders.
+	 * Applies the shared Jira issue presentation metadata, preferring a resolved Jira issue icon when available.
 	 */
-	static contextualizeIssue(item: JiraTreeItem, issue: JiraIssue): void {
+	static contextualizeIssue(item: JiraTreeItem, issue: JiraIssue, resolvedIconPath?: vscode.Uri): void {
 		item.contextValue = 'jiraIssue';
 		item.description = JiraTreeItem.formatIssueDateForTree(issue.updated);
-		item.iconPath = JiraTreeItem.deriveIssueIcon(issue.statusName);
+		item.iconPath = resolvedIconPath
+			? JiraTreeItem.createTreeIconPath(resolvedIconPath)
+			: JiraTreeItem.deriveIssueIcon(issue.statusName);
 		if (issue.key) {
 			item.command = {
 				command: 'jira.openIssueDetails',
