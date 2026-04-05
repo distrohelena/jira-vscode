@@ -75,6 +75,48 @@ test('mapIssueInternal includes issue type and status icon URLs from Jira issue 
 	});
 });
 
+test('mapIssueInternal keeps related issue status icon URLs for parent and subtasks', () => {
+	const issue = (JiraApiTransport as any).mapIssueInternal(
+		{
+			id: '10001',
+			key: 'PROJ-1',
+			fields: {
+				summary: 'Issue with related icons',
+				status: {
+					name: 'In Progress',
+				},
+				updated: '2026-04-01T12:00:00.000Z',
+				parent: {
+					key: 'PROJ-0',
+					fields: {
+						summary: 'Parent issue',
+						status: {
+							name: 'Done',
+							iconUrl: 'https://example.atlassian.net/images/icons/done.gif',
+						},
+					},
+				},
+				subtasks: [
+					{
+						key: 'PROJ-2',
+						fields: {
+							summary: 'Child issue',
+							status: {
+								name: 'To Do',
+								iconUrl: 'https://example.atlassian.net/images/icons/open.gif',
+							},
+						},
+					},
+				],
+			},
+		},
+		'https://example.atlassian.net'
+	);
+
+	assert.equal(issue.parent?.statusIconUrl, 'https://example.atlassian.net/images/icons/done.gif');
+	assert.equal(issue.children?.[0]?.statusIconUrl, 'https://example.atlassian.net/images/icons/open.gif');
+});
+
 test('mapTransitionToStatusOptionInternal includes the Jira status icon URL', () => {
 	const statusOption = (JiraApiTransport as any).mapTransitionToStatusOptionInternal({
 		id: '21',

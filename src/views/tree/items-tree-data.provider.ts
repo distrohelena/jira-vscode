@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { stat } from 'node:fs/promises';
+import { extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { JiraAuthManager } from '../../model/auth.manager';
@@ -31,6 +32,11 @@ import { JiraTreeItem } from './tree-item.view';
  * Provides the Items tree nodes, including grouping, sorting, filtering, reveal state, and Jira icon resolution.
  */
 export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
+	/**
+	 * Defines the icon file formats the VS Code tree reliably renders for item icons.
+	 */
+	private static readonly supportedTreeIconExtensions = new Set<string>(['.png', '.jpg', '.jpeg', '.svg']);
+
 	private viewMode: ItemsViewMode;
 	private searchQuery: string;
 	private remoteSearchQuery: string;
@@ -563,9 +569,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				childNodes
 			);
 			groupItem.id = ItemsTreeIdentityService.createStatusGroupId(projectKey, group.statusName);
-			groupItem.iconPath =
-				(await this.resolveFirstCachedIconUri(group.issues.map((issue) => issue.statusIconUrl))) ??
-				JiraTreeItem.deriveIssueIcon(group.statusName);
+			groupItem.iconPath = JiraTreeItem.deriveIssueIcon(group.statusName);
 			groupItem.tooltip =
 				group.issues.length === 1
 					? `1 issue in ${group.statusName}`
@@ -590,9 +594,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				childNodes
 			);
 			groupItem.id = ItemsTreeIdentityService.createTypeGroupId(projectKey, group.typeName);
-			groupItem.iconPath =
-				(await this.resolveFirstCachedIconUri(group.issues.map((issue) => issue.issueTypeIconUrl))) ??
-				new vscode.ThemeIcon('symbol-class');
+			groupItem.iconPath = JiraTreeItem.deriveIssueIcon(group.issues[0]?.statusName);
 			groupItem.tooltip =
 				group.issues.length === 1
 					? `1 issue in ${group.typeName}`
@@ -620,30 +622,16 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	}
 
 	/**
-	 * Creates one issue node after resolving the preferred cached Jira icon for that issue.
+	 * Creates one issue node using the shared status-based tree icon fallback.
 	 */
 	private async createIssueTreeItem(issue: JiraIssue): Promise<JiraTreeItem> {
-		const resolvedIconPath = await this.resolveIssueIconPath(issue);
-		return JiraTreeItem.createIssueTreeItem(issue, resolvedIconPath);
-	}
-
-	/**
-	 * Resolves the preferred Jira icon for one issue by trying type, then status, before falling back to the theme icon.
-	 */
-	private async resolveIssueIconPath(issue: JiraIssue): Promise<string | undefined> {
-		if (!this.iconCacheService) {
-			return undefined;
-		}
-		return (
-			(await this.resolveUsableCachedIconUri(issue.issueTypeIconUrl)) ??
-			(await this.resolveUsableCachedIconUri(issue.statusIconUrl))
-		);
+		return JiraTreeItem.createIssueTreeItem(issue);
 	}
 
 	/**
 	 * Resolves the first cached Jira icon available from the supplied URLs while preserving their precedence order.
 	 */
-	private async resolveFirstCachedIconUri(iconUrls: Array<string | undefined>): Promise<string | undefined> {
+	private async resolveFirstCachedIconUri(iconUrls: Array<string | undefined>): Promise<vscode.Uri | undefined> {
 		if (!this.iconCacheService) {
 			return undefined;
 		}
@@ -659,12 +647,12 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	/**
 	 * Resolves one cached Jira icon URI and discards values that no longer point to a readable local file.
 	 */
-	private async resolveUsableCachedIconUri(iconUrl: string | undefined): Promise<string | undefined> {
+	private async resolveUsableCachedIconUri(iconUrl: string | undefined): Promise<vscode.Uri | undefined> {
 		if (!this.iconCacheService) {
 			return undefined;
 		}
 		const resolvedIconUri = await this.iconCacheService.getCachedIconUri(iconUrl);
-		return (await this.isUsableTreeIconUri(resolvedIconUri)) ? resolvedIconUri : undefined;
+		return (await this.isUsableTreeIconUri(resolvedIconUri)) ? vscode.Uri.parse(resolvedIconUri) : undefined;
 	}
 
 	/**
@@ -688,7 +676,12 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		}
 
 		try {
-			const iconFileStats = await stat(fileURLToPath(parsedIconUri));
+			const iconFilePath = fileURLToPath(parsedIconUri);
+			const iconExtension = extname(iconFilePath).trim().toLowerCase();
+			if (!JiraItemsTreeDataProvider.supportedTreeIconExtensions.has(iconExtension)) {
+				return false;
+			}
+			const iconFileStats = await stat(iconFilePath);
 			return iconFileStats.isFile();
 		} catch {
 			return false;
@@ -699,7 +692,7 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	 * Starts background warming for the issue type and status icons used by the current tree snapshot.
 	 */
 	private warmIssueIcons(issues: JiraIssue[]): void {
-		if (!this.iconCacheService) {
+		if (!this.iconCacheService || this.groupMode === 'none') {
 			return;
 		}
 		const iconUrls = new Set<string>();

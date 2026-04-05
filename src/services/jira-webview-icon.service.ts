@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-import { JiraIssue, IssueStatusOption } from '../model/jira.type';
+import { JiraIssue, JiraRelatedIssue, IssueStatusOption } from '../model/jira.type';
 import { JiraIconCacheService } from './jira-icon-cache.service';
 
 /**
@@ -25,10 +25,18 @@ export class JiraWebviewIconService {
 	async createIssueWithResolvedIconSources(webview: vscode.Webview, issue: JiraIssue): Promise<JiraIssue> {
 		const issueTypeIconSrc = await this.resolveIconSource(webview, issue.issueTypeIconUrl);
 		const statusIconSrc = await this.resolveIconSource(webview, issue.statusIconUrl);
+		const parent = issue.parent
+			? await this.createRelatedIssueWithResolvedIconSources(webview, issue.parent)
+			: undefined;
+		const children = issue.children
+			? await this.createRelatedIssuesWithResolvedIconSources(webview, issue.children)
+			: undefined;
 		return {
 			...issue,
 			issueTypeIconSrc,
 			statusIconSrc,
+			parent,
+			children,
 		};
 	}
 
@@ -37,6 +45,30 @@ export class JiraWebviewIconService {
 	 */
 	async createIssuesWithResolvedIconSources(webview: vscode.Webview, issues: JiraIssue[]): Promise<JiraIssue[]> {
 		return Promise.all(issues.map((issue) => this.createIssueWithResolvedIconSources(webview, issue)));
+	}
+
+	/**
+	 * Resolves the Jira status icon source for one related issue while preserving the original issue reference data.
+	 */
+	async createRelatedIssueWithResolvedIconSources(
+		webview: vscode.Webview,
+		issue: JiraRelatedIssue
+	): Promise<JiraRelatedIssue> {
+		const statusIconSrc = await this.resolveIconSource(webview, issue.statusIconUrl);
+		return {
+			...issue,
+			statusIconSrc,
+		};
+	}
+
+	/**
+	 * Resolves Jira status icon sources for every related issue in one list.
+	 */
+	async createRelatedIssuesWithResolvedIconSources(
+		webview: vscode.Webview,
+		issues: JiraRelatedIssue[]
+	): Promise<JiraRelatedIssue[]> {
+		return Promise.all(issues.map((issue) => this.createRelatedIssueWithResolvedIconSources(webview, issue)));
 	}
 
 	/**

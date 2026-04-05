@@ -153,8 +153,8 @@ export class JiraWebviewPanel {
 	const isLoading = options?.loading ?? false;
 	const errorMessage = options?.error;
 	const descriptionSection = errorMessage ? '' : renderDescriptionSection(issue, options, isLoading);
-	const parentSection = errorMessage ? '' : renderParentMetadataSection(issue);
-	const childrenSection = errorMessage ? '' : renderChildrenSection(issue);
+	const parentSection = errorMessage ? '' : renderParentMetadataSection(webview, issue);
+	const childrenSection = errorMessage ? '' : renderChildrenSection(webview, issue);
 	const cspSource = webview.cspSource;
 	const metadataPanel = renderMetadataPanel(webview, issue, parentSection, assignee, reporter, updatedText, options);
 	const issueTypeLabel = (issue.issueTypeName?.trim() || 'Issue').toUpperCase();
@@ -928,6 +928,9 @@ export class JiraWebviewPanel {
 			font-size: 1em;
 		}
 		.issue-link {
+			display: flex;
+			align-items: center;
+			gap: 8px;
 			background: transparent;
 			border: 1px solid var(--vscode-button-border, var(--vscode-foreground));
 			border-radius: 4px;
@@ -938,6 +941,30 @@ export class JiraWebviewPanel {
 			margin-top: 4px;
 			text-align: left;
 			width: 100%;
+		}
+		.issue-link-icon-slot {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 16px;
+			height: 16px;
+			flex-shrink: 0;
+		}
+		.issue-link .status-icon,
+		.issue-link .status-icon-placeholder {
+			display: block;
+			width: 16px;
+			height: 16px;
+			margin-top: 0;
+			flex-shrink: 0;
+		}
+		.issue-link .status-icon-placeholder {
+			border-radius: 50%;
+			background: color-mix(in srgb, var(--vscode-descriptionForeground) 45%, transparent);
+		}
+		.issue-link-copy {
+			min-width: 0;
+			flex: 1;
 		}
 		.issue-link:hover {
 			background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.04));
@@ -1063,7 +1090,7 @@ export class JiraWebviewPanel {
 					};
 					document.addEventListener('error', (event) => {
 						const target = event.target instanceof HTMLImageElement ? event.target : null;
-						if (!target || !target.closest('.issue-header .ticket-icon-slot')) {
+						if (!target || (!target.closest('.issue-header .ticket-icon-slot') && !target.closest('.issue-link-icon-slot'))) {
 							return;
 						}
 						applyIssueHeaderIconFallback(target);
@@ -2144,10 +2171,10 @@ export class JiraWebviewPanel {
 </html>`;
 }
 
-	static renderParentSection(issue: JiraIssue): string {
+static renderParentSection(webview: vscode.Webview, issue: JiraIssue): string {
 	const parent = issue.parent;
 	const content = parent
-		? renderRelatedIssueButton(parent)
+		? renderRelatedIssueButton(webview, parent)
 		: '<div class="muted">No parent issue.</div>';
 	const actionLabel = parent ? 'Change parent' : 'Select parent';
 	return `<div class="section parent-section">
@@ -2159,7 +2186,7 @@ export class JiraWebviewPanel {
 	</div>`;
 }
 
-	static renderChildrenSection(issue: JiraIssue): string {
+static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string {
 	const children = issue.children?.filter((child) => !!child) ?? [];
 	if (children.length === 0) {
 		return `<div class="section">
@@ -2169,7 +2196,7 @@ export class JiraWebviewPanel {
 	}
 
 	const listItems = children
-		.map((child) => `<li>${renderRelatedIssueButton(child)}</li>`)
+		.map((child) => `<li>${renderRelatedIssueButton(webview, child)}</li>`)
 		.join('');
 
 	return `<div class="section">
@@ -2645,18 +2672,46 @@ export class JiraWebviewPanel {
 	return `<div class="comment-avatar fallback">${HtmlHelper.escapeHtml(getInitials(comment.authorName))}</div>`;
 }
 
-	static renderRelatedIssueButton(issue: JiraRelatedIssue): string {
+	/**
+	 * Renders the status icon used by related issue links, preferring Jira's cached icon and falling back to the packaged status asset.
+	 */
+	static renderRelatedIssueStatusIcon(webview: vscode.Webview, issue: JiraRelatedIssue): string {
+	const fallbackIconSrc = ViewResource.getStatusIconWebviewSrc(webview, IssueModel.determineStatusCategory(issue.statusName));
+	const statusIconSrc = issue.statusIconSrc?.trim();
+	if (statusIconSrc) {
+		const fallbackAttribute =
+			fallbackIconSrc && fallbackIconSrc !== statusIconSrc
+				? ` data-fallback-src="${HtmlHelper.escapeAttribute(fallbackIconSrc)}"`
+				: '';
+		return `<img class="status-icon" src="${HtmlHelper.escapeAttribute(statusIconSrc)}"${fallbackAttribute} alt="${HtmlHelper.escapeHtml(
+			issue.statusName ?? 'Issue status'
+		)} status icon" />`;
+	}
+	if (fallbackIconSrc) {
+		return `<img class="status-icon" src="${HtmlHelper.escapeAttribute(fallbackIconSrc)}" alt="${HtmlHelper.escapeHtml(
+			issue.statusName ?? 'Issue status'
+		)} status icon" />`;
+	}
+	return '<span class="status-icon status-icon-placeholder" aria-hidden="true"></span>';
+}
+
+	/**
+	 * Renders one related issue row with its open-issue action and status icon fallback.
+	 */
+	static renderRelatedIssueButton(webview: vscode.Webview, issue: JiraRelatedIssue): string {
 	const summaryText = issue.summary ? ` · ${HtmlHelper.escapeHtml(issue.summary)}` : '';
 	const statusText = issue.statusName ? ` — ${HtmlHelper.escapeHtml(issue.statusName)}` : '';
+	const statusIconMarkup = JiraWebviewPanel.renderRelatedIssueStatusIcon(webview, issue);
 	return `<button class="issue-link" data-issue-key="${HtmlHelper.escapeHtml(issue.key)}">
-		${HtmlHelper.escapeHtml(issue.key)}${summaryText}${statusText}
+		<span class="issue-link-icon-slot">${statusIconMarkup}</span>
+		<span class="issue-link-copy">${HtmlHelper.escapeHtml(issue.key)}${summaryText}${statusText}</span>
 	</button>`;
 }
 
 	/**
 	 * Renders the parent issue row inside the sidebar metadata card.
 	 */
-	static renderParentMetadataSection(issue: JiraIssue): string {
+static renderParentMetadataSection(webview: vscode.Webview, issue: JiraIssue): string {
 		const parent = issue.parent;
 		const selectedParent = parent
 			? {
@@ -2668,7 +2723,7 @@ export class JiraWebviewPanel {
 			ariaLabel: 'Choose a parent ticket',
 			selectedParent,
 		});
-		const parentIssueLink = parent ? `<div style="margin-top: 8px;">${renderRelatedIssueButton(parent)}</div>` : '';
+		const parentIssueLink = parent ? `<div style="margin-top: 8px;">${renderRelatedIssueButton(webview, parent)}</div>` : '';
 		return `<div class="meta-section">
 			<div class="section-title">Parent Ticket</div>
 			${parentPickerCard}

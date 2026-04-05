@@ -1531,6 +1531,7 @@ static async fetchIssueCommentsInternal(
 	const fields = raw.fields ?? {};
 	const summary = fields.summary ?? raw.summary ?? key;
 	const statusName = fields.status?.name ?? raw.status?.name ?? undefined;
+	const statusIconUrl = fields.status?.iconUrl ?? raw.status?.iconUrl ?? undefined;
 	const assigneeName =
 		fields.assignee?.displayName ??
 		fields.assignee?.name ??
@@ -1542,6 +1543,7 @@ static async fetchIssueCommentsInternal(
 		key,
 		summary,
 		statusName,
+		statusIconUrl,
 		assigneeName,
 		url: `${urlRoot}/browse/${key}`,
 		updated,

@@ -14,6 +14,16 @@ export type JiraRelatedIssue = {
 	key: string;
 	summary: string;
 	statusName?: string;
+
+	/**
+	 * Carries the Jira status icon URL reported for the related issue row.
+	 */
+	statusIconUrl?: string;
+
+	/**
+	 * Carries the webview-safe status icon source resolved for the related issue row.
+	 */
+	statusIconSrc?: string;
 	assigneeName?: string;
 	url: string;
 	updated?: string;

@@ -429,6 +429,37 @@ describe('Issue panel editor interactions', () => {
 		expect(openMessage.key).toBe('PROJ-123');
 	});
 
+	it('renders packaged fallback status icons for related issue links when Jira does not provide one', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
+			parent: {
+				key: 'PROJ-123',
+				summary: 'Parent issue summary',
+				statusName: 'In Progress',
+				url: 'https://jira.example.test/browse/PROJ-123',
+			},
+			children: [
+				{
+					key: 'PROJ-124',
+					summary: 'Child issue summary',
+					statusName: 'To Do',
+					url: 'https://jira.example.test/browse/PROJ-124',
+				},
+			] as any,
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const parentSection = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')).find(
+			(section) => section.textContent?.includes('Parent Ticket')
+		) as HTMLElement | undefined;
+		const parentStatusIcon = parentSection?.querySelector('.issue-link .status-icon') as HTMLImageElement | null;
+		const subtaskStatusIcon = dom.window.document.querySelector('.issue-list .issue-link .status-icon') as HTMLImageElement | null;
+
+		expect(parentStatusIcon).toBeTruthy();
+		expect(parentStatusIcon?.getAttribute('src')).toBe('file:///workspace/jira-vscode/media/status-inprogress.png');
+		expect(subtaskStatusIcon).toBeTruthy();
+		expect(subtaskStatusIcon?.getAttribute('src')).toBe('file:///workspace/jira-vscode/media/status-open.png');
+	});
+
 	it('renders the empty parent state as a shared card shell without the legacy row layout', () => {
 		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom();
 		expect(scriptErrors).toEqual([]);

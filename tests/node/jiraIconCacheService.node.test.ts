@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 
+import { EnvironmentRuntime } from '../../src/environment.runtime';
 import { JiraIconCacheService } from '../../src/services/jira-icon-cache.service';
 import { JiraIconDownloaderFactory } from '../../src/services/jira-icon-downloader.factory';
 
@@ -58,6 +59,11 @@ function getExpectedCachedFilePath(storageRoot: string, iconUrl: string): string
  * Describes the subset of the VS Code API required by the tree modules under test.
  */
 type VscodeTestModule = {
+	Uri: {
+		new (value: string): { toString(): string };
+		parse(value: string): { toString(): string };
+		joinPath(base: { toString(): string }, ...parts: string[]): { toString(): string };
+	};
 	TreeItem: new (label: string, collapsibleState?: number) => {
 		label: string;
 		collapsibleState?: number;
@@ -83,6 +89,14 @@ type VscodeTestModule = {
 		executeCommand(command: string, ...args: unknown[]): Promise<void>;
 	};
 	window: Record<string, never>;
+};
+
+/**
+ * Describes the light and dark icon pair used by custom tree icons.
+ */
+type TreeIconDescriptor = {
+	light: { toString(): string };
+	dark: { toString(): string };
 };
 
 /**
@@ -159,6 +173,22 @@ function loadTreeModules(): TreeTestModules {
 	const originalLoad = moduleLoader._load;
 
 	const vscode: VscodeTestModule = {
+		Uri: class Uri {
+			constructor(private readonly value: string) {}
+
+			toString(): string {
+				return this.value;
+			}
+
+			static parse(value: string): { toString(): string } {
+				return new (this as unknown as new (value: string) => { toString(): string })(value);
+			}
+
+			static joinPath(base: { toString(): string }, ...parts: string[]): { toString(): string } {
+				const baseValue = base.toString().replace(/\/+$/, '');
+				return new (this as unknown as new (value: string) => { toString(): string })(`${baseValue}/${parts.join('/')}`);
+			}
+		},
 		TreeItem: class TreeItem {
 			label: string;
 			collapsibleState?: number;
@@ -243,6 +273,7 @@ function loadTreeModules(): TreeTestModules {
 		const providerModule =
 			requireFromTest(providerModulePath) as typeof import('../../src/views/tree/items-tree-data.provider');
 		const jiraApiModule = requireFromTest(jiraApiModulePath) as typeof import('../../src/jira-api');
+		EnvironmentRuntime.initializeEnvironment(new vscode.Uri('file:///workspace/jira-vscode') as any);
 
 		return {
 			vscode,
@@ -500,29 +531,22 @@ test('resolveIconUri returns undefined when the download fails', async () => {
 	}
 });
 
-test('createIssueTreeItem preserves a resolved icon path instead of replacing it with a theme icon', () => {
-	const { JiraTreeItem } = loadTreeModules();
+test('createIssueTreeItem uses the visible status theme icon for issue rows', () => {
+	const { JiraTreeItem, vscode } = loadTreeModules();
 	const issue = createIssueFixture();
 
-	const item = JiraTreeItem.createIssueTreeItem(issue, 'file:///cached/bug.svg' as any);
+	const item = JiraTreeItem.createIssueTreeItem(issue, vscode.Uri.parse('file:///cached/bug.svg') as any);
 
-	assert.equal(item.iconPath, 'file:///cached/bug.svg');
+	assert.equal((item.iconPath as { id: string }).id, 'circle-filled');
+	assert.equal(item.iconPath instanceof vscode.ThemeIcon, true);
 });
 
-test('buildIssueNodes prefers a cached issue type icon, then a cached status icon, before falling back to the theme icon', async () => {
+test('buildIssueNodes uses status theme icons for issue rows', async () => {
 	const { JiraItemsTreeDataProvider, vscode } = loadTreeModules();
-	const bugIcon = await createTreeIconFixture('preferred-type', 'bug.svg');
-	const statusIcon = await createTreeIconFixture('preferred-status', 'in-progress.svg');
 	const resolveCalls: Array<string | undefined> = [];
 	const provider = createItemsProvider(JiraItemsTreeDataProvider, {
 		async getCachedIconUri(iconUrl: string | undefined): Promise<string | undefined> {
 			resolveCalls.push(iconUrl);
-			if (iconUrl?.includes('/bug.svg')) {
-				return bugIcon.iconUri;
-			}
-			if (iconUrl?.includes('/in-progress.svg')) {
-				return statusIcon.iconUri;
-			}
 			return undefined;
 		},
 		async warmIcon(): Promise<boolean> {
@@ -536,43 +560,20 @@ test('buildIssueNodes prefers a cached issue type icon, then a cached status ico
 		const preferredTypeNodes = await (provider as any).buildIssueNodes([createIssueFixture()], 'PROJ');
 		const preferredTypeNode = preferredTypeNodes[0];
 
-		assert.equal(preferredTypeNode.iconPath, bugIcon.iconUri);
-		assert.deepEqual(resolveCalls, ['https://example.atlassian.net/icons/bug.svg']);
+		assert.equal((preferredTypeNode.iconPath as { id: string }).id, 'circle-filled');
+		assert.equal(preferredTypeNode.iconPath instanceof vscode.ThemeIcon, true);
+		assert.deepEqual(resolveCalls, []);
 
-		resolveCalls.length = 0;
-		const statusFallbackNodes = await (provider as any).buildIssueNodes([
+		const issueNodes = await (provider as any).buildIssueNodes([
 			createIssueFixture({
 				key: 'PROJ-2',
 				issueTypeIconUrl: 'https://example.atlassian.net/icons/missing.svg',
 			}),
 		], 'PROJ');
-		const statusFallbackNode = statusFallbackNodes[0];
-
-		assert.equal(statusFallbackNode.iconPath, statusIcon.iconUri);
-		assert.deepEqual(resolveCalls, [
-			'https://example.atlassian.net/icons/missing.svg',
-			'https://example.atlassian.net/icons/in-progress.svg',
-		]);
-
-		resolveCalls.length = 0;
-		const themeFallbackNodes = await (provider as any).buildIssueNodes([
-			createIssueFixture({
-				key: 'PROJ-3',
-				issueTypeIconUrl: 'https://example.atlassian.net/icons/missing.svg',
-				statusIconUrl: 'https://example.atlassian.net/icons/also-missing.svg',
-			}),
-		], 'PROJ');
-		const themeFallbackNode = themeFallbackNodes[0];
-
-		assert.equal((themeFallbackNode.iconPath as { id: string }).id, 'circle-filled');
-		assert.equal(themeFallbackNode.iconPath instanceof vscode.ThemeIcon, true);
-		assert.deepEqual(resolveCalls, [
-			'https://example.atlassian.net/icons/missing.svg',
-			'https://example.atlassian.net/icons/also-missing.svg',
-		]);
+		assert.equal((issueNodes[0].iconPath as { id: string }).id, 'circle-filled');
+		assert.equal(issueNodes[0].iconPath instanceof vscode.ThemeIcon, true);
+		assert.deepEqual(resolveCalls, []);
 	} finally {
-		await bugIcon.cleanup();
-		await statusIcon.cleanup();
 	}
 });
 
@@ -596,22 +597,14 @@ test('buildIssueNodes falls back to theme icons when no icon cache service is su
 	assert.equal(statusGroups[0].iconPath instanceof vscode.ThemeIcon, true);
 
 	const typeGroups = await (provider as any).buildTypeGroupNodes([issue], 'PROJ');
-	assert.equal((typeGroups[0].iconPath as { id: string }).id, 'symbol-class');
+	assert.equal((typeGroups[0].iconPath as { id: string }).id, 'circle-filled');
 	assert.equal(typeGroups[0].iconPath instanceof vscode.ThemeIcon, true);
 });
 
-test('group nodes prefer cached Jira icons while preserving grouped child issue nodes', async () => {
+test('group nodes use visible status theme icons while preserving grouped child issue nodes', async () => {
 	const { JiraItemsTreeDataProvider, vscode } = loadTreeModules();
-	const bugIcon = await createTreeIconFixture('group-type', 'bug.svg');
-	const statusIcon = await createTreeIconFixture('group-status', 'in-progress.svg');
 	const provider = createItemsProvider(JiraItemsTreeDataProvider, {
-		async getCachedIconUri(iconUrl: string | undefined): Promise<string | undefined> {
-			if (iconUrl?.includes('/bug.svg')) {
-				return bugIcon.iconUri;
-			}
-			if (iconUrl?.includes('/in-progress.svg')) {
-				return statusIcon.iconUri;
-			}
+		async getCachedIconUri(): Promise<string | undefined> {
 			return undefined;
 		},
 		async warmIcon(): Promise<boolean> {
@@ -620,44 +613,27 @@ test('group nodes prefer cached Jira icons while preserving grouped child issue 
 	});
 	const issue = createIssueFixture();
 
-	try {
-		const statusGroups = await (provider as any).buildStatusGroupNodes([issue], 'PROJ');
-		assert.equal(statusGroups.length, 1);
-		assert.equal(statusGroups[0].iconPath, statusIcon.iconUri);
-		assert.equal(statusGroups[0].children?.length, 1);
-		assert.equal(
-			typeof statusGroups[0].children?.[0].label === 'string' &&
-				statusGroups[0].children?.[0].label.includes('PROJ-1') &&
-				statusGroups[0].children?.[0].label.includes('Investigate cached icons'),
-			true
-		);
-		assert.equal(statusGroups[0].children?.[0].iconPath, bugIcon.iconUri);
+	const statusGroups = await (provider as any).buildStatusGroupNodes([issue], 'PROJ');
+	assert.equal(statusGroups.length, 1);
+	assert.equal((statusGroups[0].iconPath as { id: string }).id, 'circle-filled');
+	assert.equal(statusGroups[0].iconPath instanceof vscode.ThemeIcon, true);
+	assert.equal(statusGroups[0].children?.length, 1);
+	assert.equal(
+		typeof statusGroups[0].children?.[0].label === 'string' &&
+			statusGroups[0].children?.[0].label.includes('PROJ-1') &&
+			statusGroups[0].children?.[0].label.includes('Investigate cached icons'),
+		true
+	);
+	assert.equal((statusGroups[0].children?.[0].iconPath as { id: string }).id, 'circle-filled');
+	assert.equal(statusGroups[0].children?.[0].iconPath instanceof vscode.ThemeIcon, true);
 
-		const typeGroups = await (provider as any).buildTypeGroupNodes([issue], 'PROJ');
-		assert.equal(typeGroups.length, 1);
-		assert.equal(typeGroups[0].iconPath, bugIcon.iconUri);
-		assert.equal(typeGroups[0].children?.length, 1);
-		assert.equal(typeGroups[0].children?.[0].iconPath, bugIcon.iconUri);
-
-		const providerWithFallback = createItemsProvider(JiraItemsTreeDataProvider, {
-			async getCachedIconUri(): Promise<string | undefined> {
-				return undefined;
-			},
-			async warmIcon(): Promise<boolean> {
-				return false;
-			},
-		});
-		const fallbackStatusGroups = await (providerWithFallback as any).buildStatusGroupNodes([issue], 'PROJ');
-		assert.equal((fallbackStatusGroups[0].iconPath as { id: string }).id, 'circle-filled');
-		assert.equal(fallbackStatusGroups[0].iconPath instanceof vscode.ThemeIcon, true);
-
-		const fallbackTypeGroups = await (providerWithFallback as any).buildTypeGroupNodes([issue], 'PROJ');
-		assert.equal((fallbackTypeGroups[0].iconPath as { id: string }).id, 'symbol-class');
-		assert.equal(fallbackTypeGroups[0].iconPath instanceof vscode.ThemeIcon, true);
-	} finally {
-		await bugIcon.cleanup();
-		await statusIcon.cleanup();
-	}
+	const typeGroups = await (provider as any).buildTypeGroupNodes([issue], 'PROJ');
+	assert.equal(typeGroups.length, 1);
+	assert.equal((typeGroups[0].iconPath as { id: string }).id, 'circle-filled');
+	assert.equal(typeGroups[0].iconPath instanceof vscode.ThemeIcon, true);
+	assert.equal(typeGroups[0].children?.length, 1);
+	assert.equal((typeGroups[0].children?.[0].iconPath as { id: string }).id, 'circle-filled');
+	assert.equal(typeGroups[0].children?.[0].iconPath instanceof vscode.ThemeIcon, true);
 });
 
 test('items tree falls back to theme icons when cached Jira icon URIs are unusable', async () => {
@@ -685,8 +661,40 @@ test('items tree falls back to theme icons when cached Jira icon URIs are unusab
 	assert.equal(statusGroups[0].iconPath instanceof vscode.ThemeIcon, true);
 
 	const typeGroups = await (provider as any).buildTypeGroupNodes([issue], 'PROJ');
-	assert.equal((typeGroups[0].iconPath as { id: string }).id, 'symbol-class');
+	assert.equal((typeGroups[0].iconPath as { id: string }).id, 'circle-filled');
 	assert.equal(typeGroups[0].iconPath instanceof vscode.ThemeIcon, true);
+});
+
+test('items tree falls back to the packaged status icon when the cached Jira icon uses an unsupported tree image format', async () => {
+	const { JiraItemsTreeDataProvider, vscode } = loadTreeModules();
+	const unsupportedStatusIcon = await createTreeIconFixture('unsupported-status', 'in-progress.gif');
+	const provider = createItemsProvider(JiraItemsTreeDataProvider, {
+		async getCachedIconUri(iconUrl: string | undefined): Promise<string | undefined> {
+			if (iconUrl?.includes('/in-progress.gif')) {
+				return unsupportedStatusIcon.iconUri;
+			}
+			return undefined;
+		},
+		async warmIcon(): Promise<boolean> {
+			return false;
+		},
+	});
+
+	try {
+		(provider as any).groupMode = 'none';
+		const issueNodes = await (provider as any).buildIssueNodes([
+			createIssueFixture({
+				key: 'PROJ-GIF',
+				issueTypeIconUrl: undefined,
+				statusIconUrl: 'https://example.atlassian.net/icons/in-progress.gif',
+			}),
+		], 'PROJ');
+
+		assert.equal((issueNodes[0].iconPath as { id: string }).id, 'circle-filled');
+		assert.equal(issueNodes[0].iconPath instanceof vscode.ThemeIcon, true);
+	} finally {
+		await unsupportedStatusIcon.cleanup();
+	}
 });
 
 test('loadItems renders immediately with fallback icons on cold cache and repaints from cache after warm completes', async () => {
@@ -751,13 +759,13 @@ test('loadItems renders immediately with fallback icons on cold cache and repain
 		const initialNodes = renderRace as Array<{ issue?: { key: string }; iconPath?: { id?: string } }>;
 		const initialIssueNode = initialNodes.find((node) => node.issue?.key === issue.key);
 		assert.equal(initialIssueNode?.iconPath?.id, 'circle-filled');
-		assert.equal(warmCallCount, 2);
+		assert.equal(warmCallCount, 0);
 		assert.equal(refreshEvents.length, 0);
 
 		releaseWarm();
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
-		assert.equal(refreshEvents.length, 1);
+		assert.equal(refreshEvents.length, 0);
 	} finally {
 		jiraApiClient.fetchProjectIssuesPage = originalFetchProjectIssuesPage;
 	}
@@ -819,7 +827,7 @@ test('loadItems repaint after warm reuses cached icons without forcing another J
 
 		const refreshedNodes = await (provider as any).loadItems(authInfo);
 		const refreshedIssueNode = refreshedNodes.find((node: any) => node.issue?.key === issue.key);
-		assert.equal(refreshedIssueNode?.iconPath, bugIcon.iconUri);
+		assert.equal((refreshedIssueNode?.iconPath as { id: string }).id, 'circle-filled');
 		assert.equal(fetchCount, 1);
 	} finally {
 		await bugIcon.cleanup();
