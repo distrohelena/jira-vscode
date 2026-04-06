@@ -115,23 +115,30 @@ export class ParentIssuePickerOverlay {
 		return `
 		.parent-picker-host {
 			position: fixed;
-			inset: 0;
+			top: 0;
+			left: 0;
+			width: 100vw;
+			height: 100vh;
 			display: none;
-			place-items: center;
-			padding: 24px;
 			z-index: 60;
 		}
 		.parent-picker-host.active {
-			display: grid;
+			display: block;
 		}
 		.parent-picker-host .parent-picker-overlay-backdrop {
-			position: absolute;
-			inset: 0;
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			bottom: 0;
 			background: rgba(0, 0, 0, 0.58);
 			backdrop-filter: blur(2px);
 		}
 		.parent-picker-host .parent-picker-shell {
-			position: relative;
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
 			z-index: 1;
 			width: min(92vw, 1200px);
 			height: min(84vh, 860px);
@@ -143,8 +150,6 @@ export class ParentIssuePickerOverlay {
 			box-shadow: 0 26px 80px rgba(0, 0, 0, 0.35);
 			display: grid;
 			grid-template-rows: auto auto 1fr auto;
-			justify-self: center;
-			align-self: center;
 		}
 		.parent-picker-host .parent-picker-header {
 			padding: 18px 20px 10px 20px;

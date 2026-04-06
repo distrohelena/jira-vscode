@@ -47,7 +47,8 @@ class ExtensionEntrypoint {
 		authManager,
 		focusManager,
 		transitionPrefetcher,
-		iconCacheService
+		iconCacheService,
+		projectStatusStore
 	);
 	const notificationsProvider = new JiraNotificationsTreeDataProvider(context, authManager, focusManager);
 	const settingsProvider = new JiraSettingsTreeDataProvider(authManager, focusManager);
@@ -203,6 +204,9 @@ class ExtensionEntrypoint {
 		}),
 		vscode.commands.registerCommand('jira.remoteSearchItems', async () => {
 			await itemsProvider.openItemsSearch();
+		}),
+		vscode.commands.registerCommand('jira.searchAssignedItems', async () => {
+			await itemsProvider.openAssignedItemsSearch();
 		}),
 		vscode.commands.registerCommand('jira.loadMoreItems', async () => {
 			await itemsProvider.loadMoreItems();

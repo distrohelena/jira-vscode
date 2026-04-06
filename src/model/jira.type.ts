@@ -84,6 +84,11 @@ export type JiraIssueComment = {
 	bodyDocument?: unknown;
 
 	/**
+	 * Plain text extracted from the ADF body for editing when wiki body is unavailable.
+	 */
+	bodyText?: string;
+
+	/**
 	 * The mention nodes parsed from the raw comment body document.
 	 */
 	mentions?: JiraCommentMention[];
@@ -281,7 +286,10 @@ export type IssuePanelOptions = {
 	commentsPending?: boolean;
 	commentSubmitPending?: boolean;
 	commentSubmitError?: string;
+	commentSubmittingForCommentId?: string;
 	commentDeletingId?: string;
+	commentEditingId?: string;
+	commentEditDraft?: string;
 	commentFormat?: JiraCommentFormat;
 	commentDraft?: string;
 

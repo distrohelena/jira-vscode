@@ -127,6 +127,12 @@
                 "icon": "$(search)"
             },
             {
+                "command": "jira.searchAssignedItems",
+                "title": "Jira: Search Assigned Items",
+                "category": "Jira",
+                "icon": "$(search)"
+            },
+            {
                 "command": "jira.loadMoreItems",
                 "title": "Jira: Load More Items",
                 "category": "Jira"
@@ -171,11 +177,13 @@
             },
             {
                 "command": "jira.commitFromIssue",
-                "title": "Jira: Commit From Issue"
+                "title": "Jira: Commit From Issue",
+                "icon": "$(repo-push)"
             },
             {
                 "command": "jira.searchCommitHistory",
-                "title": "Jira: Search Commit History"
+                "title": "Jira: Search Commit History",
+                "icon": "$(git-commit)"
             }
         ],
         "viewsContainers": {

@@ -246,6 +246,20 @@ export class JiraApiClient implements IJiraApiClient {
 	}
 
 	/**
+	 * Updates an existing issue comment.
+	 */
+	async updateIssueComment(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		commentId: string,
+		body: string,
+		format: JiraCommentFormat
+	): Promise<JiraIssueComment> {
+		return JiraApiTransport.updateIssueComment(authInfo, token, issueKey, commentId, body, format);
+	}
+
+	/**
 	 * Creates a new issue in the target project.
 	 */
 	async createIssue(

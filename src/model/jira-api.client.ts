@@ -933,6 +933,61 @@ static async fetchIssueCommentsInternal(
 	throw lastError ?? new Error('Unable to delete comment.');
 }
 
+	static async updateIssueCommentInternal(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		commentId: string,
+		body: string,
+		format: JiraCommentFormat
+	): Promise<JiraIssueComment> {
+		const trimmedId = commentId?.trim();
+		if (!trimmedId) {
+			throw new Error('Comment ID is required.');
+		}
+		const sanitizedKey = issueKey?.trim();
+		if (!sanitizedKey) {
+			throw new Error('Issue key is required.');
+		}
+		if (!body?.trim()) {
+			throw new Error('Comment text is required.');
+		}
+
+		const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
+		const resource = `issue/${encodeURIComponent(sanitizedKey)}/comment/${encodeURIComponent(trimmedId)}`;
+		const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
+
+		const bodyValue = format === 'wiki' ? body : body;
+
+		let lastError: unknown;
+		for (const endpoint of endpoints) {
+			try {
+				const response = await axios.put(endpoint, {
+					body: bodyValue,
+				}, {
+					auth: {
+						username: authInfo.username,
+						password: token,
+					},
+					headers: {
+						Accept: 'application/json',
+						'Content-Type': 'application/json',
+						'User-Agent': 'jira-vscode',
+					},
+				});
+				const createdComment = mapIssueComment(response.data, authInfo);
+				if (!createdComment) {
+					throw new Error('Jira did not return the updated comment.');
+				}
+				return createdComment;
+			} catch (error) {
+				lastError = error;
+			}
+		}
+
+		throw lastError ?? new Error('Unable to update comment.');
+	}
+
 	static mapIssueCommentInternal(comment: any, authInfo: JiraAuthInfo): JiraIssueComment | undefined {
 	if (!comment) {
 		return undefined;
@@ -966,6 +1021,9 @@ static async fetchIssueCommentsInternal(
 		body: typeof comment.body === 'string' ? comment.body : undefined,
 		renderedBody: sanitized,
 		bodyDocument,
+		bodyText: bodyDocument
+			? JiraApiTransport.extractTextFromAdf(bodyDocument)
+			: (typeof comment.body === 'string' ? comment.body : undefined),
 		mentions: JiraCommentMentionService.extractMentions(bodyDocument),
 		authorName: author.displayName ?? author.name ?? 'Unknown',
 		authorAccountId: authorAccountId ? String(authorAccountId) : undefined,
@@ -975,6 +1033,33 @@ static async fetchIssueCommentsInternal(
 		isCurrentUser,
 	};
 }
+
+	/**
+	 * Extracts plain text content from an ADF (Atlassian Document Format) body for comment editing.
+	 */
+	static extractTextFromAdf(doc: unknown): string {
+		if (!doc || typeof doc !== 'object') { return ''; }
+		const adf = doc as Record<string, unknown>;
+		// ADF root document has { type: 'doc', content: [...] }
+		const content = (Array.isArray(adf.content) ? adf.content : []) as unknown[];
+		if (content.length === 0) { return ''; }
+		const parts: string[] = [];
+		const walk = (node: unknown) => {
+			if (!node || typeof node !== 'object') { return; }
+			const n = node as Record<string, unknown>;
+			if (n.type === 'text' && typeof n.text === 'string' && n.text.length > 0) {
+				parts.push(n.text);
+			}
+			// Recurse into child content arrays
+			const children = n.content as unknown[];
+			if (Array.isArray(children)) {
+				for (const child of children) { walk(child); }
+			}
+		};
+		for (const block of content) { walk(block); }
+		const result = parts.join('\n').trim();
+		return result;
+	}
 
 	static mapIssueChangelogEntryInternal(entry: any): JiraIssueChangelogEntry | undefined {
 	if (!entry?.id) {
@@ -2063,6 +2148,17 @@ static assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, acco
 		return deleteIssueComment(authInfo, token, issueKey, commentId);
 	}
 
+	static updateIssueComment(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		commentId: string,
+		body: string,
+		format: JiraCommentFormat
+	): Promise<JiraIssueComment> {
+		return updateIssueComment(authInfo, token, issueKey, commentId, body, format);
+	}
+
 	static createIssue(
 		authInfo: JiraAuthInfo,
 		token: string,
@@ -2160,6 +2256,7 @@ const fetchIssueChangelog = JiraApiTransport.fetchIssueChangelogInternal;
 const fetchNotificationGroups = JiraApiTransport.fetchNotificationGroupsInternal;
 const addIssueComment = JiraApiTransport.addIssueCommentInternal;
 const deleteIssueComment = JiraApiTransport.deleteIssueCommentInternal;
+const updateIssueComment = JiraApiTransport.updateIssueCommentInternal;
 const mapIssueComment = JiraApiTransport.mapIssueCommentInternal;
 const mapIssueChangelogEntry = JiraApiTransport.mapIssueChangelogEntryInternal;
 const mapIssueChangelogItem = JiraApiTransport.mapIssueChangelogItemInternal;

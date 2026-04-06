@@ -104,6 +104,8 @@ export class IssueControllerFactory {
 			commentFormat: JiraCommentFormat;
 			commentDraft: string;
 			commentDeletingId?: string;
+			commentEditingId?: string;
+			commentEditDraft?: string;
 			commentReplyContext?: CommentReplyContext;
 			summaryEditPending: boolean;
 			summaryEditError?: string;
@@ -125,6 +127,8 @@ export class IssueControllerFactory {
 			commentFormat: 'wiki',
 			commentDraft: '',
 			commentDeletingId: undefined,
+			commentEditingId: undefined,
+			commentEditDraft: undefined,
 			commentReplyContext: undefined,
 			summaryEditPending: false,
 			summaryEditError: undefined,
@@ -145,6 +149,8 @@ export class IssueControllerFactory {
 			commentSubmitPending: panelState.commentSubmitPending,
 			commentSubmitError: panelState.commentSubmitError,
 			commentDeletingId: panelState.commentDeletingId,
+			commentEditingId: panelState.commentEditingId,
+			commentEditDraft: panelState.commentEditDraft,
 			commentFormat: panelState.commentFormat,
 			commentDraft: panelState.commentDraft,
 			commentReplyContext: panelState.commentReplyContext,
@@ -194,6 +200,12 @@ export class IssueControllerFactory {
 					await handleAddComment(message.body);
 				} else if (message?.type === 'deleteComment' && typeof message.commentId === 'string') {
 					await handleDeleteComment(message.commentId);
+				} else if (message?.type === 'startEditComment' && typeof message.commentId === 'string') {
+					handleStartEditComment(message.commentId);
+				} else if (message?.type === 'cancelEditComment') {
+					handleCancelEditComment();
+				} else if (message?.type === 'saveEditComment' && typeof message.commentId === 'string' && typeof message.body === 'string') {
+					await handleSaveEditComment(message.commentId, message.body, message.format);
 				} else if (message?.type === 'refreshComments') {
 					await refreshComments(true);
 				} else if (message?.type === 'startCommentReply' && typeof message.commentId === 'string') {
@@ -923,6 +935,69 @@ export class IssueControllerFactory {
 				panelState.commentsError = `Failed to delete comment: ${message}`;
 				renderPanel();
 				await vscode.window.showErrorMessage(`Failed to delete comment: ${message}`);
+			}
+		}
+
+		function handleStartEditComment(commentId: string): void {
+			if (disposed || !commentId) {
+				return;
+			}
+			const comment = panelState.comments?.find((c) => c.id === commentId);
+			if (!comment) {
+				return;
+			}
+			const wikiBody = typeof comment.body === 'string' ? comment.body : undefined;
+			const draft = wikiBody ?? comment.bodyText ?? '';
+			panelState.commentEditingId = commentId;
+			panelState.commentEditDraft = draft;
+			panelState.commentSubmitError = undefined;
+			renderPanel();
+		}
+
+		function handleCancelEditComment(): void {
+			if (disposed) {
+				return;
+			}
+			panelState.commentEditingId = undefined;
+			panelState.commentEditDraft = undefined;
+			panelState.commentSubmitError = undefined;
+			renderPanel();
+		}
+
+		async function handleSaveEditComment(commentId: string, body: string, format: string): Promise<void> {
+			if (disposed || !commentId) {
+				return;
+			}
+			const authInfo = await authManager.getAuthInfo();
+			const token = await authManager.getToken();
+			if (!authInfo || !token) {
+				await vscode.window.showInformationMessage('Log in to Jira to edit comments.');
+				return;
+			}
+
+			panelState.commentSubmitPending = true;
+			panelState.commentSubmitError = undefined;
+			renderPanel();
+			try {
+				await jiraApiClient.updateIssueComment(
+					authInfo,
+					token,
+					resolvedIssueKey,
+					commentId,
+					body,
+					'wiki'
+				);
+				panelState.commentEditingId = undefined;
+				panelState.commentEditDraft = undefined;
+				panelState.commentSubmitPending = false;
+				renderPanel();
+				await refreshComments(true);
+			} catch (error) {
+				const message = ErrorHelper.deriveErrorMessage(error);
+				panelState.commentSubmitPending = false;
+				panelState.commentSubmitError = `Failed to update comment: ${message}`;
+				renderPanel();
+				await vscode.window.showErrorMessage(`Failed to update comment: ${message}`);
 			}
 		}
 	};

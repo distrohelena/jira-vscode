@@ -168,6 +168,18 @@ export interface IJiraApiClient {
 	deleteIssueComment(authInfo: JiraAuthInfo, token: string, issueKey: string, commentId: string): Promise<void>;
 
 	/**
+	 * Updates an existing issue comment.
+	 */
+	updateIssueComment(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		commentId: string,
+		body: string,
+		format: JiraCommentFormat
+	): Promise<JiraIssueComment>;
+
+	/**
 	 * Creates an issue and returns the resolved issue details.
 	 */
 	createIssue(authInfo: JiraAuthInfo, token: string, projectKey: string, values: CreateIssueFormValues): Promise<JiraIssue>;

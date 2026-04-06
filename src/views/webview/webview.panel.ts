@@ -229,7 +229,7 @@ export class JiraWebviewPanel {
 <html lang="en">
 <head>
 	<meta charset="UTF-8" />
-	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; font-src ${cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
 	<title>${HtmlHelper.escapeHtml(issue.key)}</title>
 	<style>
 	body {
@@ -401,14 +401,24 @@ export class JiraWebviewPanel {
 }
 .issue-commit,
 .issue-search-commit-history {
-	border-radius: 4px;
-	border: 1px solid var(--vscode-button-secondaryBorder, transparent);
-	background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
-	color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-	padding: 8px 12px;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	border-radius: 6px;
+	border: 1px solid var(--vscode-button-border, var(--vscode-button-secondaryBorder, transparent));
+	background: var(--vscode-button-background, var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08)));
+	color: var(--vscode-button-foreground, var(--vscode-button-secondaryForeground, var(--vscode-foreground)));
+	padding: 8px 14px;
 	cursor: pointer;
 	font-size: 0.95em;
+	font-weight: 500;
 	white-space: nowrap;
+	transition: background 0.15s ease, border-color 0.15s ease;
+}
+.issue-commit:hover,
+.issue-search-commit-history:hover {
+	background: var(--vscode-button-hoverBackground, var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12)));
+	border-color: var(--vscode-button-hoverBorder, var(--vscode-button-secondaryHoverBorder, transparent));
 }
 .issue-commit:disabled,
 .issue-search-commit-history:disabled {
@@ -522,6 +532,72 @@ export class JiraWebviewPanel {
 	}
 	.comment-body,
 	.description-body {
+		margin-top: 8px;
+	}
+	.comment-body-editable {
+		cursor: pointer;
+		position: relative;
+	}
+	.comment-body-editable:hover {
+		outline: 1px solid var(--vscode-focusBorder, rgba(0,120,215,0.4));
+		outline-offset: 2px;
+	}
+	.comment-body-editable::after {
+		content: '';
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		width: 16px;
+		height: 16px;
+		opacity: 0;
+		transition: opacity 0.15s ease;
+		background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23888' d='M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Zm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z'/%3E%3C/svg%3E") no-repeat center;
+	}
+	.comment-body-editable:hover::after {
+		opacity: 0.7;
+	}
+	.comment-edit-form {
+		margin-top: 12px;
+		padding-top: 12px;
+		border-top: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+	}
+	.comment-edit-controls {
+		display: flex;
+		gap: 8px;
+		margin-top: 8px;
+	}
+	.comment-edit-save {
+		border-radius: 4px;
+		border: 1px solid var(--vscode-button-border, transparent);
+		background: var(--vscode-button-background);
+		color: var(--vscode-button-foreground);
+		padding: 6px 14px;
+		cursor: pointer;
+		font-size: 0.9em;
+		font-weight: 500;
+	}
+	.comment-edit-save:hover {
+		background: var(--vscode-button-hoverBackground);
+	}
+	.comment-edit-save:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+	.comment-edit-cancel {
+		border-radius: 4px;
+		border: 1px solid var(--vscode-button-secondaryBorder, transparent);
+		background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+		color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+		padding: 6px 14px;
+		cursor: pointer;
+		font-size: 0.9em;
+	}
+	.comment-edit-cancel:hover {
+		background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
+	}
+	.comment-edit-error {
+		color: var(--vscode-errorForeground, #f48771);
+		font-size: 0.9em;
 		margin-top: 8px;
 	}
 	.description-card {
@@ -1032,10 +1108,10 @@ export class JiraWebviewPanel {
 				<div class="issue-actions">
 					<button type="button" class="issue-commit" data-issue-key="${HtmlHelper.escapeAttribute(
 						issue.key
-					)}" ${isLoading ? 'disabled' : ''}>Commit from Issue</button>
+					)}" ${isLoading ? 'disabled' : ''}><span class="codicon codicon-repo-push"></span> Commit from Issue</button>
 					<button type="button" class="issue-search-commit-history" data-issue-key="${HtmlHelper.escapeAttribute(
 						issue.key
-					)}" ${isLoading ? 'disabled' : ''}>Search Commit History</button>
+					)}" ${isLoading ? 'disabled' : ''}><span class="codicon codicon-git-commit"></span> Search Commit History</button>
 				</div>
 			</div>
 			${messageBanner}
@@ -1604,6 +1680,54 @@ export class JiraWebviewPanel {
 					vscode.postMessage({ type: 'deleteComment', commentId });
 				});
 			});
+			document.querySelectorAll('.comment-body-editable').forEach((bodyEl) => {
+				bodyEl.addEventListener('click', () => {
+					const commentId = bodyEl.getAttribute('data-comment-id');
+					if (!commentId) {
+						return;
+					}
+					vscode.postMessage({ type: 'startEditComment', commentId });
+				});
+			});
+			document.querySelectorAll('.comment-edit-cancel').forEach((button) => {
+				button.addEventListener('click', () => {
+					if (button.disabled) {
+						return;
+					}
+					vscode.postMessage({ type: 'cancelEditComment' });
+				});
+			});
+			document.querySelectorAll('.comment-edit-form').forEach((form) => {
+				form.addEventListener('submit', (e) => {
+					e.preventDefault();
+					const editCommentId = form.getAttribute('data-edit-comment-id');
+					if (!editCommentId) {
+						return;
+					}
+					const textareaEl = form.querySelector('.comment-input');
+					const body = textareaEl?.value || '';
+					if (!body.trim()) {
+						return;
+					}
+					const saveButton = form.querySelector('.comment-edit-save');
+					if (saveButton) { saveButton.disabled = true; }
+					vscode.postMessage({ type: 'saveEditComment', commentId: editCommentId, body, format: 'wiki' });
+				});
+				const editor = form.querySelector('.jira-rich-editor');
+				if (editor) {
+					const input = editor.querySelector('.jira-rich-editor-input');
+					const saveButton = form.querySelector('.comment-edit-save');
+					if (input && saveButton) {
+						const updateSaveState = () => {
+							const pending = saveButton.textContent?.includes('Saving');
+							const hasText = input.value.trim().length > 0;
+							saveButton.disabled = pending || !hasText;
+						};
+						input.addEventListener('input', updateSaveState);
+						updateSaveState();
+					}
+				}
+			});
 			const refreshButton = document.querySelector('.comment-refresh');
 			if (refreshButton) {
 				refreshButton.addEventListener('click', () => {
@@ -1659,7 +1783,7 @@ export class JiraWebviewPanel {
 <html lang="en">
 <head>
 \t<meta charset="UTF-8" />
-\t<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+\t<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; font-src ${cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
 \t<title>New Jira Ticket</title>
 \t<style>
 \t\t*, *::before, *::after {
@@ -2578,14 +2702,15 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 	const timestampText = timestamp ? IssueModel.formatIssueUpdated(timestamp) : undefined;
 	const authorLabel = HtmlHelper.escapeHtml(comment.authorName ?? 'Unknown user');
 	const isDeleting = options?.commentDeletingId === comment.id;
+	const isEditing = options?.commentEditingId === comment.id;
 	const deleteDisabled = isDeleting || (options?.commentsPending ?? false);
 	const deleteLabel = isDeleting ? 'Deleting…' : 'Delete';
-	const deleteButton = comment.id
+	const deleteButton = comment.id && !isEditing
 		? `<button type="button" class="comment-delete" data-comment-id="${HtmlHelper.escapeAttribute(comment.id)}" ${deleteDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(deleteLabel)}</button>`
 		: '';
 	const replyDisabled = (options?.commentsPending ?? false) || (options?.commentSubmitPending ?? false);
 	const isReplying = options?.commentReplyContext?.commentId === comment.id;
-	const replyButton = comment.id
+	const replyButton = comment.id && !isEditing
 		? `<button type="button" class="comment-reply" data-comment-id="${HtmlHelper.escapeAttribute(comment.id)}" ${replyDisabled || isReplying ? 'disabled' : ''}>${HtmlHelper.escapeHtml(
 				isReplying ? 'Replying...' : 'Reply'
 			)}</button>`
@@ -2594,7 +2719,14 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 	const bodyHtml = comment.renderedBody && comment.renderedBody.trim().length > 0
 		? comment.renderedBody
 		: '<p class="muted">No comment body</p>';
-	return `<li class="comment-item">
+	const editFormMarkup = isEditing
+		? JiraWebviewPanel.renderCommentEditForm(comment, options)
+		: '';
+	const commentBodyClass = 'comment-body comment-body-editable';
+	const editableMarkup = isEditing
+		? ''
+		: `<div class="${commentBodyClass}" data-comment-id="${HtmlHelper.escapeAttribute(comment.id ?? '')}" data-comment-editable="true">${bodyHtml}</div>`;
+	return `<li class="comment-item" data-comment-id="${HtmlHelper.escapeAttribute(comment.id ?? '')}">
 		${renderCommentAvatar(comment)}
 		<div class="comment-content">
 			<div class="comment-meta">
@@ -2606,7 +2738,8 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 					${deleteButton}
 				</div>
 			</div>
-			<div class="comment-body rich-text-block" data-comment-id="${HtmlHelper.escapeAttribute(comment.id ?? '')}">${bodyHtml}</div>
+			${editableMarkup}
+			${editFormMarkup}
 		</div>
 	</li>`;
 }
@@ -2639,6 +2772,36 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 			<button type="submit" class="comment-submit" ${buttonDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(
 				pending ? (replyContext ? 'Replying...' : 'Adding...') : replyContext ? 'Reply' : 'Add comment'
 			)}</button>
+		</div>
+		${errorMarkup}
+	</form>`;
+}
+
+static renderCommentEditForm(comment: JiraIssueComment, options?: IssuePanelOptions): string {
+	const pending = options?.commentSubmitPending ?? false;
+	const wikiBody = typeof comment.body === 'string' ? comment.body : undefined;
+	const draftValue = options?.commentEditDraft ?? wikiBody ?? comment.bodyText ?? '';
+	const hasText = draftValue.trim().length > 0;
+	const buttonDisabled = pending || !hasText;
+	const errorMarkup = options?.commentSubmitError
+		? `<div class="comment-edit-error">${HtmlHelper.escapeHtml(options.commentSubmitError)}</div>`
+		: '<div class="comment-edit-error hidden"></div>';
+	return `<form class="comment-edit-form" data-edit-comment-id="${HtmlHelper.escapeAttribute(comment.id ?? '')}">
+		${renderRichTextEditor({
+			editorId: `edit-comment-${comment.id}`,
+			value: draftValue,
+			placeholder: 'Edit your comment',
+			disabled: pending,
+			minRows: 6,
+			inputClassName: 'comment-input',
+			editorClassName: 'comment-editor',
+			ariaLabel: 'Edit comment',
+		})}
+		<div class="comment-edit-controls">
+			<button type="submit" class="comment-edit-save" ${buttonDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(
+				pending ? 'Saving...' : 'Save'
+			)}</button>
+			<button type="button" class="comment-edit-cancel" ${pending ? 'disabled' : ''}>Cancel</button>
 		</div>
 		${errorMarkup}
 	</form>`;

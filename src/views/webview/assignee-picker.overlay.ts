@@ -64,23 +64,30 @@ export class AssigneePickerOverlay {
 		return `
 		.assignee-picker-host {
 			position: fixed;
-			inset: 0;
+			top: 0 !important;
+			left: 0 !important;
+			right: 0 !important;
+			bottom: 0 !important;
 			display: none;
-			place-items: center;
-			padding: 24px;
-			z-index: 61;
+			z-index: 9999;
 		}
 		.assignee-picker-host.active {
-			display: grid;
+			display: block !important;
 		}
 		.assignee-picker-host .assignee-picker-overlay-backdrop {
-			position: absolute;
-			inset: 0;
+			position: fixed;
+			top: 0;
+			left: 0;
+			right: 0;
+			bottom: 0;
 			background: rgba(0, 0, 0, 0.58);
 			backdrop-filter: blur(2px);
 		}
 		.assignee-picker-host .assignee-picker-shell {
-			position: relative;
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
 			z-index: 1;
 			width: min(92vw, 1100px);
 			height: min(84vh, 860px);
@@ -92,8 +99,6 @@ export class AssigneePickerOverlay {
 			box-shadow: 0 26px 80px rgba(0, 0, 0, 0.35);
 			display: grid;
 			grid-template-rows: auto auto 1fr auto;
-			justify-self: center;
-			align-self: center;
 		}
 		.assignee-picker-host .assignee-picker-header {
 			padding: 18px 20px 10px 20px;

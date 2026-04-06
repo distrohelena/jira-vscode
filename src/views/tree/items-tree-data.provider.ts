@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { JiraAuthManager } from '../../model/auth.manager';
 import { JiraFocusManager } from '../../model/focus.manager';
 import { ProjectTransitionPrefetcher } from '../../model/project-transition.prefetcher';
+import { ProjectStatusStore } from '../../model/project-status.store';
 import {
 	ITEMS_LOAD_BATCH_SIZE,
 	ITEMS_GROUP_MODE_CONTEXT,
@@ -78,7 +79,8 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		authManager: JiraAuthManager,
 		focusManager: JiraFocusManager,
 		private readonly transitionPrefetcher: ProjectTransitionPrefetcher,
-		private readonly iconCacheService?: JiraIconCacheService
+		private readonly iconCacheService: JiraIconCacheService | undefined,
+		private readonly statusStore: ProjectStatusStore
 	) {
 		super(authManager, focusManager);
 		const stored = this.extensionContext.workspaceState.get<string>(ITEMS_VIEW_MODE_KEY);
@@ -158,27 +160,13 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			return;
 		}
 
-		if (this.viewMode === 'all') {
-			const switchLabel = 'Switch to Assigned';
-			const choice = await vscode.window.showInformationMessage(
-				'Filter is available in Assigned and Unassigned modes. Switch the Items view to Assigned?',
-				switchLabel,
-				'Cancel'
-			);
-			if (choice === switchLabel) {
-				await this.setViewMode('assigned');
-			} else {
-				return;
-			}
-		}
-
 		const projectLabel = selectedProject.name
 			? `${selectedProject.name} (${selectedProject.key})`
 			: selectedProject.key;
-		const filterScopeLabel = this.viewMode === 'unassigned' ? 'Unassigned' : 'Assigned';
+		const scopeLabel = this.viewMode === 'assigned' ? 'Assigned' : this.viewMode === 'unassigned' ? 'Unassigned' : 'All';
 
 		const input = await vscode.window.showInputBox({
-			title: projectLabel ? `Filter ${filterScopeLabel} Items (${projectLabel})` : `Filter ${filterScopeLabel} Items`,
+			title: projectLabel ? `Filter ${scopeLabel} Items (${projectLabel})` : `Filter ${scopeLabel} Items`,
 			placeHolder: 'Type to filter by issue key, summary, status, or assignee',
 			prompt: 'Leave empty to clear the filter.',
 			value: this.searchQuery,
@@ -208,6 +196,41 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		const scopeLabel = this.viewMode === 'assigned' ? 'Assigned' : this.viewMode === 'unassigned' ? 'Unassigned' : 'All';
 		const input = await vscode.window.showInputBox({
 			title: projectLabel ? `Search ${scopeLabel} Items (${projectLabel})` : `Search ${scopeLabel} Items`,
+			placeHolder: 'Search Jira using JQL text search (server-side)',
+			prompt: 'Leave empty to clear search.',
+			value: this.remoteSearchQuery,
+			ignoreFocusOut: true,
+		});
+		if (input === undefined) {
+			return;
+		}
+
+		const trimmed = input.trim();
+		if (trimmed === this.remoteSearchQuery) {
+			return;
+		}
+		this.pendingLoadMore = false;
+		this.remoteSearchQuery = trimmed;
+		await this.extensionContext.workspaceState.update(ITEMS_REMOTE_SEARCH_QUERY_KEY, trimmed);
+		this.refresh();
+	}
+
+	async openAssignedItemsSearch(): Promise<void> {
+		const selectedProject = this.focusManager.getSelectedProject();
+		if (!selectedProject) {
+			await vscode.window.showInformationMessage('Select a project before searching items.');
+			return;
+		}
+
+		if (this.viewMode !== 'assigned') {
+			await this.setViewMode('assigned');
+		}
+
+		const projectLabel = selectedProject.name
+			? `${selectedProject.name} (${selectedProject.key})`
+			: selectedProject.key;
+		const input = await vscode.window.showInputBox({
+			title: projectLabel ? `Search Assigned Items (${projectLabel})` : 'Search Assigned Items',
 			placeHolder: 'Search Jira using JQL text search (server-side)',
 			prompt: 'Leave empty to clear search.',
 			value: this.remoteSearchQuery,
@@ -350,12 +373,16 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 			: selectedProject.key;
 		const showingAssigned = this.viewMode === 'assigned';
 		const showingUnassigned = this.viewMode === 'unassigned';
-		const showingScopedItems = showingAssigned || showingUnassigned;
 		const hasRemoteSearch = this.remoteSearchQuery.length > 0;
-		const scopeLabel: 'assigned' | 'unassigned' = showingUnassigned ? 'unassigned' : 'assigned';
-		const searchNode = showingScopedItems ? this.createSearchTreeItem(projectLabel, scopeLabel) : undefined;
-		const prependSearchNode = (items: JiraTreeItem[]): JiraTreeItem[] =>
-			searchNode ? [searchNode, ...items] : items;
+		const scopeLabel: 'assigned' | 'unassigned' | 'all' = showingUnassigned ? 'unassigned' : showingAssigned ? 'assigned' : 'all';
+		const searchNode = this.createSearchTreeItem(projectLabel, scopeLabel);
+		const searchAssignedNode = this.createSearchAssignedTreeItem(projectLabel);
+		const prependHeaderNodes = (items: JiraTreeItem[]): JiraTreeItem[] => {
+			const nodes: JiraTreeItem[] = [];
+			if (searchAssignedNode) { nodes.push(searchAssignedNode); }
+			if (searchNode) { nodes.push(searchNode); }
+			return [...nodes, ...items];
+		};
 
 		try {
 			const cacheEntry = this.getCacheEntry(selectedProject.key, this.viewMode, this.remoteSearchQuery);
@@ -411,15 +438,18 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 						: showingUnassigned
 						? `${projectLabel} • unassigned`
 						: `${projectLabel} • all`;
-					const filtered = showingScopedItems && this.searchQuery.length > 0;
+					const filtered = this.searchQuery.length > 0;
 					const tooltip = this.buildInProgressTooltip(0, filtered || hasRemoteSearch, this.viewMode);
 					this.updateBadge(0, tooltip);
 					this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
 				const emptyMessage =
 					hasRemoteSearch
 						? `No items found for "${this.remoteSearchQuery}". Clear or refine the search.`
-						: showingScopedItems && this.searchQuery
-						? `No ${scopeLabel} items match "${this.searchQuery}". Clear or edit the filter to see more.`
+						: this.searchQuery
+						? (() => {
+							const displayLabel = scopeLabel === 'all' ? 'All' : scopeLabel === 'unassigned' ? 'Unassigned' : 'Assigned';
+							return `No ${displayLabel.toLowerCase()} items match "${this.searchQuery}". Clear or edit the filter to see more.`;
+						})()
 						: showingAssigned
 						? 'No active assigned items. Use Show All to list every issue.'
 						: showingUnassigned
@@ -429,14 +459,14 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				if (loadMoreNode) {
 					nodes.push(loadMoreNode);
 				}
-				return this.finalizeTreeNodes(prependSearchNode(nodes));
+				return this.finalizeTreeNodes(prependHeaderNodes(nodes));
 			}
 
 			this.transitionPrefetcher.prefetchIssues(selectedProject.key, relevantIssues);
-			const displayedIssues = showingScopedItems ? this.applySearchFilter(relevantIssues) : relevantIssues;
+			const displayedIssues = this.applySearchFilter(relevantIssues);
 			this.warmIssueIcons(displayedIssues);
 
-			const filtered = showingScopedItems && this.searchQuery.length > 0;
+			const filtered = this.searchQuery.length > 0;
 			const inProgressCount = this.countInProgressIssues(displayedIssues);
 			const tooltip = this.buildInProgressTooltip(
 				inProgressCount,
@@ -452,27 +482,28 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 					this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
 				} else {
 					const baseDescription = `${projectLabel} • all`;
-					this.updateDescription(this.composeItemsDescription(baseDescription, false, hasRemoteSearch));
+					this.updateDescription(this.composeItemsDescription(baseDescription, filtered, hasRemoteSearch));
 				}
 
 			if (displayedIssues.length === 0) {
-				const noMatchMessage = `No ${scopeLabel} items match "${this.searchQuery}". Clear or edit the filter to see more.`;
+				const displayLabel = scopeLabel === 'all' ? 'All' : scopeLabel === 'unassigned' ? 'Unassigned' : 'Assigned';
+				const noMatchMessage = `No ${displayLabel.toLowerCase()} items match "${this.searchQuery}". Clear or edit the filter to see more.`;
 				const nodes = [new JiraTreeItem('info', noMatchMessage, vscode.TreeItemCollapsibleState.None)];
 				if (loadMoreNode) {
 					nodes.push(loadMoreNode);
 				}
-				return this.finalizeTreeNodes(prependSearchNode(nodes));
+				return this.finalizeTreeNodes(prependHeaderNodes(nodes));
 			}
 
 			const issueNodes = await this.buildIssueNodes(displayedIssues, selectedProject.key);
 			if (loadMoreNode) {
 				issueNodes.push(loadMoreNode);
 			}
-			return this.finalizeTreeNodes(prependSearchNode(issueNodes));
+			return this.finalizeTreeNodes(prependHeaderNodes(issueNodes));
 		} catch (error) {
 			const message = ErrorHelper.deriveErrorMessage(error);
 			this.updateBadge();
-			return this.finalizeTreeNodes(prependSearchNode([
+			return this.finalizeTreeNodes(prependHeaderNodes([
 				new JiraTreeItem(
 					'info',
 					`Failed to load project issues: ${message}`,
@@ -555,11 +586,24 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 
 	/**
 	 * Builds status-based group nodes with stable identifiers so expanded groups stay open after refreshes.
+	 * Includes all known statuses for the project, even when they have no issues.
 	 */
 	private async buildStatusGroupNodes(issues: JiraIssue[], projectKey: string): Promise<JiraTreeItem[]> {
-		return Promise.all(IssueModel.groupIssuesByStatus(issues).map(async (group) => {
-			const childNodes = await Promise.all(group.issues.map((issue) => this.createIssueTreeItem(issue)));
-			const label = group.issues.length > 0 ? `${group.statusName} (${group.issues.length})` : group.statusName;
+		const grouped = IssueModel.groupIssuesByStatus(issues);
+		const statusMap = new Map(grouped.map((g) => [g.statusName.toLowerCase(), g]));
+
+		const allStatuses = this.statusStore.get(projectKey);
+		const statusNames = allStatuses
+			? allStatuses.map((s) => s.name)
+			: Array.from(statusMap.values()).map((g) => g.statusName);
+
+		const uniqueNames = [...new Set(statusNames)];
+
+		return Promise.all(uniqueNames.map(async (statusName) => {
+			const group = statusMap.get(statusName.toLowerCase());
+			const groupIssues = group?.issues ?? [];
+			const childNodes = await Promise.all(groupIssues.map((issue) => this.createIssueTreeItem(issue)));
+			const label = `${statusName} (${groupIssues.length})`;
 			const groupItem = new JiraTreeItem(
 				'statusGroup',
 				label,
@@ -568,26 +612,39 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				undefined,
 				childNodes
 			);
-			groupItem.id = ItemsTreeIdentityService.createStatusGroupId(projectKey, group.statusName);
-			const resolvedStatusGroupIconPath = await this.resolveFirstCachedIconUri(group.issues.map((issue) => issue.statusIconUrl));
+			groupItem.id = ItemsTreeIdentityService.createStatusGroupId(projectKey, statusName);
+			const resolvedStatusGroupIconPath = await this.resolveFirstCachedIconUri(groupIssues.map((issue) => issue.statusIconUrl));
 			groupItem.iconPath = resolvedStatusGroupIconPath
 				? JiraTreeItem.createTreeIconPath(resolvedStatusGroupIconPath)
-				: JiraTreeItem.deriveIssueIcon(group.statusName);
+				: JiraTreeItem.deriveIssueIcon(statusName);
 			groupItem.tooltip =
-				group.issues.length === 1
-					? `1 issue in ${group.statusName}`
-					: `${group.issues.length} issues in ${group.statusName}`;
+				groupIssues.length === 1
+					? `1 issue in ${statusName}`
+					: `${groupIssues.length} issues in ${statusName}`;
 			return groupItem;
 		}));
 	}
 
 	/**
 	 * Builds issue-type group nodes with stable identifiers so expanded groups stay open after refreshes.
+	 * Includes all known issue types for the project, even when they have no issues.
 	 */
 	private async buildTypeGroupNodes(issues: JiraIssue[], projectKey: string): Promise<JiraTreeItem[]> {
-		return Promise.all(this.groupIssuesByType(issues).map(async (group) => {
-			const childNodes = await Promise.all(group.issues.map((issue) => this.createIssueTreeItem(issue)));
-			const label = group.issues.length > 0 ? `${group.typeName} (${group.issues.length})` : group.typeName;
+		const grouped = this.groupIssuesByType(issues);
+		const typeMap = new Map(grouped.map((g) => [g.typeName.toLowerCase(), g]));
+
+		const issueTypeGroups = this.statusStore.getIssueTypeStatusGroups(projectKey);
+		const typeNames = issueTypeGroups
+			? issueTypeGroups.map((g) => g.issueTypeName).filter((n): n is string => !!n)
+			: Array.from(typeMap.values()).map((g) => g.typeName);
+
+		const uniqueNames = [...new Set(typeNames)];
+
+		return Promise.all(uniqueNames.map(async (typeName) => {
+			const group = typeMap.get(typeName.toLowerCase());
+			const groupIssues = group?.issues ?? [];
+			const childNodes = await Promise.all(groupIssues.map((issue) => this.createIssueTreeItem(issue)));
+			const label = `${typeName} (${groupIssues.length})`;
 			const groupItem = new JiraTreeItem(
 				'typeGroup',
 				label,
@@ -596,15 +653,15 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 				undefined,
 				childNodes
 			);
-			groupItem.id = ItemsTreeIdentityService.createTypeGroupId(projectKey, group.typeName);
-			const resolvedTypeGroupIconPath = await this.resolveFirstCachedIconUri(group.issues.map((issue) => issue.issueTypeIconUrl));
+			groupItem.id = ItemsTreeIdentityService.createTypeGroupId(projectKey, typeName);
+			const resolvedTypeGroupIconPath = await this.resolveFirstCachedIconUri(groupIssues.map((issue) => issue.issueTypeIconUrl));
 			groupItem.iconPath = resolvedTypeGroupIconPath
 				? JiraTreeItem.createTreeIconPath(resolvedTypeGroupIconPath)
-				: JiraTreeItem.deriveIssueIcon(group.issues[0]?.statusName);
+				: JiraTreeItem.deriveIssueIcon(groupIssues[0]?.statusName ?? 'Task');
 			groupItem.tooltip =
-				group.issues.length === 1
-					? `1 issue in ${group.typeName}`
-					: `${group.issues.length} issues in ${group.typeName}`;
+				groupIssues.length === 1
+					? `1 issue of type ${typeName}`
+					: `${groupIssues.length} issues of type ${typeName}`;
 			return groupItem;
 		}));
 	}
@@ -733,13 +790,14 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 	}
 
 	/**
-	 * Creates the search/filter entry shown above assigned and unassigned issue lists.
+	 * Creates the search/filter entry shown at the top of the items list.
 	 */
-	private createSearchTreeItem(projectLabel: string | undefined, scopeLabel: 'assigned' | 'unassigned'): JiraTreeItem {
+	private createSearchTreeItem(projectLabel: string | undefined, scopeLabel: 'assigned' | 'unassigned' | 'all'): JiraTreeItem {
 		const hasQuery = this.searchQuery.length > 0;
+		const displayLabel = scopeLabel === 'all' ? 'All' : scopeLabel === 'unassigned' ? 'Unassigned' : 'Assigned';
 		const item = new JiraTreeItem(
 			'search',
-			`Filter ${scopeLabel} items`,
+			`Filter ${displayLabel} items`,
 			vscode.TreeItemCollapsibleState.None,
 			{
 				command: 'jira.searchItems',
@@ -749,8 +807,31 @@ export class JiraItemsTreeDataProvider extends JiraTreeDataProvider {
 		item.iconPath = new vscode.ThemeIcon('filter');
 		item.description = hasQuery ? this.searchQuery : 'Type to filter';
 		item.tooltip = hasQuery
-			? `Filtering ${scopeLabel} items${projectLabel ? ` in ${projectLabel}` : ''} by "${this.searchQuery}". Click to update or clear.`
-			: `Click to filter ${scopeLabel} items${projectLabel ? ` in ${projectLabel}` : ''}.`;
+			? `Filtering ${displayLabel} items${projectLabel ? ` in ${projectLabel}` : ''} by "${this.searchQuery}". Click to update or clear.`
+			: `Click to filter ${displayLabel} items${projectLabel ? ` in ${projectLabel}` : ''}.`;
+		item.contextValue = 'jiraItemsSearch';
+		return item;
+	}
+
+	/**
+	 * Creates the search assigned entry shown at the top of the items list.
+	 */
+	private createSearchAssignedTreeItem(projectLabel: string | undefined): JiraTreeItem {
+		const hasQuery = this.remoteSearchQuery.length > 0;
+		const item = new JiraTreeItem(
+			'search',
+			'Search assigned items',
+			vscode.TreeItemCollapsibleState.None,
+			{
+				command: 'jira.searchAssignedItems',
+				title: 'Search Assigned Items',
+			}
+		);
+		item.iconPath = new vscode.ThemeIcon('search');
+		item.description = hasQuery ? this.remoteSearchQuery : 'Server-side search';
+		item.tooltip = hasQuery
+			? `Searching assigned items${projectLabel ? ` in ${projectLabel}` : ''} for "${this.remoteSearchQuery}". Click to update or clear.`
+			: `Click to search assigned items${projectLabel ? ` in ${projectLabel}` : ''} using JQL.`;
 		item.contextValue = 'jiraItemsSearch';
 		return item;
 	}
