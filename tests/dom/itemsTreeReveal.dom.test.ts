@@ -91,6 +91,10 @@ describe('Items tree reveal', () => {
 		const transitionPrefetcher = {
 			prefetchIssues: () => undefined,
 		} as any;
+		const statusStore = {
+			get: () => undefined,
+			getIssueTypeStatusGroups: () => undefined,
+		} as any;
 		const treeView = {
 			badge: undefined,
 			description: undefined,
@@ -106,7 +110,9 @@ describe('Items tree reveal', () => {
 			extensionContext,
 			authManager,
 			focusManager,
-			transitionPrefetcher
+			transitionPrefetcher,
+			undefined,
+			statusStore
 		);
 		provider.bindView(treeView as any);
 

@@ -390,10 +390,11 @@
         "esbuild": "^0.27.0",
         "jsdom": "^26.1.0",
         "tsx": "^4.20.5",
-        "vitest": "^3.2.4",
-        "typescript": "^5.3.3"
+        "typescript": "^5.3.3",
+        "vitest": "^3.2.4"
     },
     "dependencies": {
-        "axios": "^1.6.2"
+        "axios": "^1.6.2",
+        "rollup": "^4.60.1"
     }
 }

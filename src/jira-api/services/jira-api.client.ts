@@ -228,9 +228,10 @@ export class JiraApiClient implements IJiraApiClient {
 		token: string,
 		issueKey: string,
 		body: string,
-		format: JiraCommentFormat
+		format: JiraCommentFormat,
+		parentId?: string
 	): Promise<JiraIssueComment> {
-		return JiraApiTransport.addIssueComment(authInfo, token, issueKey, body, format);
+		return JiraApiTransport.addIssueComment(authInfo, token, issueKey, body, format, parentId);
 	}
 
 	/**

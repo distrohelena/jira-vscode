@@ -410,9 +410,9 @@ describe('Create issue panel', () => {
 
 		const host = dom.window.document.getElementById('parent-picker-host');
 		expect(host).toBeTruthy();
-		expect(dom.window.document.head.innerHTML).toContain('place-items: center');
-		expect(dom.window.document.head.innerHTML).toMatch(/\.parent-picker-host\.active\s*\{\s*display:\s*grid;/);
-		expect(dom.window.document.head.innerHTML).toContain('justify-self: center');
+		expect(dom.window.document.head.innerHTML).toContain('position: fixed');
+		expect(dom.window.document.head.innerHTML).toMatch(/\.parent-picker-host\.active\s*\{\s*display:\s*block;/);
+		expect(dom.window.document.head.innerHTML).toContain('transform: translate(-50%, -50%)');
 		expect(dom.window.document.head.innerHTML).toContain('height: min(84vh, 860px)');
 
 		dom.window.dispatchEvent(

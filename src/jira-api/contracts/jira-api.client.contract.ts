@@ -159,7 +159,8 @@ export interface IJiraApiClient {
 		token: string,
 		issueKey: string,
 		body: string,
-		format: JiraCommentFormat
+		format: JiraCommentFormat,
+		parentId?: string
 	): Promise<JiraIssueComment>;
 
 	/**

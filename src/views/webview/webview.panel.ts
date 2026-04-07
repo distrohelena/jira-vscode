@@ -443,6 +443,36 @@ export class JiraWebviewPanel {
 	.comment-refresh,
 	.comment-reply,
 	.comment-delete,
+	.comment-edit {
+		border-radius: 4px;
+		border: none;
+		background: transparent;
+		color: var(--vscode-descriptionForeground);
+		padding: 4px 6px;
+		cursor: pointer;
+		font-size: 0.9em;
+		line-height: 1;
+		min-width: 28px;
+		min-height: 28px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		transition: background 0.15s ease, color 0.15s ease;
+	}
+	.comment-refresh:hover,
+	.comment-reply:hover,
+	.comment-delete:hover,
+	.comment-edit:hover {
+		background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.08));
+		color: var(--vscode-foreground);
+	}
+	.comment-refresh:disabled,
+	.comment-reply:disabled,
+	.comment-delete:disabled,
+	.comment-edit:disabled {
+		opacity: 0.3;
+		cursor: not-allowed;
+	}
 	.comment-reply-cancel,
 	.comment-submit {
 		border-radius: 4px;
@@ -453,9 +483,6 @@ export class JiraWebviewPanel {
 		cursor: pointer;
 		font-size: 0.9em;
 	}
-	.comment-refresh:disabled,
-	.comment-reply:disabled,
-	.comment-delete:disabled,
 	.comment-reply-cancel:disabled,
 	.comment-submit:disabled {
 		opacity: 0.6;
@@ -472,6 +499,20 @@ export class JiraWebviewPanel {
 	.comment-item {
 		display: flex;
 		gap: 12px;
+		padding: 12px 14px;
+		border-radius: 8px;
+		border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
+		background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03));
+	}
+	.comment-replies {
+		margin-left: 24px;
+		margin-top: 2px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.comment-thread-line {
+		display: none;
 	}
 	.comment-avatar {
 		width: 36px;
@@ -1617,21 +1658,21 @@ export class JiraWebviewPanel {
 				});
 			const commentForm = document.querySelector('.comment-form');
 			if (commentForm) {
-				const textarea = commentForm.querySelector('.comment-input');
+				const rawEl = commentForm.querySelector('.jira-rich-editor-raw');
 				const submitButton = commentForm.querySelector('.comment-submit');
 				const errorEl = commentForm.querySelector('.comment-error');
 				const cancelReplyButton = commentForm.querySelector('.comment-reply-cancel');
 				const updateSubmitState = () => {
-					if (!submitButton || !textarea) {
+					if (!submitButton || !rawEl) {
 						return;
 					}
 					const pending = commentForm.getAttribute('data-pending') === 'true';
-					const hasText = textarea.value.trim().length > 0;
+					const hasText = rawEl.value.trim().length > 0;
 					submitButton.disabled = pending || !hasText;
 				};
-				if (textarea) {
-					textarea.addEventListener('input', () => {
-						vscode.postMessage({ type: 'commentDraftChanged', value: textarea.value });
+				if (rawEl) {
+					rawEl.addEventListener('input', () => {
+						vscode.postMessage({ type: 'commentDraftChanged', value: rawEl.value });
 						updateSubmitState();
 						if (errorEl) {
 							errorEl.classList.add('hidden');
@@ -1640,10 +1681,12 @@ export class JiraWebviewPanel {
 				}
 				commentForm.addEventListener('submit', (event) => {
 					event.preventDefault();
-					if (!textarea || !submitButton || submitButton.disabled) {
+					if (!rawEl || !submitButton || submitButton.disabled) {
 						return;
 					}
-					vscode.postMessage({ type: 'addComment', body: textarea.value, format: 'wiki' });
+					const replyBanner = commentForm.querySelector('.comment-reply-banner');
+					const parentId = replyBanner ? replyBanner.getAttribute('data-parent-id') : undefined;
+					vscode.postMessage({ type: 'addComment', body: rawEl.value, format: 'wiki', parentId });
 				});
 				if (cancelReplyButton) {
 					cancelReplyButton.addEventListener('click', () => {
@@ -1704,8 +1747,8 @@ export class JiraWebviewPanel {
 					if (!editCommentId) {
 						return;
 					}
-					const textareaEl = form.querySelector('.comment-input');
-					const body = textareaEl?.value || '';
+					const rawEl = form.querySelector('.jira-rich-editor-raw');
+					const body = rawEl?.value || '';
 					if (!body.trim()) {
 						return;
 					}
@@ -1715,15 +1758,15 @@ export class JiraWebviewPanel {
 				});
 				const editor = form.querySelector('.jira-rich-editor');
 				if (editor) {
-					const input = editor.querySelector('.jira-rich-editor-input');
+					const rawEl = editor.querySelector('.jira-rich-editor-raw');
 					const saveButton = form.querySelector('.comment-edit-save');
-					if (input && saveButton) {
+					if (rawEl && saveButton) {
 						const updateSaveState = () => {
 							const pending = saveButton.textContent?.includes('Saving');
-							const hasText = input.value.trim().length > 0;
+							const hasText = rawEl.value.trim().length > 0;
 							saveButton.disabled = pending || !hasText;
 						};
-						input.addEventListener('input', updateSaveState);
+						rawEl.addEventListener('input', updateSaveState);
 						updateSaveState();
 					}
 				}
@@ -2461,23 +2504,24 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 	const nameAttr = options.name ? `name="${HtmlHelper.escapeAttribute(options.name)}"` : '';
 	const rows = Math.max(3, options.minRows ?? 6);
 	const label = options.ariaLabel ?? 'Rich text input';
-	return `<div class="${wrapperClasses.join(' ')}" data-disabled="${options.disabled ? 'true' : 'false'}">
+	const escapedValue = HtmlHelper.escapeHtml(options.value);
+	return `<div class="${wrapperClasses.join(' ')}" data-disabled="${options.disabled ? 'true' : 'false'}" data-editor-id="${HtmlHelper.escapeAttribute(options.editorId)}">
 		<div class="jira-rich-editor-toolbar" role="toolbar" aria-label="${HtmlHelper.escapeAttribute(label)} formatting">
-			<button type="button" class="jira-rich-editor-action" data-action="bold" title="Bold (*text*)" ${disabledAttr}><span class="fmt-bold">B</span></button>
-			<button type="button" class="jira-rich-editor-action" data-action="italic" title="Italic (_text_)" ${disabledAttr}><span class="fmt-italic">I</span></button>
-			<button type="button" class="jira-rich-editor-action" data-action="underline" title="Underline (+text+)" ${disabledAttr}><span class="fmt-underline">U</span></button>
-			<button type="button" class="jira-rich-editor-action" data-action="strike" title="Strike (-text-)" ${disabledAttr}><span class="fmt-strike">S</span></button>
-			<button type="button" class="jira-rich-editor-action" data-action="code" title="Inline code ({{code}})" ${disabledAttr}>{ }</button>
-			<button type="button" class="jira-rich-editor-action" data-action="h2" title="Heading (h2.)" ${disabledAttr}>H2</button>
-			<button type="button" class="jira-rich-editor-action" data-action="bullet" title="Bulleted list (* )" ${disabledAttr}>• List</button>
-			<button type="button" class="jira-rich-editor-action" data-action="number" title="Numbered list (# )" ${disabledAttr}>1. List</button>
-			<button type="button" class="jira-rich-editor-action" data-action="quote" title="Quote (bq.)" ${disabledAttr}>Quote</button>
-			<button type="button" class="jira-rich-editor-action" data-action="codeblock" title="Code block ({code})" ${disabledAttr}>Code</button>
-			<button type="button" class="jira-rich-editor-action" data-action="link" title="Link ([text|url])" ${disabledAttr}>Link</button>
+			<button type="button" class="jira-rich-editor-action" data-action="bold" title="Bold (Ctrl+B)" ${disabledAttr}><span class="fmt-bold">B</span></button>
+			<button type="button" class="jira-rich-editor-action" data-action="italic" title="Italic (Ctrl+I)" ${disabledAttr}><span class="fmt-italic">I</span></button>
+			<button type="button" class="jira-rich-editor-action" data-action="underline" title="Underline (Ctrl+U)" ${disabledAttr}><span class="fmt-underline">U</span></button>
+			<button type="button" class="jira-rich-editor-action" data-action="strike" title="Strikethrough" ${disabledAttr}><span class="fmt-strike">S</span></button>
+			<button type="button" class="jira-rich-editor-action" data-action="code" title="Inline code" ${disabledAttr}>{ }</button>
+			<button type="button" class="jira-rich-editor-action" data-action="h2" title="Heading" ${disabledAttr}>H2</button>
+			<button type="button" class="jira-rich-editor-action" data-action="bullet" title="Bulleted list" ${disabledAttr}>• List</button>
+			<button type="button" class="jira-rich-editor-action" data-action="number" title="Numbered list" ${disabledAttr}>1. List</button>
+			<button type="button" class="jira-rich-editor-action" data-action="quote" title="Quote" ${disabledAttr}>&ldquo; Quote</button>
+			<button type="button" class="jira-rich-editor-action" data-action="codeblock" title="Code block" ${disabledAttr}>Code</button>
+			<button type="button" class="jira-rich-editor-action" data-action="link" title="Link" ${disabledAttr}>Link</button>
+			<button type="button" class="jira-rich-editor-action jira-rich-editor-toggle-raw" data-action="toggleRaw" title="Toggle raw wiki markup" ${disabledAttr}>&lt;/&gt;</button>
 		</div>
-		<textarea id="${HtmlHelper.escapeAttribute(options.editorId)}" class="${inputClasses.join(' ')}" ${nameAttr} rows="${rows}" placeholder="${HtmlHelper.escapeAttribute(
-			options.placeholder
-		)}" ${disabledAttr}>${HtmlHelper.escapeHtml(options.value)}</textarea>
+		<div class="jira-rich-editor-visual" contenteditable="${options.disabled ? 'false' : 'true'}" data-placeholder="${HtmlHelper.escapeAttribute(options.placeholder)}" id="${HtmlHelper.escapeAttribute(options.editorId)}-visual"></div>
+		<textarea id="${HtmlHelper.escapeAttribute(options.editorId)}" class="${inputClasses.join(' ')} jira-rich-editor-raw" ${nameAttr} rows="${rows}" placeholder="${HtmlHelper.escapeAttribute(options.placeholder)}" ${disabledAttr} style="display:none;">${escapedValue}</textarea>
 	</div>`;
 }
 
@@ -2486,29 +2530,45 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 	.jira-rich-editor {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: 6px;
 	}
 	.jira-rich-editor-toolbar {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px;
+		gap: 4px;
+		padding: 4px;
+		border: 1px solid var(--vscode-input-border);
+		border-radius: 4px 4px 0 0;
+		background: var(--vscode-editor-background);
 	}
 	.jira-rich-editor-action {
-		border-radius: 4px;
-		border: 1px solid var(--vscode-button-secondaryBorder, transparent);
-		background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
-		color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-		padding: 4px 8px;
+		border-radius: 3px;
+		border: 1px solid transparent;
+		background: transparent;
+		color: var(--vscode-foreground);
+		padding: 4px 7px;
 		cursor: pointer;
 		font-size: 0.85em;
 		line-height: 1.2;
+		min-width: 28px;
+		text-align: center;
 	}
 	.jira-rich-editor-action:hover:not(:disabled) {
-		background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.12));
+		background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1));
+		border-color: var(--vscode-input-border);
 	}
 	.jira-rich-editor-action:disabled {
-		opacity: 0.6;
+		opacity: 0.4;
 		cursor: not-allowed;
+	}
+	.jira-rich-editor-action.active {
+		background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.15));
+		border-color: var(--vscode-focusBorder);
+	}
+	.jira-rich-editor-toggle-raw.active {
+		background: var(--vscode-button-background);
+		color: var(--vscode-button-foreground);
+		border-color: transparent;
 	}
 	.jira-rich-editor-action .fmt-bold {
 		font-weight: 700;
@@ -2524,32 +2584,135 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 		text-decoration: line-through;
 		text-decoration-thickness: 2px;
 	}
+	.jira-rich-editor-visual {
+		display: block;
+		width: 100%;
+		min-height: 120px;
+		background: var(--vscode-input-background);
+		color: var(--vscode-input-foreground);
+		border: 1px solid var(--vscode-input-border);
+		border-radius: 0 0 4px 4px;
+		padding: 8px 10px;
+		font-family: var(--vscode-font-family);
+		font-size: var(--vscode-font-size);
+		line-height: 1.5;
+		caret-color: var(--vscode-input-foreground);
+		overflow-y: auto;
+		white-space: pre-wrap;
+		word-wrap: break-word;
+	}
+	.jira-rich-editor-visual.hidden {
+		display: none;
+	}
+	.jira-rich-editor-visual:empty::before {
+		content: attr(data-placeholder);
+		color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+		pointer-events: none;
+	}
+	.jira-rich-editor-visual:focus {
+		outline: none;
+		border-color: var(--vscode-focusBorder);
+		box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+	}
+	.jira-rich-editor-visual[contenteditable="false"] {
+		opacity: 0.7;
+		cursor: not-allowed;
+	}
+	.jira-rich-editor-visual strong,
+	.jira-rich-editor-visual b {
+		font-weight: 700;
+	}
+	.jira-rich-editor-visual em,
+	.jira-rich-editor-visual i {
+		font-style: italic;
+	}
+	.jira-rich-editor-visual u {
+		text-decoration: underline;
+		text-decoration-thickness: 2px;
+	}
+	.jira-rich-editor-visual s,
+	.jira-rich-editor-visual strike {
+		text-decoration: line-through;
+	}
+	.jira-rich-editor-visual code {
+		background: var(--vscode-textCodeBlock-background, rgba(255,255,255,0.1));
+		padding: 1px 5px;
+		border-radius: 3px;
+		font-family: var(--vscode-editor-font-family, monospace);
+		font-size: 0.9em;
+	}
+	.jira-rich-editor-visual pre {
+		background: var(--vscode-textCodeBlock-background, rgba(255,255,255,0.1));
+		padding: 10px;
+		border-radius: 4px;
+		overflow-x: auto;
+		font-family: var(--vscode-editor-font-family, monospace);
+		font-size: 0.9em;
+		line-height: 1.4;
+		margin: 4px 0;
+	}
+	.jira-rich-editor-visual h2 {
+		font-size: 1.4em;
+		font-weight: 700;
+		margin: 0.4em 0 0.2em 0;
+		line-height: 1.3;
+	}
+	.jira-rich-editor-visual blockquote {
+		border-left: 3px solid var(--vscode-textSeparator-foreground, rgba(255,255,255,0.3));
+		padding-left: 12px;
+		margin: 4px 0;
+		color: var(--vscode-descriptionForeground);
+	}
+	.jira-rich-editor-visual ul,
+	.jira-rich-editor-visual ol {
+		margin: 4px 0;
+		padding-left: 1.5em;
+	}
+	.jira-rich-editor-visual a {
+		color: var(--vscode-textLink-foreground, #3794ff);
+	}
+	.jira-rich-editor-raw {
+		display: none;
+		width: 100%;
+		min-height: 120px;
+		background: var(--vscode-input-background);
+		color: var(--vscode-input-foreground);
+		border: 1px solid var(--vscode-input-border);
+		border-radius: 0 0 4px 4px;
+		padding: 8px 10px;
+		font-family: var(--vscode-editor-font-family, monospace);
+		font-size: var(--vscode-font-size);
+		line-height: 1.45;
+		resize: vertical;
+	}
+	.jira-rich-editor-raw.visible {
+		display: block;
+	}
+	.jira-rich-editor-raw:focus {
+		outline: none;
+		border-color: var(--vscode-focusBorder);
+		box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+	}
 	.jira-rich-editor-input {
 		width: 100%;
 		background: var(--vscode-input-background);
 		color: var(--vscode-input-foreground);
 		border: 1px solid var(--vscode-input-border);
-		border-radius: 4px;
+		border-radius: 0 0 4px 4px;
 		padding: 8px;
 		font-family: var(--vscode-font-family);
 		font-size: var(--vscode-font-size);
-		font-weight: normal;
-		font-style: normal;
 		line-height: 1.45;
 		caret-color: var(--vscode-input-foreground);
 	}
 	.jira-rich-editor-input::placeholder {
 		color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
-		font-family: var(--vscode-font-family);
-		font-size: var(--vscode-font-size);
-		font-weight: normal;
-		font-style: normal;
 		opacity: 1;
 	}
 	.jira-rich-editor-input:focus {
 		outline: none;
-		border-color: var(--vscode-focusBorder, var(--vscode-input-border));
-		box-shadow: 0 0 0 1px var(--vscode-focusBorder, transparent);
+		border-color: var(--vscode-focusBorder);
+		box-shadow: 0 0 0 1px var(--vscode-focusBorder);
 	}
 	.jira-rich-editor-input:disabled {
 		opacity: 0.7;
@@ -2560,99 +2723,314 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 
 	static renderRichTextEditorBootstrapScript(): string {
 	return `
-				const wrapEditorSelection = (input, prefix, suffix, placeholder) => {
-					if (!input || input.disabled) {
-						return;
+				// --- Wiki <-> HTML conversion ---
+				const wikiToHtml = (wiki) => {
+					if (!wiki) return '';
+					let lines = wiki.split('\\n');
+					let html = '';
+					let inCodeBlock = false;
+					let codeBlockContent = '';
+					let inList = null; // 'ul' or 'ol'
+					let listItems = [];
+
+					const flushList = () => {
+						if (inList && listItems.length > 0) {
+							html += '<' + inList + '>' + listItems.join('') + '</' + inList + '>';
+							inList = null;
+							listItems = [];
+						}
+					};
+
+					for (let i = 0; i < lines.length; i++) {
+						let line = lines[i];
+
+						if (inCodeBlock) {
+							if (line.trim().startsWith('{code}') || line.trim() === '{code}') {
+								inCodeBlock = false;
+								html += '<pre>' + escapeHtml(codeBlockContent) + '</pre>';
+								codeBlockContent = '';
+							} else {
+								codeBlockContent += (codeBlockContent ? '\\n' : '') + line;
+							}
+							continue;
+						}
+
+						if (line.trim().startsWith('{code}')) {
+							flushList();
+							inCodeBlock = true;
+							codeBlockContent = line.trim().replace(/^\\{code\\}/, '');
+							continue;
+						}
+
+						// Headings
+						const h2Match = line.match(/^h2\\.\\s+(.+)$/);
+						const h3Match = line.match(/^h3\\.\\s+(.+)$/);
+						if (h2Match) { flushList(); html += '<h2>' + inlineWikiToHtml(h2Match[1]) + '</h2>'; continue; }
+						if (h3Match) { flushList(); html += '<h3>' + inlineWikiToHtml(h3Match[1]) + '</h3>'; continue; }
+
+						// Blockquote
+						if (line.startsWith('bq. ')) { flushList(); html += '<blockquote>' + inlineWikiToHtml(line.slice(4)) + '</blockquote>'; continue; }
+
+						// Bullet list
+						if (line.startsWith('* ')) {
+							if (inList === 'ol') flushList();
+							inList = 'ul';
+							listItems.push('<li>' + inlineWikiToHtml(line.slice(2)) + '</li>');
+							continue;
+						}
+
+						// Numbered list
+						if (/^#\\s/.test(line)) {
+							if (inList === 'ul') flushList();
+							inList = 'ol';
+							listItems.push('<li>' + inlineWikiToHtml(line.slice(2)) + '</li>');
+							continue;
+						}
+
+						// Regular paragraph
+						flushList();
+						if (line.trim() === '') { continue; }
+						html += '<p>' + inlineWikiToHtml(line) + '</p>';
 					}
-					const start = input.selectionStart ?? 0;
-					const end = input.selectionEnd ?? start;
-					const value = input.value || '';
-					const selected = value.slice(start, end);
-					const baseText = selected || placeholder;
-					const next = value.slice(0, start) + prefix + baseText + suffix + value.slice(end);
-					input.value = next;
-					const cursorStart = start + prefix.length;
-					const cursorEnd = cursorStart + baseText.length;
-					input.setSelectionRange(cursorStart, cursorEnd);
-					input.dispatchEvent(new Event('input', { bubbles: true }));
+					flushList();
+					if (inCodeBlock) { html += '<pre>' + escapeHtml(codeBlockContent) + '</pre>'; }
+					return html;
 				};
 
-				const prefixEditorLines = (input, prefix, placeholder) => {
-					if (!input || input.disabled) {
-						return;
-					}
-					const start = input.selectionStart ?? 0;
-					const end = input.selectionEnd ?? start;
-					const value = input.value || '';
-					if (start === end) {
-						const next = value.slice(0, start) + prefix + placeholder + value.slice(end);
-						input.value = next;
-						const cursorStart = start + prefix.length;
-						const cursorEnd = cursorStart + placeholder.length;
-						input.setSelectionRange(cursorStart, cursorEnd);
-						input.dispatchEvent(new Event('input', { bubbles: true }));
-						return;
-					}
-					const lineStart = value.lastIndexOf('\\n', start - 1) + 1;
-					const lineEndIndex = value.indexOf('\\n', end);
-					const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
-					const selectedLines = value.slice(lineStart, lineEnd);
-					const prefixedLines = selectedLines
-						.split('\\n')
-						.map((line) => (line.trim().length > 0 ? prefix + line : prefix.trim()))
-						.join('\\n');
-					input.value = value.slice(0, lineStart) + prefixedLines + value.slice(lineEnd);
-					input.setSelectionRange(lineStart, lineStart + prefixedLines.length);
-					input.dispatchEvent(new Event('input', { bubbles: true }));
+				const escapeHtml = (text) => text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+				const inlineWikiToHtml = (text) => {
+					let result = text;
+					result = result.replace(/\\{code\\}([^]*?)\\{code\\}/g, '<code>$1</code>');
+					result = result.replace(/\\{\\{(.*?)\\}\\}/g, '<code>$1</code>');
+					result = result.replace(/\\*([^*]+)\\*/g, '<strong>$1</strong>');
+					result = result.replace(/_([^_]+)_/g, '<em>$1</em>');
+					result = result.replace(/\\+([^+]+)\\+/g, '<u>$1</u>');
+					result = result.replace(/-([^\\s][^-]*[^-]|[^-])-/g, '<s>$1</s>');
+					result = result.replace(/\\[([^|\\]]+)\\|([^\\]]+)\\]/g, '<a href="$2" target="_blank">$1</a>');
+					return result;
 				};
 
-				const wrapEditorBlock = (input, prefix, suffix, placeholder) => {
-					if (!input || input.disabled) {
-						return;
-					}
-					const start = input.selectionStart ?? 0;
-					const end = input.selectionEnd ?? start;
-					const value = input.value || '';
-					const selected = value.slice(start, end) || placeholder;
-					const next = value.slice(0, start) + prefix + selected + suffix + value.slice(end);
-					input.value = next;
-					const cursorStart = start + prefix.length;
-					const cursorEnd = cursorStart + selected.length;
-					input.setSelectionRange(cursorStart, cursorEnd);
-					input.dispatchEvent(new Event('input', { bubbles: true }));
+				const htmlToWiki = (html) => {
+					if (!html) return '';
+					let wiki = html;
+					// Preserve code blocks
+					wiki = wiki.replace(/<pre[^>]*>([\\s\\S]*?)<\\/pre>/gi, (_m, content) => {
+						const cleaned = content.replace(/<br\\s*\\/?>/gi, '\\n').replace(/<[^>]+>/g, '');
+						return '{code}' + decodeEntities(cleaned) + '{code}';
+					});
+					wiki = wiki.replace(/<code[^>]*>(.*?)<\\/code>/gi, '{{$1}}');
+					wiki = wiki.replace(/<h2[^>]*>(.*?)<\\/h2>/gi, 'h2. $1');
+					wiki = wiki.replace(/<h3[^>]*>(.*?)<\\/h3>/gi, 'h3. $1');
+					wiki = wiki.replace(/<blockquote[^>]*>(.*?)<\\/blockquote>/gi, 'bq. $1');
+					wiki = wiki.replace(/<strong[^>]*>(.*?)<\\/strong>/gi, '*$1*');
+					wiki = wiki.replace(/<b[^>]*>(.*?)<\\/b>/gi, '*$1*');
+					wiki = wiki.replace(/<em[^>]*>(.*?)<\\/em>/gi, '_$1_');
+					wiki = wiki.replace(/<i[^>]*>(.*?)<\\/i>/gi, '_$1_');
+					wiki = wiki.replace(/<u[^>]*>(.*?)<\\/u>/gi, '+$1+');
+					wiki = wiki.replace(/<s[^>]*>(.*?)<\\/s>/gi, '-$1-');
+					wiki = wiki.replace(/<strike[^>]*>(.*?)<\\/strike>/gi, '-$1-');
+					wiki = wiki.replace(/<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\\/a>/gi, '[$2|$1]');
+					wiki = wiki.replace(/<li[^>]*>(.*?)<\\/li>/gi, '$1');
+					wiki = wiki.replace(/<br\\s*\\/?>/gi, '\\n');
+					wiki = wiki.replace(/<p[^>]*>(.*?)<\\/p>/gi, '$1');
+					wiki = wiki.replace(/<div[^>]*>(.*?)<\\/div>/gi, '$1');
+					wiki = wiki.replace(/<[^>]+>/g, '');
+					wiki = decodeEntities(wiki);
+					return wiki.trim();
 				};
 
-				const editorActionHandlers = {
-					bold: (input) => wrapEditorSelection(input, '*', '*', 'bold text'),
-					italic: (input) => wrapEditorSelection(input, '_', '_', 'italic text'),
-					underline: (input) => wrapEditorSelection(input, '+', '+', 'underlined text'),
-					strike: (input) => wrapEditorSelection(input, '-', '-', 'struck text'),
-					code: (input) => wrapEditorSelection(input, '{{', '}}', 'code'),
-					h2: (input) => prefixEditorLines(input, 'h2. ', 'Heading'),
-					bullet: (input) => prefixEditorLines(input, '* ', 'List item'),
-					number: (input) => prefixEditorLines(input, '# ', 'List item'),
-					quote: (input) => prefixEditorLines(input, 'bq. ', 'Quoted text'),
-					codeblock: (input) => wrapEditorBlock(input, '{code}\\n', '\\n{code}', 'code block'),
-					link: (input) => wrapEditorSelection(input, '[', '|https://example.com]','link text'),
+				const decodeEntities = (text) => {
+					const el = document.createElement('textarea');
+					el.innerHTML = text;
+					return el.value;
+				};
+
+				const syncVisualToRaw = (visualEl, rawEl) => {
+					const wiki = htmlToWiki(visualEl.innerHTML);
+					if (rawEl.value !== wiki) {
+						rawEl.value = wiki;
+						rawEl.dispatchEvent(new Event('input', { bubbles: true }));
+					}
+				};
+
+				const syncRawToVisual = (rawEl, visualEl) => {
+					const html = wikiToHtml(rawEl.value);
+					visualEl.innerHTML = html;
+				};
+
+				// --- Editor actions using document.execCommand ---
+				const execAction = (command, value) => {
+					document.execCommand(command, false, value);
+				};
+
+				const insertWikiCode = (visualEl, rawEl, wrapper) => {
+					const sel = window.getSelection();
+					if (!sel || sel.rangeCount === 0) return;
+					const range = sel.getRangeAt(0);
+					const text = range.toString() || 'code';
+					const node = document.createTextNode(wrapper.replace('{}', text));
+					range.deleteContents();
+					range.insertNode(node);
+					range.setStart(node, wrapper.indexOf('{}'));
+					range.setEnd(node, wrapper.indexOf('{}') + text.length);
+					sel.removeAllRanges();
+					sel.addRange(range);
+					syncVisualToRaw(visualEl, rawEl);
+				};
+
+				const insertWikiBlock = (visualEl, rawEl, prefix, suffix, placeholder) => {
+					const sel = window.getSelection();
+					if (!sel || sel.rangeCount === 0) return;
+					const range = sel.getRangeAt(0);
+					const text = range.toString() || placeholder;
+					const full = prefix + text + suffix;
+					const node = document.createTextNode(full);
+					range.deleteContents();
+					range.insertNode(node);
+					range.setStart(node, prefix.length);
+					range.setEnd(node, prefix.length + text.length);
+					sel.removeAllRanges();
+					sel.addRange(range);
+					syncVisualToRaw(visualEl, rawEl);
+				};
+
+				const insertHeading = (visualEl, rawEl) => {
+					execAction('formatBlock', 'h2');
+					syncVisualToRaw(visualEl, rawEl);
+				};
+
+				const insertBulletList = (visualEl, rawEl) => {
+					execAction('insertUnorderedList');
+					syncVisualToRaw(visualEl, rawEl);
+				};
+
+				const insertNumberedList = (visualEl, rawEl) => {
+					execAction('insertOrderedList');
+					syncVisualToRaw(visualEl, rawEl);
+				};
+
+				const insertBlockquote = (visualEl, rawEl) => {
+					execAction('formatBlock', 'blockquote');
+					syncVisualToRaw(visualEl, rawEl);
+				};
+
+				const insertLink = (visualEl, rawEl) => {
+					const sel = window.getSelection();
+					const text = (sel && sel.rangeCount > 0) ? sel.toString() : '';
+					const url = prompt('Enter URL:', 'https://');
+					if (url) {
+						if (text) {
+							execAction('createLink', url);
+						} else {
+							const node = document.createElement('a');
+							node.href = url;
+							node.textContent = url;
+							node.target = '_blank';
+							if (sel && sel.rangeCount > 0) {
+								sel.getRangeAt(0).insertNode(node);
+							}
+						}
+						syncVisualToRaw(visualEl, rawEl);
+					}
+				};
+
+				const isCommandActive = (command) => {
+					try { return document.queryCommandState(command); } catch { return false; }
+				};
+
+				const updateToolbarState = (editor) => {
+					editor.querySelectorAll('.jira-rich-editor-action').forEach(btn => {
+						const action = btn.dataset.action;
+						const cmdMap = { bold: 'bold', italic: 'italic', underline: 'underline', strike: 'strikeThrough' };
+						if (cmdMap[action]) {
+							btn.classList.toggle('active', isCommandActive(cmdMap[action]));
+						}
+					});
+				};
+
+				const actionHandlers = {
+					bold: (v, r) => { execAction('bold'); syncVisualToRaw(v, r); },
+					italic: (v, r) => { execAction('italic'); syncVisualToRaw(v, r); },
+					underline: (v, r) => { execAction('underline'); syncVisualToRaw(v, r); },
+					strike: (v, r) => { execAction('strikeThrough'); syncVisualToRaw(v, r); },
+					code: (v, r) => insertWikiCode(v, r, '{{}}'),
+					h2: insertHeading,
+					bullet: insertBulletList,
+					number: insertNumberedList,
+					quote: insertBlockquote,
+					codeblock: (v, r) => insertWikiBlock(v, r, '{code}\\n', '\\n{code}', 'code here'),
+					link: insertLink,
+					toggleRaw: (v, r, editor) => {
+						const isRaw = editor.classList.contains('raw-mode');
+						const toggleBtn = editor.querySelector('.jira-rich-editor-toggle-raw');
+						if (isRaw) {
+							editor.classList.remove('raw-mode');
+							v.style.display = 'block';
+							r.style.display = 'none';
+							syncRawToVisual(r, v);
+							toggleBtn?.classList.remove('active');
+							v.focus();
+						} else {
+							syncVisualToRaw(v, r);
+							editor.classList.add('raw-mode');
+							v.style.display = 'none';
+							r.style.display = 'block';
+							toggleBtn?.classList.add('active');
+							r.focus();
+						}
+					},
 				};
 
 				const initializeJiraRichTextEditors = (root) => {
 					const editorNodes = Array.from((root || document).querySelectorAll('.jira-rich-editor'));
 					editorNodes.forEach((editor) => {
-						const input = editor.querySelector('.jira-rich-editor-input');
-						const toolbarButtons = Array.from(editor.querySelectorAll('.jira-rich-editor-action'));
-						toolbarButtons.forEach((button) => {
-							button.addEventListener('click', () => {
-								if (!input || input.disabled) {
-									return;
+						const visualEl = editor.querySelector('.jira-rich-editor-visual');
+						const rawEl = editor.querySelector('.jira-rich-editor-input, .jira-rich-editor-raw');
+						if (!visualEl || !rawEl) return;
+
+						// Initialize visual from raw value
+						const initialWiki = rawEl.value || '';
+						if (initialWiki) {
+							visualEl.innerHTML = wikiToHtml(initialWiki);
+						}
+
+						// Sync on every input
+						visualEl.addEventListener('input', () => {
+							if (!editor.classList.contains('raw-mode')) {
+								syncVisualToRaw(visualEl, rawEl);
+							}
+							updateToolbarState(editor);
+						});
+						visualEl.addEventListener('keyup', () => updateToolbarState(editor));
+						visualEl.addEventListener('mouseup', () => updateToolbarState(editor));
+
+						// Keyboard shortcuts
+						visualEl.addEventListener('keydown', (e) => {
+							if (e.ctrlKey || e.metaKey) {
+								if (e.key === 'b') { e.preventDefault(); actionHandlers.bold(visualEl, rawEl); }
+								if (e.key === 'i') { e.preventDefault(); actionHandlers.italic(visualEl, rawEl); }
+								if (e.key === 'u') { e.preventDefault(); actionHandlers.underline(visualEl, rawEl); }
+							}
+						});
+
+						// Raw textarea sync
+						rawEl.addEventListener('input', () => {
+							if (editor.classList.contains('raw-mode')) {
+								syncRawToVisual(rawEl, visualEl);
+							}
+						});
+
+						// Toolbar buttons
+						editor.querySelectorAll('.jira-rich-editor-action').forEach((btn) => {
+							btn.addEventListener('click', () => {
+								const action = btn.dataset.action;
+								const handler = actionHandlers[action];
+								if (handler) {
+									handler(visualEl, rawEl, editor);
+									visualEl.focus();
+									updateToolbarState(editor);
 								}
-								const action = button.getAttribute('data-action') || '';
-								const handler = editorActionHandlers[action];
-								if (!handler) {
-									return;
-								}
-								handler(input);
-								input.focus();
 							});
 						});
 					});
@@ -2686,18 +3064,128 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 			<div>
 				<div class="section-title">Comments</div>
 			</div>
-			<button type="button" class="comment-refresh" ${refreshDisabledAttr}>${HtmlHelper.escapeHtml(refreshLabel)}</button>
+			<button type="button" class="comment-refresh" ${refreshDisabledAttr} title="Refresh comments">\u21BB</button>
 		</div>
 		${listContent}
 		${renderCommentForm(options)}
 	</div>`;
 }
 
-	static renderCommentList(comments: JiraIssueComment[], options?: IssuePanelOptions): string {
-	return comments.map((comment) => renderCommentItem(comment, options)).join('');
+	/**
+	 * Converts comment body to safe HTML, detecting and rendering wiki markup when needed.
+	 */
+	static renderCommentBodyHtml(body: string): string {
+	const trimmed = body.trim();
+	if (!trimmed) {
+		return '<p class="muted">No comment body</p>';
+	}
+	// If it's already HTML, sanitize and convert any inline wiki markup
+	if (trimmed.startsWith('<')) {
+		const sanitized = HtmlHelper.sanitizeRenderedHtml(trimmed) ?? trimmed;
+		// Also convert wiki markup inside HTML content
+		return JiraWebviewPanel.convertInlineWikiToHtml(sanitized);
+	}
+	// Pure wiki markup - convert to HTML
+	return JiraWebviewPanel.wikiMarkupToHtml(trimmed);
 }
 
-	static renderCommentItem(comment: JiraIssueComment, options?: IssuePanelOptions): string {
+	/**
+	 * Converts wiki markup patterns inside HTML content to formatted HTML.
+	 */
+	private static convertInlineWikiToHtml(html: string): string {
+	let result = html;
+	result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+	result = result.replace(/(?<!<[^>]*)\*([^*]+)\*(?![^<]*>)/g, '<strong>$1</strong>');
+	result = result.replace(/(?<!<[^>]*)_([^_]+)_(?![^<]*>)/g, '<em>$1</em>');
+	result = result.replace(/(?<!<[^>]*)\+([^+]+)\+(?![^<]*>)/g, '<u>$1</u>');
+	result = result.replace(/(?<!<[^>]*)-([^\s][^-]*[^-]|[^-])-(?![^<]*>)/g, '<s>$1</s>');
+	result = result.replace(/\{\{(.*?)\}\}/g, '<code>$1</code>');
+	result = result.replace(/\[([^|]+)\|([^\]]+)\]/g, '<a href="$2" target="_blank">$1</a>');
+	return result;
+}
+
+	/**
+	 * Converts pure wiki markup string to HTML.
+	 */
+	private static wikiMarkupToHtml(wiki: string): string {
+	const lines = wiki.split('\n');
+	const html: string[] = [];
+	let inCodeBlock = false;
+	let codeContent = '';
+
+	const escapeHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	const inlineFormat = (text: string): string => {
+		let result = text;
+		result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+		result = result.replace(/\*(.+?)\*/g, '<strong>$1</strong>');
+		result = result.replace(/_(.+?)_/g, '<em>$1</em>');
+		result = result.replace(/\+(.+?)\+/g, '<u>$1</u>');
+		result = result.replace(/-(.+?)-/g, '<s>$1</s>');
+		result = result.replace(/\{\{(.*?)\}\}/g, '<code>$1</code>');
+		result = result.replace(/\[([^|]+)\|([^\]]+)\]/g, '<a href="$2" target="_blank">$1</a>');
+		return result;
+	};
+
+	for (const line of lines) {
+		if (inCodeBlock) {
+			if (line.trim() === '{code}' || (line.trim().startsWith('{code}') && line.trim().endsWith('{code}'))) {
+				inCodeBlock = false;
+				html.push(`<pre><code>${escapeHtml(codeContent)}</code></pre>`);
+				codeContent = '';
+			} else {
+				codeContent += (codeContent ? '\n' : '') + line;
+			}
+			continue;
+		}
+		if (line.trim().startsWith('{code}')) {
+			inCodeBlock = true;
+			codeContent = line.trim().replace(/^\{code\}/, '');
+			continue;
+		}
+		if (line.trim() === '') { continue; }
+		if (/^h1\.\s/.test(line)) { html.push(`<h2>${inlineFormat(line.slice(4))}</h2>`); continue; }
+		if (/^h2\.\s/.test(line)) { html.push(`<h2>${inlineFormat(line.slice(4))}</h2>`); continue; }
+		if (/^h3\.\s/.test(line)) { html.push(`<h3>${inlineFormat(line.slice(4))}</h3>`); continue; }
+		if (line.startsWith('bq. ')) { html.push(`<blockquote>${inlineFormat(line.slice(4))}</blockquote>`); continue; }
+		html.push(`<p>${inlineFormat(escapeHtml(line))}</p>`);
+	}
+	if (inCodeBlock) {
+		html.push(`<pre><code>${escapeHtml(codeContent)}</code></pre>`);
+	}
+	return html.join('\n');
+}
+
+	static renderCommentList(comments: JiraIssueComment[], options?: IssuePanelOptions): string {
+	// Build a map of parent -> children for threading
+	const topLevel: JiraIssueComment[] = [];
+	const childrenMap = new Map<string, JiraIssueComment[]>();
+	for (const comment of comments) {
+		if (comment.parentId) {
+			const existing = childrenMap.get(comment.parentId) || [];
+			existing.push(comment);
+			childrenMap.set(comment.parentId, existing);
+		} else {
+			topLevel.push(comment);
+		}
+	}
+
+	const renderComment = (comment: JiraIssueComment, depth: number): string => {
+		const childComments = childrenMap.get(comment.id) || [];
+		let html = renderCommentItem(comment, options, depth);
+		if (childComments.length > 0) {
+			html += `<div class="comment-thread-line"></div><div class="comment-replies">`;
+			for (const child of childComments) {
+				html += renderComment(child, depth + 1);
+			}
+			html += `</div>`;
+		}
+		return html;
+	};
+
+	return topLevel.map((comment) => renderComment(comment, 0)).join('');
+}
+
+	static renderCommentItem(comment: JiraIssueComment, options?: IssuePanelOptions, depth: number = 0): string {
 	const timestamp = comment.updated ?? comment.created;
 	const timestampText = timestamp ? IssueModel.formatIssueUpdated(timestamp) : undefined;
 	const authorLabel = HtmlHelper.escapeHtml(comment.authorName ?? 'Unknown user');
@@ -2716,8 +3204,11 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 			)}</button>`
 		: '';
 	const currentUserTag = comment.isCurrentUser ? '<span class="comment-author-self">You</span>' : '';
-	const bodyHtml = comment.renderedBody && comment.renderedBody.trim().length > 0
+	const rawBody = comment.renderedBody && comment.renderedBody.trim().length > 0
 		? comment.renderedBody
+		: (typeof comment.body === 'string' && comment.body.trim().length > 0 ? comment.body : undefined);
+	const bodyHtml = rawBody
+		? JiraWebviewPanel.renderCommentBodyHtml(rawBody)
 		: '<p class="muted">No comment body</p>';
 	const editFormMarkup = isEditing
 		? JiraWebviewPanel.renderCommentEditForm(comment, options)
@@ -2734,8 +3225,8 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 				${currentUserTag}
 				${timestampText ? `<span class="comment-date">${HtmlHelper.escapeHtml(timestampText)}</span>` : ''}
 				<div class="comment-meta-actions">
-					${replyButton}
-					${deleteButton}
+					<button type="button" class="comment-reply" data-comment-id="${HtmlHelper.escapeAttribute(comment.id)}" ${replyDisabled || isReplying ? 'disabled' : ''} title="Reply">\u21A9</button>
+					<button type="button" class="comment-delete" data-comment-id="${HtmlHelper.escapeAttribute(comment.id)}" ${deleteDisabled ? 'disabled' : ''} title="Delete">\u2715</button>
 				</div>
 			</div>
 			${editableMarkup}
@@ -2816,9 +3307,9 @@ static renderCommentEditForm(comment: JiraIssueComment, options?: IssuePanelOpti
 		? `<div class="comment-date">${HtmlHelper.escapeHtml(replyContext.timestampLabel)}</div>`
 		: '';
 	const excerptMarkup = replyContext.excerpt
-		? `<div class="comment-reply-excerpt">${HtmlHelper.escapeHtml(replyContext.excerpt)}</div>`
+		? `<div class="comment-reply-excerpt">${JiraWebviewPanel.renderCommentBodyHtml(replyContext.excerpt)}</div>`
 		: '';
-	return `<div class="comment-reply-banner">
+	return `<div class="comment-reply-banner" data-parent-id="${HtmlHelper.escapeAttribute(replyContext.commentId)}">
 		<div class="comment-reply-copy">
 			<div class="comment-reply-title">Replying to ${HtmlHelper.escapeHtml(replyContext.authorName)}</div>
 			${timestampMarkup}

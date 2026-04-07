@@ -836,7 +836,8 @@ static async fetchIssueCommentsInternal(
 	token: string,
 	issueKey: string,
 	body: string,
-	format: JiraCommentFormat
+	format: JiraCommentFormat,
+	parentId?: string
 ): Promise<JiraIssueComment> {
 	const trimmedBody = body?.trim();
 	if (!trimmedBody) {
@@ -859,12 +860,15 @@ static async fetchIssueCommentsInternal(
 		if (shouldSkip) {
 			continue;
 		}
-		const payload =
+		const payload: Record<string, unknown> =
 			format === 'wiki'
 				? { body: trimmedBody }
 				: apiVersion === '2'
 				? { body: trimmedBody }
 				: { body: buildAdfDocumentFromPlainText(trimmedBody) };
+		if (parentId) {
+			payload.parentId = parentId;
+		}
 
 		try {
 			const response = await axios.post(endpoint, payload, {
@@ -1024,6 +1028,7 @@ static async fetchIssueCommentsInternal(
 		bodyText: bodyDocument
 			? JiraApiTransport.extractTextFromAdf(bodyDocument)
 			: (typeof comment.body === 'string' ? comment.body : undefined),
+		parentId: comment.parentId ? String(comment.parentId) : undefined,
 		mentions: JiraCommentMentionService.extractMentions(bodyDocument),
 		authorName: author.displayName ?? author.name ?? 'Unknown',
 		authorAccountId: authorAccountId ? String(authorAccountId) : undefined,
@@ -2134,9 +2139,10 @@ static assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, acco
 		token: string,
 		issueKey: string,
 		body: string,
-		format: JiraCommentFormat
+		format: JiraCommentFormat,
+		parentId?: string
 	): Promise<JiraIssueComment> {
-		return addIssueComment(authInfo, token, issueKey, body, format);
+		return addIssueComment(authInfo, token, issueKey, body, format, parentId);
 	}
 
 	static deleteIssueComment(

@@ -30,23 +30,10 @@ export class IssueCommentReplyService {
 	}
 
 	/**
-	 * Combines the user's reply text with reply context so the new Jira comment remains understandable outside the extension.
+	 * Returns the reply body text as-is. Threaded context is handled via the Jira API parentId parameter.
 	 */
-	static buildCommentBody(body: string, replyContext?: CommentReplyContext): string {
-		const trimmedBody = body?.trim() ?? '';
-		if (!replyContext) {
-			return trimmedBody;
-		}
-
-		const header = replyContext.timestampLabel
-			? `Replying to ${replyContext.authorName} on ${replyContext.timestampLabel}`
-			: `Replying to ${replyContext.authorName}`;
-		const sections = [header];
-		if (replyContext.excerpt) {
-			sections.push(`Original comment:\n${replyContext.excerpt}`);
-		}
-		sections.push(trimmedBody);
-		return sections.join('\n\n').trim();
+	static buildCommentBody(body: string, _replyContext?: CommentReplyContext): string {
+		return body?.trim() ?? '';
 	}
 
 	/**

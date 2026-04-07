@@ -197,7 +197,7 @@ export class IssueControllerFactory {
 						issue: panelState.issue ?? { key: resolvedIssueKey },
 					});
 				} else if (message?.type === 'addComment' && typeof message.body === 'string') {
-					await handleAddComment(message.body);
+					await handleAddComment(message.body, message.parentId);
 				} else if (message?.type === 'deleteComment' && typeof message.commentId === 'string') {
 					await handleDeleteComment(message.commentId);
 				} else if (message?.type === 'startEditComment' && typeof message.commentId === 'string') {
@@ -835,7 +835,7 @@ export class IssueControllerFactory {
 			}
 		}
 
-		async function handleAddComment(body: string): Promise<void> {
+		async function handleAddComment(body: string, parentId?: string): Promise<void> {
 			if (disposed) {
 				return;
 			}
@@ -861,7 +861,7 @@ export class IssueControllerFactory {
 
 			try {
 				const commentBody = IssueCommentReplyService.buildCommentBody(trimmedBody, panelState.commentReplyContext);
-				await jiraApiClient.addIssueComment(authInfo, token, resolvedIssueKey, commentBody, 'wiki');
+				await jiraApiClient.addIssueComment(authInfo, token, resolvedIssueKey, commentBody, 'wiki', parentId);
 				panelState.commentDraft = '';
 				panelState.commentSubmitPending = false;
 				panelState.commentSubmitError = undefined;

@@ -89,6 +89,11 @@ export type JiraIssueComment = {
 	bodyText?: string;
 
 	/**
+	 * The ID of the parent comment when this is a threaded reply.
+	 */
+	parentId?: string;
+
+	/**
 	 * The mention nodes parsed from the raw comment body document.
 	 */
 	mentions?: JiraCommentMention[];
