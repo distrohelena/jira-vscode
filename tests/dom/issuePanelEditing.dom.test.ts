@@ -1,10 +1,11 @@
 import { JSDOM, VirtualConsole } from 'jsdom';
 import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { EnvironmentRuntime } from '../../src/environment.runtime';
 import { JiraIssue, JiraIssueComment, IssuePanelOptions } from '../../src/model/jira.type';
 import { JiraWebviewPanel } from '../../src/views/webview/webview.panel';
+import { RichTextEditorDomTestHarness } from './support/richTextEditorDomTestHarness';
 import { Uri } from 'vscode';
 
 type RenderedDom = {
@@ -100,6 +101,7 @@ class IssuePanelTestHarness {
 				});
 			},
 		});
+		RichTextEditorDomTestHarness.initialize(dom.window.document);
 
 		return {
 			dom,
@@ -112,6 +114,10 @@ class IssuePanelTestHarness {
 		element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 	}
 }
+
+afterEach(() => {
+	RichTextEditorDomTestHarness.cleanup();
+});
 
 describe('Issue panel editor interactions', () => {
 	it('renders status icons in the issue status picker and posts the selected transition', () => {
@@ -249,19 +255,19 @@ describe('Issue panel editor interactions', () => {
 		).toBe(true);
 	});
 
-	it('prefills description editor with existing rendered description', () => {
+	it('renders the shared rich text editor inside the description edit form', () => {
 		const { dom } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
 			description: 'First line\nSecond line',
 			descriptionHtml: '<p><strong>First line</strong><br />Second line</p>',
 		});
 		const descriptionDisplay = dom.window.document.querySelector('.jira-description-display') as Element;
-		const descriptionInput = dom.window.document.querySelector('.jira-description-editor-input') as HTMLElement;
+		const descriptionEditor = dom.window.document.querySelector('.jira-description-editor') as HTMLFormElement;
 		expect(descriptionDisplay).toBeTruthy();
-		expect(descriptionInput).toBeTruthy();
+		expect(descriptionEditor).toBeTruthy();
 
 		IssuePanelTestHarness.click(descriptionDisplay, dom.window);
-		expect(descriptionInput.innerHTML).toContain('<strong>First line</strong>');
-		expect(descriptionInput.textContent).toContain('Second line');
+		expect(descriptionEditor.querySelector('[data-jira-rich-editor]')).toBeTruthy();
+		expect(descriptionEditor.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
 	});
 
 	it('posts updateSummary on title submit', () => {
@@ -286,20 +292,77 @@ describe('Issue panel editor interactions', () => {
 	it('posts updateDescription on description submit', () => {
 		const { dom, messages } = IssuePanelTestHarness.renderIssuePanelDom();
 		const descriptionDisplay = dom.window.document.querySelector('.jira-description-display') as Element;
-		const descriptionInput = dom.window.document.querySelector('.jira-description-editor-input') as HTMLElement;
 		const descriptionForm = dom.window.document.querySelector('.jira-description-editor') as HTMLFormElement;
+		const descriptionHiddenValue = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-value'
+		) as HTMLTextAreaElement | null;
+		const descriptionSurface = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-surface'
+		) as HTMLElement | null;
 		expect(descriptionDisplay).toBeTruthy();
-		expect(descriptionInput).toBeTruthy();
 		expect(descriptionForm).toBeTruthy();
 
 		IssuePanelTestHarness.click(descriptionDisplay, dom.window);
-		descriptionInput.innerHTML = '<p>Updated description body</p>';
+		expect(descriptionHiddenValue).toBeTruthy();
+		expect(descriptionSurface).toBeTruthy();
+		descriptionHiddenValue!.value = '*Updated description body*';
+		descriptionSurface!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 		descriptionForm.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
 
 		const updateMessage = messages.find((message) => message?.type === 'updateDescription');
 		expect(updateMessage).toBeTruthy();
 		expect(updateMessage.issueKey).toBe('PROJ-1000');
-		expect(updateMessage.description).toBe('Updated description body');
+		expect(updateMessage.description).toBe('*Updated description body*');
+	});
+
+	it('restores the original description when cancel is pressed after switching to wiki mode', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
+			description: 'Original wiki body',
+			descriptionHtml: '<p>Original <strong>rich</strong> body</p>',
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const descriptionDisplay = dom.window.document.querySelector('.jira-description-display') as Element | null;
+		const descriptionBlock = dom.window.document.querySelector('.issue-description-block') as HTMLElement | null;
+		const descriptionHost = dom.window.document.querySelector(
+			'.jira-description-editor [data-jira-rich-editor]'
+		) as HTMLElement | null;
+		const descriptionPlain = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-plain'
+		) as HTMLTextAreaElement | null;
+		const descriptionValue = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-value'
+		) as HTMLTextAreaElement | null;
+		const toggleModeButton = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]'
+		) as HTMLButtonElement | null;
+		const cancelButton = dom.window.document.querySelector('.jira-description-cancel') as HTMLButtonElement | null;
+
+		expect(descriptionDisplay).toBeTruthy();
+		expect(descriptionBlock).toBeTruthy();
+		expect(descriptionHost).toBeTruthy();
+		expect(descriptionPlain).toBeTruthy();
+		expect(descriptionValue).toBeTruthy();
+		expect(toggleModeButton).toBeTruthy();
+		expect(cancelButton).toBeTruthy();
+
+		IssuePanelTestHarness.click(descriptionDisplay as Element, dom.window);
+		expect(descriptionBlock?.classList.contains('editor-open')).toBe(true);
+		expect(descriptionHost?.getAttribute('data-mode')).toBe('visual');
+
+		IssuePanelTestHarness.click(toggleModeButton as Element, dom.window);
+		expect(descriptionHost?.getAttribute('data-mode')).toBe('wiki');
+
+		descriptionPlain!.value = 'Changed wiki body';
+		descriptionPlain!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+		expect(descriptionValue?.value).toBe('Changed wiki body');
+
+		IssuePanelTestHarness.click(cancelButton as Element, dom.window);
+
+		expect(descriptionBlock?.classList.contains('editor-open')).toBe(false);
+		expect(descriptionHost?.getAttribute('data-mode')).toBe('visual');
+		expect(descriptionPlain?.value).toBe('Original wiki body');
+		expect(descriptionValue?.value).toBe('Original wiki body');
 	});
 
 	it('does not open editors while update is pending', () => {
@@ -348,6 +411,42 @@ describe('Issue panel editor interactions', () => {
 		IssuePanelTestHarness.click(cancelButton as Element, dom.window);
 
 		expect(messages.some((message) => message?.type === 'cancelCommentReply')).toBe(true);
+	});
+
+	it('renders the shared editor in comment edit mode and saves the hidden wiki value', () => {
+		const { dom, messages, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(
+			{
+				comments: [IssuePanelTestHarness.createComment({ id: 'comment-42' })],
+				commentEditingId: 'comment-42',
+			},
+			undefined
+		);
+		expect(scriptErrors).toEqual([]);
+		const editForm = dom.window.document.querySelector('.comment-edit-form') as HTMLFormElement | null;
+		const editEditor = editForm?.querySelector('[data-jira-rich-editor]') as HTMLElement | null;
+		const hiddenValueField = editForm?.querySelector('.jira-rich-editor-value') as HTMLTextAreaElement | null;
+		const visualSurface = editForm?.querySelector('.jira-rich-editor-surface') as HTMLElement | null;
+		expect(editForm).toBeTruthy();
+		expect(editEditor).toBeTruthy();
+		expect(editForm?.querySelector('.jira-rich-editor-raw')).toBeNull();
+		expect(editForm?.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
+		expect(editForm?.querySelector('.jira-rich-editor-button[data-command="orderedList"]')).toBeTruthy();
+		expect(editForm?.querySelector('.jira-rich-editor-mode-button')).toBeNull();
+		expect(
+			editForm?.querySelector('.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]')
+		).toBeTruthy();
+		expect(hiddenValueField).toBeTruthy();
+		expect(visualSurface).toBeTruthy();
+
+		hiddenValueField!.value = '*Edited comment body*';
+		visualSurface!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+		editForm!.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+		const saveMessage = messages.find((message) => message?.type === 'saveEditComment');
+		expect(saveMessage).toBeTruthy();
+		expect(saveMessage.commentId).toBe('comment-42');
+		expect(saveMessage.body).toBe('*Edited comment body*');
+		expect(saveMessage.format).toBe('wiki');
 	});
 
 	it('opens the parent picker modal from the issue parent section', () => {

@@ -156,8 +156,8 @@ The extension contributes these commands. Some are primarily exposed through vie
 
 ### Scripts
 
-- `npm run compile` bundles the extension to `dist/extension.js`.
-- `npm run watch` runs esbuild in watch mode.
+- `npm run compile` bundles the extension to `dist/extension.js` and the shared rich text editor runtime to `dist/webview/rich-text-editor.js`.
+- `npm run watch` runs esbuild in watch mode for both the extension bundle and the webview runtime bundle.
 - `npm run test` runs node tests, DOM tests, and a smoke syntax check.
 - `npm run package` creates a VSIX with `vsce package`.
 

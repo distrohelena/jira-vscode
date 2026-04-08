@@ -1,6 +1,6 @@
 import { JSDOM, VirtualConsole } from 'jsdom';
 import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { EnvironmentRuntime } from '../../src/environment.runtime';
 import { JiraIssue, JiraIssueComment, IssuePanelOptions } from '../../src/model/jira.type';
@@ -105,7 +105,7 @@ class RichTextEditorHarness {
 				});
 			},
 		});
-		(RichTextEditorDomTestHarness as any).initialize(dom.window.document);
+		RichTextEditorDomTestHarness.initialize(dom.window.document);
 
 		return { dom, messages, scriptErrors };
 	}
@@ -114,7 +114,7 @@ class RichTextEditorHarness {
 	 * Returns the shared editor contract rendered inside the issue panel.
 	 */
 	static getSharedEditor(dom: JSDOM): { host: HTMLElement; visual: HTMLElement; plain: HTMLTextAreaElement; value: HTMLTextAreaElement } | null {
-		const host = dom.window.document.querySelector('[data-jira-rich-editor]') as HTMLElement | null;
+		const host = dom.window.document.querySelector('.comment-form [data-jira-rich-editor]') as HTMLElement | null;
 		if (!host) {
 			return null;
 		}
@@ -135,13 +135,19 @@ class RichTextEditorHarness {
 	}
 }
 
+afterEach(() => {
+	RichTextEditorDomTestHarness.cleanup();
+});
+
 describe('Rich text editor WYSIWYG behavior', () => {
-	it('loads the rich text editor bundle as an external webview script', () => {
+	it('does not render the legacy execCommand bootstrap path', () => {
 		const html = RichTextEditorHarness.renderIssuePanelHtml({
 			comments: [RichTextEditorHarness.createComment()],
 		});
 
 		expect(html).toContain('dist/webview/rich-text-editor.js');
+		expect(html).not.toContain('document.execCommand');
+		expect(html).not.toContain('initializeJiraRichTextEditors(document);');
 		expect(html).toContain('window.initializeJiraRichTextEditors?.(document);');
 	});
 
@@ -166,18 +172,22 @@ describe('Rich text editor WYSIWYG behavior', () => {
 
 		const commentForm = dom.window.document.querySelector('.comment-form') as HTMLFormElement | null;
 		const editor = RichTextEditorHarness.getSharedEditor(dom);
+		const mountedEditor = editor?.visual.querySelector('.jira-rich-editor-prosemirror') as HTMLElement | null;
 		expect(commentForm).toBeTruthy();
 		expect(editor).toBeTruthy();
 		expect(editor!.host.getAttribute('data-mode')).toBe('visual');
-		expect(editor!.visual.getAttribute('contenteditable')).toBe('true');
+		expect(mountedEditor).toBeTruthy();
+		expect(mountedEditor?.getAttribute('contenteditable')).toBe('true');
 		expect(editor!.plain.getAttribute('placeholder')).toBe('Write your reply');
 		expect(editor!.value.getAttribute('name')).toBe('commentDraft');
 		expect(editor!.value.classList.contains('jira-rich-editor-value')).toBe(true);
 		expect(commentForm?.querySelector('.jira-rich-editor-raw')).toBeNull();
 		expect(commentForm?.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
 		expect(commentForm?.querySelector('.jira-rich-editor-button[data-command="orderedList"]')).toBeTruthy();
-		expect(commentForm?.querySelector('.jira-rich-editor-mode-button[data-mode="visual"]')).toBeTruthy();
-		expect(commentForm?.querySelector('.jira-rich-editor-mode-button[data-mode="wiki"]')).toBeTruthy();
+		expect(commentForm?.querySelector('.jira-rich-editor-mode-button')).toBeNull();
+		expect(
+			commentForm?.querySelector('.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]')
+		).toBeTruthy();
 	});
 
 	it('posts comment draft changes and reply submits from the canonical shared editor field', () => {

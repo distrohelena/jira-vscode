@@ -42,22 +42,3 @@ test('convertEditorHtmlToWiki does not throw on malformed numeric entities', () 
 	assert.doesNotThrow(() => JiraWikiDocumentCodec.convertEditorHtmlToWiki('&#999999999;'));
 	assert.equal(JiraWikiDocumentCodec.convertEditorHtmlToWiki('&#999999999;'), '&#999999999;');
 });
-
-test('convertEditorHtmlToWiki preserves paragraph separation inside unsupported block quotes', () => {
-	assert.equal(
-		JiraWikiDocumentCodec.convertEditorHtmlToWiki('<blockquote><p>First</p><p>Second</p></blockquote>'),
-		['First', '', 'Second'].join('\n')
-	);
-});
-
-test('convertEditorHtmlToWiki degrades nested lists without merging nested text', () => {
-	assert.equal(
-		JiraWikiDocumentCodec.convertEditorHtmlToWiki('<ul><li>Parent<ul><li>Child</li></ul></li></ul>'),
-		['* Parent', '* Child'].join('\n')
-	);
-});
-
-test('convertEditorHtmlToWiki does not throw on malformed numeric entities', () => {
-	assert.doesNotThrow(() => JiraWikiDocumentCodec.convertEditorHtmlToWiki('&#999999999;'));
-	assert.equal(JiraWikiDocumentCodec.convertEditorHtmlToWiki('&#999999999;'), '&#999999999;');
-});
