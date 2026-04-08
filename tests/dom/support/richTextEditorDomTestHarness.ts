@@ -6,6 +6,16 @@ import { RichTextEditorView, type RichTextEditorViewOptions } from '../../../src
  */
 export class RichTextEditorDomTestHarness {
 	/**
+	 * Stores the original global objects so a foreign jsdom window can be restored after initialization.
+	 */
+	private static globalSnapshot: Map<string, unknown> | undefined;
+
+	/**
+	 * Stores the window currently installed on the global object for the active DOM test.
+	 */
+	private static activeWindow: Window | undefined;
+
+	/**
 	 * Stores the rendered editor host element under test.
 	 */
 	readonly host: HTMLElement;
@@ -81,7 +91,91 @@ export class RichTextEditorDomTestHarness {
 	 * Initializes the browser runtime against the active document.
 	 */
 	initialize(): void {
-		RichTextEditorBrowserBootstrap.initializeJiraRichTextEditors(document);
+		RichTextEditorDomTestHarness.initialize(document);
+	}
+
+	/**
+	 * Installs the provided document's window onto the global object and initializes the shared runtime.
+	 */
+	static initialize(root: Document): void {
+		const view = root.defaultView;
+		if (!view) {
+			throw new Error('The rich text editor harness could not resolve the jsdom window for initialization.');
+		}
+
+		RichTextEditorDomTestHarness.installWindow(view);
+		RichTextEditorBrowserBootstrap.initializeJiraRichTextEditors(root);
+	}
+
+	/**
+	 * Installs the jsdom window and its commonly used constructors onto the current global object.
+	 */
+	private static installWindow(window: Window): void {
+		if (!RichTextEditorDomTestHarness.globalSnapshot) {
+			RichTextEditorDomTestHarness.globalSnapshot = new Map();
+			const keys = [
+				'window',
+				'document',
+				'HTMLElement',
+				'HTMLTextAreaElement',
+				'HTMLButtonElement',
+				'HTMLImageElement',
+				'HTMLInputElement',
+				'HTMLFormElement',
+				'HTMLDivElement',
+				'HTMLSpanElement',
+				'Element',
+				'Node',
+				'Event',
+				'MouseEvent',
+				'KeyboardEvent',
+				'CustomEvent',
+				'DOMParser',
+				'MutationObserver',
+				'Selection',
+				'Range',
+				'navigator',
+				'getComputedStyle',
+				'requestAnimationFrame',
+				'cancelAnimationFrame',
+			];
+			for (const key of keys) {
+				RichTextEditorDomTestHarness.globalSnapshot.set(key, (globalThis as any)[key]);
+			}
+		}
+
+		RichTextEditorDomTestHarness.activeWindow = window;
+		const assignments: Record<string, unknown> = {
+			window,
+			document: window.document,
+			HTMLElement: window.HTMLElement,
+			HTMLTextAreaElement: window.HTMLTextAreaElement,
+			HTMLButtonElement: window.HTMLButtonElement,
+			HTMLImageElement: window.HTMLImageElement,
+			HTMLInputElement: window.HTMLInputElement,
+			HTMLFormElement: window.HTMLFormElement,
+			HTMLDivElement: window.HTMLDivElement,
+			HTMLSpanElement: window.HTMLSpanElement,
+			Element: window.Element,
+			Node: window.Node,
+			Event: window.Event,
+			MouseEvent: window.MouseEvent,
+			KeyboardEvent: window.KeyboardEvent,
+			CustomEvent: window.CustomEvent,
+			DOMParser: window.DOMParser,
+			MutationObserver: window.MutationObserver,
+			Selection: window.Selection,
+			Range: window.Range,
+			navigator: window.navigator,
+			getComputedStyle: window.getComputedStyle.bind(window),
+			requestAnimationFrame:
+				typeof window.requestAnimationFrame === 'function' ? window.requestAnimationFrame.bind(window) : undefined,
+			cancelAnimationFrame:
+				typeof window.cancelAnimationFrame === 'function' ? window.cancelAnimationFrame.bind(window) : undefined,
+		};
+		for (const [key, value] of Object.entries(assignments)) {
+			(globalThis as any)[key] = value;
+		}
 	}
 
 	/**
@@ -139,6 +233,13 @@ export class RichTextEditorDomTestHarness {
 	 * Clears the document body between tests so each test gets an isolated host tree.
 	 */
 	static cleanup(): void {
+		if (RichTextEditorDomTestHarness.globalSnapshot) {
+			for (const [key, value] of RichTextEditorDomTestHarness.globalSnapshot.entries()) {
+				(globalThis as any)[key] = value;
+			}
+			RichTextEditorDomTestHarness.globalSnapshot = undefined;
+			RichTextEditorDomTestHarness.activeWindow = undefined;
+		}
 		document.body.innerHTML = '';
 	}
 }

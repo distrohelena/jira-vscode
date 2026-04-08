@@ -17,6 +17,7 @@ import { ISSUE_STATUS_OPTIONS, ISSUE_TYPE_OPTIONS } from '../../model/jira.const
 import { IssueModel } from '../../model/issue.model';
 import { HtmlHelper } from '../../shared/html.helper';
 import { ViewResource } from '../view.resource';
+import { RichTextEditorView } from './editors/rich-text-editor.view';
 import { AssigneePickerOverlay } from './assignee-picker.overlay';
 import { ParentIssuePickerOverlay } from './parent-issue-picker.overlay';
 import { SharedParentPicker } from './shared-parent-picker';
@@ -205,6 +206,7 @@ export class JiraWebviewPanel {
 	</div>`
 			: '';
 	const commentsSection = renderCommentsSection(options);
+	const sharedRichTextEditorStyles = RichTextEditorView.renderStyles();
 	const richTextEditorStyles = renderRichTextEditorStyles();
 	const richTextEditorScriptTag = renderRichTextEditorScriptTag(webview, nonce);
 	const richTextEditorBootstrapScript = renderRichTextEditorBootstrapScript();
@@ -1115,6 +1117,7 @@ export class JiraWebviewPanel {
 			font-size: 0.9em;
 		}
 		${statusPickerStyles}
+		${sharedRichTextEditorStyles}
 		${richTextEditorStyles}
 			${ParentIssuePickerOverlay.renderStyles()}
 			${AssigneePickerOverlay.renderStyles()}
@@ -1664,21 +1667,22 @@ export class JiraWebviewPanel {
 				});
 			const commentForm = document.querySelector('.comment-form');
 			if (commentForm) {
-				const rawEl = commentForm.querySelector('.jira-rich-editor-raw');
+				const editorHost = commentForm.querySelector('[data-jira-rich-editor]');
+				const valueEl = commentForm.querySelector('.jira-rich-editor-value');
 				const submitButton = commentForm.querySelector('.comment-submit');
 				const errorEl = commentForm.querySelector('.comment-error');
 				const cancelReplyButton = commentForm.querySelector('.comment-reply-cancel');
 				const updateSubmitState = () => {
-					if (!submitButton || !rawEl) {
+					if (!submitButton || !valueEl) {
 						return;
 					}
 					const pending = commentForm.getAttribute('data-pending') === 'true';
-					const hasText = rawEl.value.trim().length > 0;
+					const hasText = valueEl.value.trim().length > 0;
 					submitButton.disabled = pending || !hasText;
 				};
-				if (rawEl) {
-					rawEl.addEventListener('input', () => {
-						vscode.postMessage({ type: 'commentDraftChanged', value: rawEl.value });
+				if (editorHost && valueEl) {
+					editorHost.addEventListener('input', () => {
+						vscode.postMessage({ type: 'commentDraftChanged', value: valueEl.value });
 						updateSubmitState();
 						if (errorEl) {
 							errorEl.classList.add('hidden');
@@ -1687,12 +1691,12 @@ export class JiraWebviewPanel {
 				}
 				commentForm.addEventListener('submit', (event) => {
 					event.preventDefault();
-					if (!rawEl || !submitButton || submitButton.disabled) {
+					if (!valueEl || !submitButton || submitButton.disabled) {
 						return;
 					}
 					const replyBanner = commentForm.querySelector('.comment-reply-banner');
 					const parentId = replyBanner ? replyBanner.getAttribute('data-parent-id') : undefined;
-					vscode.postMessage({ type: 'addComment', body: rawEl.value, format: 'wiki', parentId });
+					vscode.postMessage({ type: 'addComment', body: valueEl.value, format: 'wiki', parentId });
 				});
 				if (cancelReplyButton) {
 					cancelReplyButton.addEventListener('click', () => {
@@ -1824,6 +1828,7 @@ export class JiraWebviewPanel {
 	const defaultStatusAttr = HtmlHelper.escapeAttribute(defaultStatus);
 	const statusPending = state.statusPending ?? false;
 	const statusError = state.statusError;
+	const sharedRichTextEditorStyles = RichTextEditorView.renderStyles();
 	const richTextEditorStyles = renderRichTextEditorStyles();
 	const richTextEditorScriptTag = renderRichTextEditorScriptTag(webview, nonce);
 	const richTextEditorBootstrapScript = renderRichTextEditorBootstrapScript();
@@ -2151,6 +2156,7 @@ export class JiraWebviewPanel {
 \t\t\tfont-size: 0.9em;
 \t\t}
 \t\t${statusPickerStyles}
+\t\t${sharedRichTextEditorStyles}
 \t\t${richTextEditorStyles}
 \t\t${ParentIssuePickerOverlay.renderStyles()}
 \t\t${AssigneePickerOverlay.renderStyles()}
@@ -2189,15 +2195,13 @@ export class JiraWebviewPanel {
 \t\t\t\t<div class="form-field">
 \t\t\t\t\t<label>
 \t\t\t\t\t\t<span class="section-title">Description</span>
-\t\t\t\t\t\t${renderRichTextEditor({
-							editorId: 'create-description-input',
-							name: 'description',
+\t\t\t\t\t\t${RichTextEditorView.render({
+							fieldId: 'create-description-input',
+							fieldName: 'description',
 							value: values.description,
+							plainValue: values.description,
 							placeholder: 'What needs to be done?',
 							disabled: !!state.submitting,
-							minRows: 8,
-							inputClassName: 'create-description-input',
-							ariaLabel: 'Description',
 						})}
 \t\t\t\t\t</label>
 \t\t\t\t</div>
@@ -3272,15 +3276,13 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 	return `<form class="comment-form" data-pending="${pending ? 'true' : 'false'}">
 		<label class="section-title" for="comment-input">${HtmlHelper.escapeHtml(formTitle)}</label>
 		${renderCommentReplyBanner(options)}
-		${renderRichTextEditor({
-			editorId: 'comment-input',
+		${RichTextEditorView.render({
+			fieldId: 'comment-input',
+			fieldName: 'commentDraft',
 			value: draftValue,
+			plainValue: draftValue,
 			placeholder,
 			disabled: pending,
-			minRows: 6,
-			inputClassName: 'comment-input',
-			editorClassName: 'comment-editor',
-			ariaLabel: formTitle,
 		})}
 		<div class="comment-controls">
 			<button type="submit" class="comment-submit" ${buttonDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(
