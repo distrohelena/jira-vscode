@@ -184,8 +184,10 @@ describe('Rich text editor WYSIWYG behavior', () => {
 		expect(commentForm?.querySelector('.jira-rich-editor-raw')).toBeNull();
 		expect(commentForm?.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
 		expect(commentForm?.querySelector('.jira-rich-editor-button[data-command="orderedList"]')).toBeTruthy();
-		expect(commentForm?.querySelector('.jira-rich-editor-mode-button[data-mode="visual"]')).toBeTruthy();
-		expect(commentForm?.querySelector('.jira-rich-editor-mode-button[data-mode="wiki"]')).toBeTruthy();
+		expect(commentForm?.querySelector('.jira-rich-editor-mode-button')).toBeNull();
+		expect(
+			commentForm?.querySelector('.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]')
+		).toBeTruthy();
 	});
 
 	it('posts comment draft changes and reply submits from the canonical shared editor field', () => {

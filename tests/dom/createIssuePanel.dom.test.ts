@@ -254,8 +254,10 @@ describe('Create issue panel', () => {
 		expect(descriptionEditor?.getAttribute('data-mode')).toBe('visual');
 		expect(descriptionEditor?.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
 		expect(descriptionEditor?.querySelector('.jira-rich-editor-button[data-command="orderedList"]')).toBeTruthy();
-		expect(descriptionEditor?.querySelector('.jira-rich-editor-mode-button[data-mode="visual"]')).toBeTruthy();
-		expect(descriptionEditor?.querySelector('.jira-rich-editor-mode-button[data-mode="wiki"]')).toBeTruthy();
+		expect(descriptionEditor?.querySelector('.jira-rich-editor-mode-button')).toBeNull();
+		expect(
+			descriptionEditor?.querySelector('.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]')
+		).toBeTruthy();
 		expect(hiddenValueField?.name).toBe('description');
 		expect(hiddenValueField?.classList.contains('jira-rich-editor-value')).toBe(true);
 		expect(plainTextarea?.placeholder).toBe('What needs to be done?');

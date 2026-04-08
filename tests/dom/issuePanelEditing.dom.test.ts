@@ -315,6 +315,56 @@ describe('Issue panel editor interactions', () => {
 		expect(updateMessage.description).toBe('*Updated description body*');
 	});
 
+	it('restores the original description when cancel is pressed after switching to wiki mode', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
+			description: 'Original wiki body',
+			descriptionHtml: '<p>Original <strong>rich</strong> body</p>',
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const descriptionDisplay = dom.window.document.querySelector('.jira-description-display') as Element | null;
+		const descriptionBlock = dom.window.document.querySelector('.issue-description-block') as HTMLElement | null;
+		const descriptionHost = dom.window.document.querySelector(
+			'.jira-description-editor [data-jira-rich-editor]'
+		) as HTMLElement | null;
+		const descriptionPlain = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-plain'
+		) as HTMLTextAreaElement | null;
+		const descriptionValue = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-value'
+		) as HTMLTextAreaElement | null;
+		const toggleModeButton = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]'
+		) as HTMLButtonElement | null;
+		const cancelButton = dom.window.document.querySelector('.jira-description-cancel') as HTMLButtonElement | null;
+
+		expect(descriptionDisplay).toBeTruthy();
+		expect(descriptionBlock).toBeTruthy();
+		expect(descriptionHost).toBeTruthy();
+		expect(descriptionPlain).toBeTruthy();
+		expect(descriptionValue).toBeTruthy();
+		expect(toggleModeButton).toBeTruthy();
+		expect(cancelButton).toBeTruthy();
+
+		IssuePanelTestHarness.click(descriptionDisplay as Element, dom.window);
+		expect(descriptionBlock?.classList.contains('editor-open')).toBe(true);
+		expect(descriptionHost?.getAttribute('data-mode')).toBe('visual');
+
+		IssuePanelTestHarness.click(toggleModeButton as Element, dom.window);
+		expect(descriptionHost?.getAttribute('data-mode')).toBe('wiki');
+
+		descriptionPlain!.value = 'Changed wiki body';
+		descriptionPlain!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+		expect(descriptionValue?.value).toBe('Changed wiki body');
+
+		IssuePanelTestHarness.click(cancelButton as Element, dom.window);
+
+		expect(descriptionBlock?.classList.contains('editor-open')).toBe(false);
+		expect(descriptionHost?.getAttribute('data-mode')).toBe('visual');
+		expect(descriptionPlain?.value).toBe('Original wiki body');
+		expect(descriptionValue?.value).toBe('Original wiki body');
+	});
+
 	it('does not open editors while update is pending', () => {
 		const { dom } = IssuePanelTestHarness.renderIssuePanelDom({
 			summaryEditPending: true,

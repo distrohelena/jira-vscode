@@ -1220,17 +1220,20 @@ export class JiraWebviewPanel {
 						if (!(descriptionHost instanceof HTMLElement) || !(descriptionPlain instanceof HTMLTextAreaElement) || !(descriptionValue instanceof HTMLTextAreaElement)) {
 							return;
 						}
-						const wikiModeButton = descriptionHost.querySelector('.jira-rich-editor-mode-button[data-mode="wiki"]');
-						const visualModeButton = descriptionHost.querySelector('.jira-rich-editor-mode-button[data-mode="visual"]');
-						if (wikiModeButton instanceof HTMLButtonElement) {
-							wikiModeButton.click();
-						}
+						const ensureMode = (targetMode) => {
+							if (descriptionHost.getAttribute('data-mode') === targetMode) {
+								return;
+							}
+							const toggleModeButton = descriptionHost.querySelector('.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]');
+							if (toggleModeButton instanceof HTMLButtonElement) {
+								toggleModeButton.click();
+							}
+						};
+						ensureMode('wiki');
 						descriptionPlain.value = originalDescription;
 						descriptionValue.value = originalDescription;
 						descriptionPlain.dispatchEvent(new Event('input', { bubbles: true }));
-						if (visualModeButton instanceof HTMLButtonElement) {
-							visualModeButton.click();
-						}
+						ensureMode('visual');
 					};
 					const openDescriptionEditor = () => {
 						if (
