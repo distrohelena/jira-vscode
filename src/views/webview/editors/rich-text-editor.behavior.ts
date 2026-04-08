@@ -1,4 +1,4 @@
-import type { Editor } from '@tiptap/core';
+import type { Editor, EditorOptions } from '@tiptap/core';
 
 /**
  * Describes the runtime dependencies required to own one rich text editor's interaction behavior.
@@ -60,6 +60,24 @@ export class RichTextEditorBehavior {
 	destroy(): void {
 		this.options.mountedSurface.removeEventListener('mousedown', this.handleMountedSurfaceMouseDown);
 		this.editor = undefined;
+	}
+
+	/**
+	 * Builds the editor-props fragment that keeps focus state synchronized with the surrounding toolbar.
+	 */
+	createEditorProps(): EditorOptions['editorProps'] {
+		return {
+			handleDOMEvents: {
+				focusin: () => {
+					this.options.onInteractionStateChanged();
+					return false;
+				},
+				focusout: () => {
+					this.options.onInteractionStateChanged();
+					return false;
+				},
+			},
+		};
 	}
 
 	/**

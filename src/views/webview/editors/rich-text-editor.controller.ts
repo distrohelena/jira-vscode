@@ -38,6 +38,11 @@ export class RichTextEditorController {
 	private readonly hiddenValueField: HTMLTextAreaElement;
 
 	/**
+	 * Stores the bound plain-textarea input listener so the controller can tear it down safely.
+	 */
+	private readonly handlePlainTextareaInputListener: (event: Event) => void;
+
+	/**
 	 * Stores the shared interaction behavior owner that keeps focus and click state stable.
 	 */
 	private readonly behavior: RichTextEditorBehavior;
@@ -66,6 +71,7 @@ export class RichTextEditorController {
 		this.mountedSurface = this.resolveMountedSurface();
 		this.plainTextarea = this.resolvePlainTextarea();
 		this.hiddenValueField = this.resolveHiddenValueField();
+		this.handlePlainTextareaInputListener = this.handlePlainTextareaInput.bind(this);
 		this.currentMode = this.resolveInitialMode();
 		this.behavior = new RichTextEditorBehavior({
 			mountedSurface: this.mountedSurface,
@@ -82,7 +88,7 @@ export class RichTextEditorController {
 			onCommandRequested: this.executeCommand.bind(this),
 			onModeToggleRequested: this.toggleMode.bind(this),
 		});
-		this.plainTextarea.addEventListener('input', this.handlePlainTextareaInput.bind(this));
+		this.plainTextarea.addEventListener('input', this.handlePlainTextareaInputListener);
 		this.synchronizeWikiFieldsFromEditor();
 		this.applyCurrentMode();
 	}
@@ -91,6 +97,7 @@ export class RichTextEditorController {
 	 * Destroys the underlying Tiptap editor when the host leaves the document.
 	 */
 	destroy(): void {
+		this.plainTextarea.removeEventListener('input', this.handlePlainTextareaInputListener);
 		this.toolbarController.destroy();
 		this.behavior.destroy();
 		this.editor.destroy();
@@ -251,6 +258,7 @@ export class RichTextEditorController {
 			content: JiraWikiDocumentCodec.convertWikiToEditorHtml(initialWiki),
 			editable: !this.hiddenValueField.disabled,
 			editorProps: {
+				...this.behavior.createEditorProps(),
 				attributes: this.createMountedEditorAttributes(),
 			},
 			extensions: [
@@ -275,9 +283,7 @@ export class RichTextEditorController {
 				}),
 			],
 			injectCSS: false,
-			onBlur: this.handleEditorBlurred.bind(this),
 			onCreate: this.handleEditorCreated.bind(this),
-			onFocus: this.handleEditorFocused.bind(this),
 			onSelectionUpdate: this.handleEditorSelectionUpdated.bind(this),
 			onUpdate: this.handleEditorUpdated.bind(this),
 		});
@@ -288,20 +294,6 @@ export class RichTextEditorController {
 	 */
 	private handleEditorCreated(): void {
 		this.synchronizeWikiFieldsFromEditor();
-	}
-
-	/**
-	 * Refreshes the toolbar when the editor gains focus so button state reflects the active selection only while focused.
-	 */
-	private handleEditorFocused(): void {
-		this.handleInteractionStateChanged();
-	}
-
-	/**
-	 * Clears any stale pressed state after the editor loses focus.
-	 */
-	private handleEditorBlurred(): void {
-		this.handleInteractionStateChanged();
 	}
 
 	/**

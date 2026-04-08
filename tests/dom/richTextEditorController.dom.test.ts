@@ -202,10 +202,13 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.mountedSurface.dispatchEvent(afterDestroyMouseDown);
 		const toolbarMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
 		harness.getCommandButton('bold').dispatchEvent(toolbarMouseDown);
+		harness.plainTextarea.value = '*after destroy*';
+		harness.plainTextarea.dispatchEvent(new Event('input', { bubbles: true }));
 
 		expect(document.activeElement).toBe(outsideButton);
 		expect(afterDestroyMouseDown.defaultPrevented).toBe(false);
 		expect(toolbarMouseDown.defaultPrevented).toBe(false);
+		expect(harness.hiddenValueField.value).toBe('');
 		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
 	});
 });
