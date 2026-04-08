@@ -283,11 +283,12 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.initialize();
 		harness.placeCaretAtText('Item one');
 		harness.pressEditorKey('Enter');
-		const emptyParagraph = harness.getMountedEditor().querySelector('li p');
+		const emptyParagraph = harness.getMountedEditor().querySelectorAll('li p')[1];
 		if (!(emptyParagraph instanceof HTMLElement)) {
 			throw new Error('The empty list item paragraph was not rendered.');
 		}
 
+		harness.placeCaretAtElement(emptyParagraph, 1);
 		harness.pressEditorKey('Enter');
 
 		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
@@ -303,11 +304,12 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.initialize();
 		harness.placeCaretAtText('Item one');
 		harness.pressEditorKey('Enter');
-		const emptyParagraph = harness.getMountedEditor().querySelector('li p');
+		const emptyParagraph = harness.getMountedEditor().querySelectorAll('li p')[1];
 		if (!(emptyParagraph instanceof HTMLElement)) {
 			throw new Error('The empty list item paragraph was not rendered.');
 		}
 
+		harness.placeCaretAtElement(emptyParagraph, 1);
 		harness.pressEditorKey('Backspace');
 
 		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
