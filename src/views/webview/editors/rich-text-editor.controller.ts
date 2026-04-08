@@ -3,6 +3,7 @@ import Link from '@tiptap/extension-link';
 import Underline from '@tiptap/extension-underline';
 import StarterKit from '@tiptap/starter-kit';
 
+import { RichTextEditorBehavior } from './rich-text-editor.behavior';
 import { JiraWikiDocumentCodec } from './jira-wiki-document-codec';
 import { RichTextToolbarController, type RichTextToolbarCommand } from './rich-text-toolbar.controller';
 import type { RichTextEditorViewMode } from './rich-text-editor.view';
@@ -37,6 +38,11 @@ export class RichTextEditorController {
 	private readonly hiddenValueField: HTMLTextAreaElement;
 
 	/**
+	 * Stores the shared interaction behavior owner that keeps focus and click state stable.
+	 */
+	private readonly behavior: RichTextEditorBehavior;
+
+	/**
 	 * Stores the active Tiptap editor instance bound to the visual surface.
 	 */
 	private readonly editor: Editor;
@@ -61,8 +67,16 @@ export class RichTextEditorController {
 		this.plainTextarea = this.resolvePlainTextarea();
 		this.hiddenValueField = this.resolveHiddenValueField();
 		this.currentMode = this.resolveInitialMode();
+		this.behavior = new RichTextEditorBehavior({
+			hostElement: this.hostElement,
+			mountedSurface: this.mountedSurface,
+			isVisualMode: () => this.currentMode === 'visual',
+			isDisabled: () => this.hiddenValueField.disabled,
+			onInteractionStateChanged: this.handleInteractionStateChanged.bind(this),
+		});
 		this.applyMountedSurfaceState(this.resolveCanonicalWikiValue().trim().length === 0);
 		this.editor = this.createEditor();
+		this.behavior.attach(this.editor);
 		this.toolbarController = new RichTextToolbarController(this.toolbarElement, {
 			isCommandActive: this.isCommandActive.bind(this),
 			getCurrentMode: this.getCurrentMode.bind(this),
@@ -78,6 +92,7 @@ export class RichTextEditorController {
 	 * Destroys the underlying Tiptap editor when the host leaves the document.
 	 */
 	destroy(): void {
+		this.behavior.destroy();
 		this.editor.destroy();
 	}
 
@@ -85,7 +100,7 @@ export class RichTextEditorController {
 	 * Resolves whether a formatting command is active in the current editor state.
 	 */
 	private isCommandActive(command: RichTextToolbarCommand): boolean {
-		if (this.currentMode !== 'visual') {
+		if (this.currentMode !== 'visual' || !this.editor.isFocused) {
 			return false;
 		}
 
@@ -236,6 +251,7 @@ export class RichTextEditorController {
 			content: JiraWikiDocumentCodec.convertWikiToEditorHtml(initialWiki),
 			editable: !this.hiddenValueField.disabled,
 			editorProps: {
+				...this.behavior.createEditorProps(),
 				attributes: this.createMountedEditorAttributes(),
 			},
 			extensions: [
@@ -260,7 +276,9 @@ export class RichTextEditorController {
 				}),
 			],
 			injectCSS: false,
+			onBlur: this.handleEditorBlurred.bind(this),
 			onCreate: this.handleEditorCreated.bind(this),
+			onFocus: this.handleEditorFocused.bind(this),
 			onSelectionUpdate: this.handleEditorSelectionUpdated.bind(this),
 			onUpdate: this.handleEditorUpdated.bind(this),
 		});
@@ -271,6 +289,20 @@ export class RichTextEditorController {
 	 */
 	private handleEditorCreated(): void {
 		this.synchronizeWikiFieldsFromEditor();
+	}
+
+	/**
+	 * Refreshes the toolbar when the editor gains focus so button state reflects the active selection only while focused.
+	 */
+	private handleEditorFocused(): void {
+		this.handleInteractionStateChanged();
+	}
+
+	/**
+	 * Clears any stale pressed state after the editor loses focus.
+	 */
+	private handleEditorBlurred(): void {
+		this.handleInteractionStateChanged();
 	}
 
 	/**
@@ -285,6 +317,13 @@ export class RichTextEditorController {
 	 */
 	private handleEditorUpdated(): void {
 		this.synchronizeWikiFieldsFromEditor();
+		this.toolbarController.refreshState();
+	}
+
+	/**
+	 * Refreshes the toolbar after focus or click interactions may have changed active formatting state.
+	 */
+	private handleInteractionStateChanged(): void {
 		this.toolbarController.refreshState();
 	}
 
@@ -388,4 +427,5 @@ export class RichTextEditorController {
 	private resolvePlaceholderText(): string {
 		return this.mountedSurface.getAttribute('data-placeholder') ?? '';
 	}
+
 }

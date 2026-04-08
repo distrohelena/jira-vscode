@@ -64,6 +64,7 @@ export class RichTextToolbarController {
 		this.modeToggleButton = this.resolveButton(
 			'.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]'
 		);
+		this.toolbarElement.addEventListener('mousedown', this.handleToolbarMouseDown.bind(this));
 		this.toolbarElement.addEventListener('click', this.handleToolbarClick.bind(this));
 		this.refreshState();
 	}
@@ -121,6 +122,23 @@ export class RichTextToolbarController {
 		if (button.getAttribute('data-secondary-action') === 'toggleMode') {
 			this.options.onModeToggleRequested();
 		}
+	}
+
+	/**
+	 * Prevents toolbar buttons from stealing focus away from the editor selection before click handlers run.
+	 */
+	private handleToolbarMouseDown(event: MouseEvent): void {
+		const target = event.target;
+		if (!(target instanceof Element)) {
+			return;
+		}
+
+		const button = target.closest('button');
+		if (!(button instanceof HTMLButtonElement) || button.disabled) {
+			return;
+		}
+
+		event.preventDefault();
 	}
 
 	/**

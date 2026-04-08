@@ -224,6 +224,24 @@ export class RichTextEditorDomTestHarness {
 	}
 
 	/**
+	 * Simulates the browser's full mouse interaction sequence on a mounted element.
+	 */
+	mouseDownUpClick(element: HTMLElement): void {
+		for (const type of ['mousedown', 'mouseup', 'click']) {
+			element.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+		}
+	}
+
+	/**
+	 * Forces the active element to move outside the editor host so blur-driven state can settle.
+	 */
+	blurToOutsideElement(): void {
+		const outsideButton = document.createElement('button');
+		document.body.appendChild(outsideButton);
+		outsideButton.focus();
+	}
+
+	/**
 	 * Updates the wiki textarea and emits the matching input event.
 	 */
 	setWikiValue(value: string): void {

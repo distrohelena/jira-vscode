@@ -1584,7 +1584,8 @@ export class JiraWebviewPanel {
 \t\t.issue-sidebar {
 \t\t\tmin-width: 0;
 \t\t}
-\t\t.form-field label {
+\t\t.form-field label,
+\t\t.form-field-content {
 \t\t\tdisplay: flex;
 \t\t\tflex-direction: column;
 \t\t\tgap: 6px;
@@ -1893,7 +1894,7 @@ export class JiraWebviewPanel {
 \t\t\t\t\t</label>
 \t\t\t\t</div>
 \t\t\t\t<div class="form-field">
-\t\t\t\t\t<label>
+\t\t\t\t\t<div class="form-field-content">
 \t\t\t\t\t\t<span class="section-title">Description</span>
 \t\t\t\t\t\t${RichTextEditorView.render({
 							fieldId: 'create-description-input',
@@ -1903,7 +1904,7 @@ export class JiraWebviewPanel {
 							placeholder: 'What needs to be done?',
 							disabled: !!state.submitting,
 						})}
-\t\t\t\t\t</label>
+\t\t\t\t\t</div>
 \t\t\t\t</div>
 \t\t\t\t${additionalFieldsSection}
 \t\t\t</div>

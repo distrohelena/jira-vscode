@@ -92,4 +92,89 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.getModeToggleButton().textContent?.trim()).toBe('Wiki');
 		expect(harness.getModeToggleButton().getAttribute('data-target-mode')).toBe('wiki');
 	});
+
+	it('prevents toolbar mousedown from stealing the editor selection before commands run', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Plain text value',
+			plainValue: 'Plain text value',
+		});
+
+		harness.initialize();
+		const commandMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		harness.getCommandButton('bold').dispatchEvent(commandMouseDown);
+		expect(commandMouseDown.defaultPrevented).toBe(true);
+
+		const modeMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		harness.getModeToggleButton().dispatchEvent(modeMouseDown);
+		expect(modeMouseDown.defaultPrevented).toBe(true);
+	});
+
+	it('focuses the ProseMirror editor when the outer surface is clicked', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Plain text value',
+			plainValue: 'Plain text value',
+		});
+
+		harness.initialize();
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+		expect(document.activeElement).toBe(harness.getMountedEditor());
+	});
+
+	it('keeps bold inactive when the empty placeholder surface is clicked', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+			placeholder: 'What needs to be done?',
+		});
+
+		harness.initialize();
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+		expect(document.activeElement).toBe(harness.getMountedEditor());
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+	});
+
+	it('clears stored formatting state from the toolbar after the editor loses focus', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+		harness.click(harness.getCommandButton('bold'));
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('true');
+
+		const outsideButton = document.createElement('button');
+		document.body.appendChild(outsideButton);
+		outsideButton.focus();
+
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+	});
+
+	it('keeps bold inactive across repeated empty-surface clicks', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+			placeholder: 'What needs to be done?',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		expect(document.activeElement).toBe(harness.getMountedEditor());
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+
+		harness.blurToOutsideElement();
+		harness.mouseDownUpClick(harness.mountedSurface);
+
+		expect(document.activeElement).toBe(harness.getMountedEditor());
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+	});
 });

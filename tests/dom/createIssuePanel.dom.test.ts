@@ -264,6 +264,18 @@ describe('Create issue panel', () => {
 		expect(rawTextarea).toBeNull();
 	});
 
+	it('renders the create issue description editor outside of label wrappers', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const descriptionEditor = dom.window.document.querySelector(
+			'#create-issue-form [data-jira-rich-editor]'
+		) as HTMLElement | null;
+
+		expect(descriptionEditor).toBeTruthy();
+		expect(descriptionEditor?.closest('label')).toBeNull();
+	});
+
 	it('posts create issue descriptions from the shared editor hidden value field', () => {
 		const { dom, messages, scriptErrors } = renderCreateIssuePanelDom();
 		expect(scriptErrors).toEqual([]);
