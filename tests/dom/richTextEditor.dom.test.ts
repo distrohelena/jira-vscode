@@ -114,7 +114,7 @@ class RichTextEditorHarness {
 	 * Returns the shared editor contract rendered inside the issue panel.
 	 */
 	static getSharedEditor(dom: JSDOM): { host: HTMLElement; visual: HTMLElement; plain: HTMLTextAreaElement; value: HTMLTextAreaElement } | null {
-		const host = dom.window.document.querySelector('[data-jira-rich-editor]') as HTMLElement | null;
+		const host = dom.window.document.querySelector('.comment-form [data-jira-rich-editor]') as HTMLElement | null;
 		if (!host) {
 			return null;
 		}

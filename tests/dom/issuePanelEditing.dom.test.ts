@@ -1,10 +1,11 @@
 import { JSDOM, VirtualConsole } from 'jsdom';
 import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { EnvironmentRuntime } from '../../src/environment.runtime';
 import { JiraIssue, JiraIssueComment, IssuePanelOptions } from '../../src/model/jira.type';
 import { JiraWebviewPanel } from '../../src/views/webview/webview.panel';
+import { RichTextEditorDomTestHarness } from './support/richTextEditorDomTestHarness';
 import { Uri } from 'vscode';
 
 type RenderedDom = {
@@ -100,6 +101,7 @@ class IssuePanelTestHarness {
 				});
 			},
 		});
+		RichTextEditorDomTestHarness.initialize(dom.window.document);
 
 		return {
 			dom,
@@ -112,6 +114,10 @@ class IssuePanelTestHarness {
 		element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 	}
 }
+
+afterEach(() => {
+	RichTextEditorDomTestHarness.cleanup();
+});
 
 describe('Issue panel editor interactions', () => {
 	it('renders status icons in the issue status picker and posts the selected transition', () => {
@@ -249,19 +255,19 @@ describe('Issue panel editor interactions', () => {
 		).toBe(true);
 	});
 
-	it('prefills description editor with existing rendered description', () => {
+	it('renders the shared rich text editor inside the description edit form', () => {
 		const { dom } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
 			description: 'First line\nSecond line',
 			descriptionHtml: '<p><strong>First line</strong><br />Second line</p>',
 		});
 		const descriptionDisplay = dom.window.document.querySelector('.jira-description-display') as Element;
-		const descriptionInput = dom.window.document.querySelector('.jira-description-editor-input') as HTMLElement;
+		const descriptionEditor = dom.window.document.querySelector('.jira-description-editor') as HTMLFormElement;
 		expect(descriptionDisplay).toBeTruthy();
-		expect(descriptionInput).toBeTruthy();
+		expect(descriptionEditor).toBeTruthy();
 
 		IssuePanelTestHarness.click(descriptionDisplay, dom.window);
-		expect(descriptionInput.innerHTML).toContain('<strong>First line</strong>');
-		expect(descriptionInput.textContent).toContain('Second line');
+		expect(descriptionEditor.querySelector('[data-jira-rich-editor]')).toBeTruthy();
+		expect(descriptionEditor.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
 	});
 
 	it('posts updateSummary on title submit', () => {
@@ -286,20 +292,27 @@ describe('Issue panel editor interactions', () => {
 	it('posts updateDescription on description submit', () => {
 		const { dom, messages } = IssuePanelTestHarness.renderIssuePanelDom();
 		const descriptionDisplay = dom.window.document.querySelector('.jira-description-display') as Element;
-		const descriptionInput = dom.window.document.querySelector('.jira-description-editor-input') as HTMLElement;
 		const descriptionForm = dom.window.document.querySelector('.jira-description-editor') as HTMLFormElement;
+		const descriptionHiddenValue = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-value'
+		) as HTMLTextAreaElement | null;
+		const descriptionSurface = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-surface'
+		) as HTMLElement | null;
 		expect(descriptionDisplay).toBeTruthy();
-		expect(descriptionInput).toBeTruthy();
 		expect(descriptionForm).toBeTruthy();
 
 		IssuePanelTestHarness.click(descriptionDisplay, dom.window);
-		descriptionInput.innerHTML = '<p>Updated description body</p>';
+		expect(descriptionHiddenValue).toBeTruthy();
+		expect(descriptionSurface).toBeTruthy();
+		descriptionHiddenValue!.value = '*Updated description body*';
+		descriptionSurface!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 		descriptionForm.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
 
 		const updateMessage = messages.find((message) => message?.type === 'updateDescription');
 		expect(updateMessage).toBeTruthy();
 		expect(updateMessage.issueKey).toBe('PROJ-1000');
-		expect(updateMessage.description).toBe('Updated description body');
+		expect(updateMessage.description).toBe('*Updated description body*');
 	});
 
 	it('does not open editors while update is pending', () => {

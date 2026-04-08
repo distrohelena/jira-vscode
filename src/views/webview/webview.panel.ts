@@ -1501,106 +1501,111 @@ export class JiraWebviewPanel {
 					const descriptionDisplay = descriptionBlock.querySelector('.jira-description-display');
 					const descriptionPreview = descriptionBlock.querySelector('.jira-description-preview');
 					const descriptionEditor = descriptionBlock.querySelector('.jira-description-editor');
-					const descriptionInput = descriptionBlock.querySelector('.jira-description-editor-input');
+					const descriptionHost = descriptionBlock.querySelector('.jira-description-editor [data-jira-rich-editor]');
+					const descriptionValue = descriptionBlock.querySelector('#issue-description-input');
+					const descriptionPlain = descriptionBlock.querySelector('.jira-description-editor .jira-rich-editor-plain');
 					const descriptionCancel = descriptionBlock.querySelector('.jira-description-cancel');
-					const descriptionToolbarButtons = Array.from(
-						descriptionBlock.querySelectorAll('.jira-description-editor-action')
-					);
 					const issueKey = descriptionBlock.getAttribute('data-issue-key');
-					const originalDescriptionHtml = descriptionInput ? descriptionInput.innerHTML : '';
-						const openDescriptionEditor = () => {
-							if (
-								!descriptionEditor ||
-								!descriptionInput ||
-								descriptionBlock.classList.contains('description-edit-pending')
-							) {
-								logDebug('description.open.blocked', {
-									issueKey,
-									hasEditor: !!descriptionEditor,
-									hasInput: !!descriptionInput,
-									pending: descriptionBlock.classList.contains('description-edit-pending'),
-								});
-								return;
-							}
-							descriptionBlock.classList.add('editor-open');
-							logDebug('description.open', { issueKey, initialHtmlLength: descriptionInput.innerHTML.length });
-							descriptionInput.focus();
-						};
-						const closeDescriptionEditor = () => {
-							if (!descriptionInput) {
-								logDebug('description.close.blocked', { issueKey, hasInput: !!descriptionInput });
-								return;
-							}
-							descriptionInput.innerHTML = originalDescriptionHtml;
-							descriptionBlock.classList.remove('editor-open');
-							logDebug('description.close', { issueKey });
-						};
-						if (descriptionDisplay) {
-							descriptionDisplay.addEventListener('click', () => {
-								logDebug('description.clickDisplay', { issueKey });
-								openDescriptionEditor();
-							});
+					const originalDescription = descriptionBlock.getAttribute('data-description-plain') || '';
+					const focusDescriptionEditor = () => {
+						const descriptionSurface = descriptionBlock.querySelector('.jira-description-editor .ProseMirror');
+						if (descriptionSurface instanceof HTMLElement) {
+							descriptionSurface.focus();
 						}
-						if (descriptionPreview) {
-							descriptionPreview.addEventListener('click', () => {
-								logDebug('description.clickPreview', { issueKey });
-								openDescriptionEditor();
-							});
+					};
+					const resetDescriptionEditor = () => {
+						if (!(descriptionHost instanceof HTMLElement) || !(descriptionPlain instanceof HTMLTextAreaElement) || !(descriptionValue instanceof HTMLTextAreaElement)) {
+							return;
 						}
-					descriptionToolbarButtons.forEach((button) => {
-						button.addEventListener('click', () => {
-							if (!descriptionInput) {
-								return;
-							}
-							const action = button.getAttribute('data-action') || '';
-							applyDescriptionFormatting(descriptionInput, action);
+						const wikiModeButton = descriptionHost.querySelector('.jira-rich-editor-mode-button[data-mode="wiki"]');
+						const visualModeButton = descriptionHost.querySelector('.jira-rich-editor-mode-button[data-mode="visual"]');
+						if (wikiModeButton instanceof HTMLButtonElement) {
+							wikiModeButton.click();
+						}
+						descriptionPlain.value = originalDescription;
+						descriptionValue.value = originalDescription;
+						descriptionPlain.dispatchEvent(new Event('input', { bubbles: true }));
+						if (visualModeButton instanceof HTMLButtonElement) {
+							visualModeButton.click();
+						}
+					};
+					const openDescriptionEditor = () => {
+						if (
+							!descriptionEditor ||
+							!(descriptionValue instanceof HTMLTextAreaElement) ||
+							descriptionBlock.classList.contains('description-edit-pending')
+						) {
+							logDebug('description.open.blocked', {
+								issueKey,
+								hasEditor: !!descriptionEditor,
+								hasInput: descriptionValue instanceof HTMLTextAreaElement,
+								pending: descriptionBlock.classList.contains('description-edit-pending'),
+							});
+							return;
+						}
+						descriptionBlock.classList.add('editor-open');
+						logDebug('description.open', { issueKey, initialLength: descriptionValue.value.length });
+						focusDescriptionEditor();
+					};
+					const closeDescriptionEditor = () => {
+						resetDescriptionEditor();
+						descriptionBlock.classList.remove('editor-open');
+						logDebug('description.close', { issueKey });
+					};
+					if (descriptionDisplay) {
+						descriptionDisplay.addEventListener('click', () => {
+							logDebug('description.clickDisplay', { issueKey });
+							openDescriptionEditor();
 						});
-					});
-						if (descriptionEditor && descriptionInput && issueKey) {
-							descriptionEditor.addEventListener('submit', (event) => {
-								event.preventDefault();
-								const currentDescription = normalizeDescriptionText(
-									descriptionBlock.getAttribute('data-description-plain') || ''
-								);
-								const nextDescription = serializeDescriptionHtmlToWiki(descriptionInput.innerHTML || '');
-								if (normalizeDescriptionText(nextDescription) === currentDescription) {
-									logDebug('description.submit.unchanged', { issueKey });
-									closeDescriptionEditor();
-									return;
-								}
-								descriptionBlock.classList.add('description-edit-pending');
-							const buttons = descriptionEditor.querySelectorAll('button');
-								buttons.forEach((button) => {
-									button.disabled = true;
-								});
-								descriptionInput.setAttribute('contenteditable', 'false');
-								logDebug('description.submit', {
-									issueKey,
-									currentLength: currentDescription.length,
-									nextLength: nextDescription.length,
-								});
-								vscode.postMessage({
-									type: 'updateDescription',
-									issueKey,
-									description: nextDescription,
-								});
-							});
-						}
-						if (descriptionCancel) {
-							descriptionCancel.addEventListener('click', () => {
-								logDebug('description.cancel', { issueKey });
+					}
+					if (descriptionPreview) {
+						descriptionPreview.addEventListener('click', () => {
+							logDebug('description.clickPreview', { issueKey });
+							openDescriptionEditor();
+						});
+					}
+					if (descriptionEditor && descriptionValue instanceof HTMLTextAreaElement && issueKey) {
+						descriptionEditor.addEventListener('submit', (event) => {
+							event.preventDefault();
+							const currentDescription = normalizeDescriptionText(originalDescription);
+							const nextDescription = descriptionValue.value;
+							if (normalizeDescriptionText(nextDescription) === currentDescription) {
+								logDebug('description.submit.unchanged', { issueKey });
 								closeDescriptionEditor();
+								return;
+							}
+							descriptionBlock.classList.add('description-edit-pending');
+							const buttons = descriptionEditor.querySelectorAll('button');
+							buttons.forEach((button) => {
+								button.disabled = true;
 							});
-						}
-						if (descriptionInput) {
-							descriptionInput.addEventListener('keydown', (event) => {
-								if (event.key === 'Escape') {
-									event.preventDefault();
-									logDebug('description.escape', { issueKey });
-									closeDescriptionEditor();
-								}
+							logDebug('description.submit', {
+								issueKey,
+								currentLength: currentDescription.length,
+								nextLength: nextDescription.length,
 							});
-						}
+							vscode.postMessage({
+								type: 'updateDescription',
+								issueKey,
+								description: nextDescription,
+							});
+						});
+					}
+					if (descriptionCancel) {
+						descriptionCancel.addEventListener('click', () => {
+							logDebug('description.cancel', { issueKey });
+							closeDescriptionEditor();
+						});
+					}
+					if (descriptionEditor) {
+						descriptionEditor.addEventListener('keydown', (event) => {
+							if (event.key === 'Escape') {
+								event.preventDefault();
+								logDebug('description.escape', { issueKey });
+								closeDescriptionEditor();
+							}
+						});
+					}
 				}
 				document.querySelectorAll('.issue-link').forEach((el) => {
 					el.addEventListener('click', () => {
@@ -2399,7 +2404,6 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 		: undefined;
 	const content = descriptionHtml ?? fallbackHtml;
 	const descriptionText = deriveEditableDescriptionText(issue, content);
-	const editableDescriptionHtml = deriveEditableDescriptionHtml(content, descriptionText);
 	const descriptionEditPending = options?.descriptionEditPending ?? false;
 	const descriptionEditError = options?.descriptionEditError;
 	const descriptionEditDisabled = descriptionEditPending;
@@ -2426,26 +2430,14 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 		)}">
 			${body}
 			<form class="jira-description-editor">
-				<div class="jira-description-visual-editor">
-					<div class="jira-description-toolbar" role="toolbar" aria-label="Description formatting">
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="bold" ${descriptionEditDisabledAttr}><span class="fmt-bold">B</span></button>
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="italic" ${descriptionEditDisabledAttr}><span class="fmt-italic">I</span></button>
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="underline" ${descriptionEditDisabledAttr}><span class="fmt-underline">U</span></button>
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="strike" ${descriptionEditDisabledAttr}><span class="fmt-strike">S</span></button>
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="code" ${descriptionEditDisabledAttr}>{ }</button>
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="h2" ${descriptionEditDisabledAttr}>H2</button>
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="bullet" ${descriptionEditDisabledAttr}>• List</button>
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="number" ${descriptionEditDisabledAttr}>1. List</button>
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="quote" ${descriptionEditDisabledAttr}>Quote</button>
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="codeblock" ${descriptionEditDisabledAttr}>Code</button>
-						<button type="button" class="jira-rich-editor-action jira-description-editor-action" data-action="link" ${descriptionEditDisabledAttr}>Link</button>
-					</div>
-					<div
-						class="jira-description-editor-input"
-						contenteditable="${descriptionEditDisabled ? 'false' : 'true'}"
-						data-placeholder="Add description..."
-					>${editableDescriptionHtml}</div>
-				</div>
+				${RichTextEditorView.render({
+					fieldId: 'issue-description-input',
+					fieldName: 'description',
+					value: descriptionText,
+					plainValue: descriptionText,
+					placeholder: 'Add description...',
+					disabled: descriptionEditDisabled,
+				})}
 				<div class="jira-description-actions">
 					<button type="submit" class="jira-description-save" ${descriptionEditDisabledAttr}>Save</button>
 					<button type="button" class="jira-description-cancel" ${descriptionEditDisabledAttr}>Cancel</button>
