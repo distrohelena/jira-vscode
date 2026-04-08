@@ -13,7 +13,13 @@ type RenderedDom = {
 	scriptErrors: string[];
 };
 
+/**
+ * Hosts the DOM assertions for the rich text editor issue panel.
+ */
 class RichTextEditorHarness {
+	/**
+	 * Creates a renderable issue record with stable defaults for DOM tests.
+	 */
 	static createIssue(overrides?: Partial<JiraIssue>): JiraIssue {
 		return {
 			id: overrides?.id ?? '1000',
@@ -28,6 +34,9 @@ class RichTextEditorHarness {
 		};
 	}
 
+	/**
+	 * Creates a renderable comment record with stable defaults for DOM tests.
+	 */
 	static createComment(overrides?: Partial<JiraIssueComment>): JiraIssueComment {
 		return {
 			id: overrides?.id ?? 'comment-1',
@@ -40,7 +49,10 @@ class RichTextEditorHarness {
 		};
 	}
 
-	static renderIssuePanelDom(options?: IssuePanelOptions, issueOverrides?: Partial<JiraIssue>): RenderedDom {
+	/**
+	 * Renders the issue panel HTML so tests can inspect the generated webview contract.
+	 */
+	static renderIssuePanelHtml(options?: IssuePanelOptions, issueOverrides?: Partial<JiraIssue>): string {
 		EnvironmentRuntime.initializeEnvironment(new Uri('file:///workspace/jira-vscode'));
 		const issue = RichTextEditorHarness.createIssue(issueOverrides);
 		const panel: any = {
@@ -51,9 +63,16 @@ class RichTextEditorHarness {
 			},
 		};
 		JiraWebviewPanel.renderIssuePanelContent(panel, issue, options);
+		return panel.webview.html;
+	}
 
+	/**
+	 * Renders the issue panel into JSDOM so tests can exercise the editor runtime.
+	 */
+	static renderIssuePanelDom(options?: IssuePanelOptions, issueOverrides?: Partial<JiraIssue>): RenderedDom {
+		const html = RichTextEditorHarness.renderIssuePanelHtml(options, issueOverrides);
 		const scriptErrors: string[] = [];
-		const scriptMatch = panel.webview.html.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
+		const scriptMatch = html.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
 		if (scriptMatch?.[1]) {
 			try {
 				new vm.Script(scriptMatch[1], { filename: 'issue-panel-inline.js' });
@@ -69,7 +88,7 @@ class RichTextEditorHarness {
 		});
 
 		const messages: any[] = [];
-		const dom = new JSDOM(panel.webview.html, {
+		const dom = new JSDOM(html, {
 			runScripts: 'dangerously',
 			pretendToBeVisual: true,
 			virtualConsole,
@@ -102,6 +121,15 @@ class RichTextEditorHarness {
 }
 
 describe('Rich text editor WYSIWYG behavior', () => {
+	it('loads the rich text editor bundle as an external webview script', () => {
+		const html = RichTextEditorHarness.renderIssuePanelHtml({
+			comments: [RichTextEditorHarness.createComment()],
+		});
+
+		expect(html).toContain('dist/webview/rich-text-editor.js');
+		expect(html).toContain('window.initializeJiraRichTextEditors?.(document);');
+	});
+
 	it('compiles without script errors', () => {
 		const { scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
 			comments: [RichTextEditorHarness.createComment()],
@@ -160,7 +188,7 @@ describe('Rich text editor WYSIWYG behavior', () => {
 
 		expect(editorEl!.editor.classList.contains('raw-mode')).toBe(true);
 		expect(editorEl!.visual.style.display).toBe('none');
-		expect(editorEl!.raw.style.display).toBe('');
+		expect(editorEl!.raw.style.display).toBe('block');
 		expect(toggleBtn!.classList.contains('active')).toBe(true);
 	});
 
@@ -182,7 +210,7 @@ describe('Rich text editor WYSIWYG behavior', () => {
 		// Toggle back to visual
 		RichTextEditorHarness.click(toggleBtn!, dom.window);
 		expect(editorEl!.editor.classList.contains('raw-mode')).toBe(false);
-		expect(editorEl!.visual.style.display).toBe('');
+		expect(editorEl!.visual.style.display).toBe('block');
 		expect(editorEl!.raw.style.display).toBe('none');
 		expect(toggleBtn!.classList.contains('active')).toBe(false);
 	});

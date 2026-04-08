@@ -374,9 +374,9 @@
         }
     },
     "scripts": {
-        "bundle": "npx esbuild src/extension.entrypoint.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js",
+        "bundle": "node scripts/esbuild.mjs",
         "compile": "npm run bundle",
-        "watch": "npx esbuild src/extension.entrypoint.ts --bundle --platform=node --target=node18 --external:vscode --format=cjs --sourcemap --outfile=dist/extension.js --watch",
+        "watch": "node scripts/esbuild.mjs --watch",
         "test": "npm run test:node && npm run test:dom && npm run test:smoke",
         "test:node": "node --import tsx --test \"tests/node/**/*.test.ts\"",
         "test:dom": "vitest run --config vitest.config.ts",

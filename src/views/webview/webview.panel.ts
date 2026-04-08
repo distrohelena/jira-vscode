@@ -140,6 +140,9 @@ export class JiraWebviewPanel {
 	}
 }
 
+	/**
+	 * Renders the issue-detail webview shell with the shared editor and picker wiring.
+	 */
 	static renderIssueDetailsHtml(
 	webview: vscode.Webview,
 	issue: JiraIssue,
@@ -203,6 +206,7 @@ export class JiraWebviewPanel {
 			: '';
 	const commentsSection = renderCommentsSection(options);
 	const richTextEditorStyles = renderRichTextEditorStyles();
+	const richTextEditorScriptTag = renderRichTextEditorScriptTag(webview, nonce);
 	const richTextEditorBootstrapScript = renderRichTextEditorBootstrapScript();
 	const statusPickerStyles = renderStatusPickerStylesV2();
 	const statusPickerBootstrapScript = renderStatusPickerBootstrapScriptV2(
@@ -1118,8 +1122,9 @@ export class JiraWebviewPanel {
 				.issue-layout {
 					grid-template-columns: 1fr;
 				}
-		}
+			}
 	</style>
+	${richTextEditorScriptTag}
 </head>
 <body>
 	<div class="issue-layout">
@@ -1165,7 +1170,7 @@ export class JiraWebviewPanel {
 	</div>
 	${ParentIssuePickerOverlay.renderHostMarkup()}
 	${AssigneePickerOverlay.renderHostMarkup()}
-			<script nonce="${nonce}">
+	<script nonce="${nonce}">
 				(function () {
 					const vscode = acquireVsCodeApi();
 					${ParentIssuePickerOverlay.renderBootstrapScript()}
@@ -1180,6 +1185,7 @@ export class JiraWebviewPanel {
 					${richTextEditorBootstrapScript}
 					${statusPickerBootstrapScript}
 					initializeJiraRichTextEditors(document);
+					window.initializeJiraRichTextEditors?.(document);
 					initializeJiraStatusPickers(document, vscode);
 					const applyIssueHeaderIconFallback = (image) => {
 						if (!(image instanceof HTMLImageElement)) {
@@ -1785,8 +1791,11 @@ export class JiraWebviewPanel {
 	</script>
 </body>
 </html>`;
-}
+	}
 
+	/**
+	 * Renders the create-issue webview so the form can reuse the shared editor scaffold.
+	 */
 	static renderCreateIssuePanelHtml(
 	webview: vscode.Webview,
 	project: SelectedProjectInfo,
@@ -1816,6 +1825,7 @@ export class JiraWebviewPanel {
 	const statusPending = state.statusPending ?? false;
 	const statusError = state.statusError;
 	const richTextEditorStyles = renderRichTextEditorStyles();
+	const richTextEditorScriptTag = renderRichTextEditorScriptTag(webview, nonce);
 	const richTextEditorBootstrapScript = renderRichTextEditorBootstrapScript();
 	const statusPickerStyles = renderStatusPickerStylesV2();
 	const statusPickerBootstrapScript = renderStatusPickerBootstrapScriptV2(
@@ -1826,7 +1836,7 @@ export class JiraWebviewPanel {
 <html lang="en">
 <head>
 \t<meta charset="UTF-8" />
-\t<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; font-src ${cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+\t<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; font-src ${cspSource}; style-src 'unsafe-inline'; script-src ${cspSource} 'nonce-${nonce}';" />
 \t<title>New Jira Ticket</title>
 \t<style>
 \t\t*, *::before, *::after {
@@ -2154,6 +2164,7 @@ export class JiraWebviewPanel {
 \t\t\t}
 \t\t}
 \t</style>
+\t${richTextEditorScriptTag}
 </head>
 <body>
 \t<div class="create-issue-wrapper">
@@ -2241,6 +2252,7 @@ export class JiraWebviewPanel {
 			${richTextEditorBootstrapScript}
 			${statusPickerBootstrapScript}
 			initializeJiraRichTextEditors(document);
+			window.initializeJiraRichTextEditors?.(document);
 			initializeJiraStatusPickers(document, vscode);
 \t\t\tconst form = document.getElementById('create-issue-form');
 \t\t\tconst issueTypeSelect = form ? form.querySelector('select[name="issueType"]') : null;
@@ -2720,6 +2732,17 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 	}
 	`;
 }
+
+	/**
+	 * Renders the external browser bundle tag for the rich text editor scaffold.
+	 */
+	static renderRichTextEditorScriptTag(webview: vscode.Webview, nonce: string): string {
+		const scriptSrc = ViewResource.getRichTextEditorScriptWebviewSrc(webview);
+		if (!scriptSrc) {
+			return '';
+		}
+		return `<script nonce="${HtmlHelper.escapeAttribute(nonce)}" src="${HtmlHelper.escapeAttribute(scriptSrc)}"></script>`;
+	}
 
 	static renderRichTextEditorBootstrapScript(): string {
 	return `
@@ -4609,6 +4632,7 @@ const htmlToPlainText = JiraWebviewPanel.htmlToPlainText;
 const decodeHtmlEntities = JiraWebviewPanel.decodeHtmlEntities;
 const renderRichTextEditor = JiraWebviewPanel.renderRichTextEditor;
 const renderRichTextEditorStyles = JiraWebviewPanel.renderRichTextEditorStyles;
+const renderRichTextEditorScriptTag = JiraWebviewPanel.renderRichTextEditorScriptTag;
 const renderRichTextEditorBootstrapScript = JiraWebviewPanel.renderRichTextEditorBootstrapScript;
 const renderCommentsSection = JiraWebviewPanel.renderCommentsSection;
 const renderCommentList = JiraWebviewPanel.renderCommentList;
