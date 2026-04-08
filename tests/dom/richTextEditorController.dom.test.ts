@@ -227,6 +227,31 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		);
 	});
 
+	it('throws when the Tiptap selection update is rejected', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+		const editorElement = document.createElement('div');
+		editorElement.editor = {
+			chain: () => ({
+				focus: () => ({
+					setTextSelection: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+			view: {
+				posAtDOM: () => 1,
+			},
+		};
+		harness.getMountedEditor = () => editorElement as never;
+
+		expect(() => harness.placeCaretAtNode(document.createTextNode('text'), 0)).toThrow(
+			'The mounted editor rejected the caret placement request.'
+		);
+	});
+
 	it('preserves a hard break through wiki mode after Shift+Enter', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: 'ParagraphText',
@@ -313,6 +338,48 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.pressEditorKey('Backspace');
 
 		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
+		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
+	});
+
+	it('exits an empty ordered list item when Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '# Item one',
+			plainValue: '# Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one');
+		harness.pressEditorKey('Enter');
+		const emptyParagraph = harness.getMountedEditor().querySelectorAll('li p')[1];
+		if (!(emptyParagraph instanceof HTMLElement)) {
+			throw new Error('The empty ordered list item paragraph was not rendered.');
+		}
+
+		harness.placeCaretAtElement(emptyParagraph, 1);
+		harness.pressEditorKey('Enter');
+
+		expect(harness.mountedSurface.querySelectorAll('ol li')).toHaveLength(1);
+		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
+	});
+
+	it('lifts an empty ordered list item when Backspace is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '# Item one',
+			plainValue: '# Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one');
+		harness.pressEditorKey('Enter');
+		const emptyParagraph = harness.getMountedEditor().querySelectorAll('li p')[1];
+		if (!(emptyParagraph instanceof HTMLElement)) {
+			throw new Error('The empty ordered list item paragraph was not rendered.');
+		}
+
+		harness.placeCaretAtElement(emptyParagraph, 1);
+		harness.pressEditorKey('Backspace');
+
+		expect(harness.mountedSurface.querySelectorAll('ol li')).toHaveLength(1);
 		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
 	});
 

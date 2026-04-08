@@ -316,7 +316,10 @@ export class RichTextEditorDomTestHarness {
 		}
 
 		const position = editor.view.posAtDOM(node, offset);
-		editor.chain().focus().setTextSelection(position).run();
+		const handled = editor.chain().focus().setTextSelection(position).run();
+		if (handled === false) {
+			throw new Error('The mounted editor rejected the caret placement request.');
+		}
 	}
 
 	/**
