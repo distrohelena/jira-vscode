@@ -16,9 +16,14 @@ export class RichTextEditorDomTestHarness {
 	readonly toolbar: HTMLElement;
 
 	/**
-	 * Stores the visual editor surface used by the browser runtime.
+	 * Stores the contract surface that the browser runtime mounts Tiptap into.
 	 */
-	readonly visualSurface: HTMLElement;
+	readonly mountedSurface: HTMLElement;
+
+	/**
+	 * Stores the visual editor element rendered by the shared host contract.
+	 */
+	readonly visualEditor: HTMLElement;
 
 	/**
 	 * Stores the wiki textarea used by the browser runtime.
@@ -49,13 +54,15 @@ export class RichTextEditorDomTestHarness {
 
 		const host = wrapper.querySelector('[data-jira-rich-editor]');
 		const toolbar = wrapper.querySelector('.jira-rich-editor-toolbar');
-		const visualSurface = wrapper.querySelector('.jira-rich-editor-visual');
+		const mountedSurface = wrapper.querySelector('.jira-rich-editor-surface');
+		const visualEditor = wrapper.querySelector('.jira-rich-editor-visual');
 		const plainTextarea = wrapper.querySelector('.jira-rich-editor-plain');
 		const hiddenValueField = wrapper.querySelector('.jira-rich-editor-value');
 		if (
 			!(host instanceof HTMLElement) ||
 			!(toolbar instanceof HTMLElement) ||
-			!(visualSurface instanceof HTMLElement) ||
+			!(mountedSurface instanceof HTMLElement) ||
+			!(visualEditor instanceof HTMLElement) ||
 			!(plainTextarea instanceof HTMLTextAreaElement) ||
 			!(hiddenValueField instanceof HTMLTextAreaElement)
 		) {
@@ -64,7 +71,8 @@ export class RichTextEditorDomTestHarness {
 
 		this.host = host;
 		this.toolbar = toolbar;
-		this.visualSurface = visualSurface;
+		this.mountedSurface = mountedSurface;
+		this.visualEditor = visualEditor;
 		this.plainTextarea = plainTextarea;
 		this.hiddenValueField = hiddenValueField;
 	}

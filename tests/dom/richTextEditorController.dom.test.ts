@@ -15,12 +15,11 @@ describe('RichTextEditorBrowserBootstrap', () => {
 
 		harness.initialize();
 
-		expect(harness.visualSurface.innerHTML).toContain('<p>Plain text value</p>');
-		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
-		expect(harness.getCommandButton('italic').getAttribute('aria-pressed')).toBe('false');
-		expect(harness.getCommandButton('underline').getAttribute('aria-pressed')).toBe('false');
-		expect(harness.getCommandButton('bulletList').getAttribute('aria-pressed')).toBe('false');
-		expect(harness.getCommandButton('orderedList').getAttribute('aria-pressed')).toBe('false');
+		expect(harness.mountedSurface.querySelector('.ProseMirror')).toBeTruthy();
+		expect(harness.mountedSurface.innerHTML).toContain('<p>Plain text value</p>');
+		for (const command of ['bold', 'italic', 'underline', 'bulletList', 'orderedList', 'link']) {
+			expect(harness.getCommandButton(command).getAttribute('aria-pressed')).toBe('false');
+		}
 		expect(harness.hiddenValueField.value).toBe('Plain text value');
 	});
 
@@ -37,8 +36,8 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.click(harness.getModeButton('visual'));
 
 		expect(harness.host.getAttribute('data-mode')).toBe('visual');
-		expect(harness.visualSurface.innerHTML).toContain('<strong>bold</strong>');
-		expect(harness.visualSurface.innerHTML).toContain('<em>italic</em>');
+		expect(harness.mountedSurface.innerHTML).toContain('<strong>bold</strong>');
+		expect(harness.mountedSurface.innerHTML).toContain('<em>italic</em>');
 		expect(harness.hiddenValueField.value).toBe('*bold* _italic_');
 	});
 });

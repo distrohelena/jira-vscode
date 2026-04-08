@@ -22,9 +22,9 @@ export class RichTextEditorController {
 	private readonly toolbarElement: HTMLElement;
 
 	/**
-	 * Stores the visual editor surface container used by the Tiptap editor.
+	 * Stores the mounted surface element used by the Tiptap editor.
 	 */
-	private readonly visualSurface: HTMLElement;
+	private readonly mountedSurface: HTMLElement;
 
 	/**
 	 * Stores the wiki textarea used when the editor is in raw wiki mode.
@@ -57,7 +57,7 @@ export class RichTextEditorController {
 	constructor(hostElement: HTMLElement) {
 		this.hostElement = hostElement;
 		this.toolbarElement = this.resolveToolbarElement();
-		this.visualSurface = this.resolveVisualSurface();
+		this.mountedSurface = this.resolveMountedSurface();
 		this.plainTextarea = this.resolvePlainTextarea();
 		this.hiddenValueField = this.resolveHiddenValueField();
 		this.currentMode = this.resolveInitialMode();
@@ -201,10 +201,10 @@ export class RichTextEditorController {
 	 */
 	private createEditor(): Editor {
 		const initialWiki = this.resolveInitialWikiValue();
-		this.visualSurface.removeAttribute('contenteditable');
+		this.mountedSurface.removeAttribute('contenteditable');
 
 		return new Editor({
-			element: this.visualSurface,
+			element: this.mountedSurface,
 			content: JiraWikiDocumentCodec.convertWikiToEditorHtml(initialWiki),
 			editable: !this.hiddenValueField.disabled,
 			extensions: [
@@ -302,12 +302,12 @@ export class RichTextEditorController {
 	}
 
 	/**
-	 * Resolves the visual surface container required by the shared editor host.
+	 * Resolves the mounted surface element required by the shared editor host.
 	 */
-	private resolveVisualSurface(): HTMLElement {
-		const element = this.hostElement.querySelector('.jira-rich-editor-visual');
+	private resolveMountedSurface(): HTMLElement {
+		const element = this.hostElement.querySelector('.jira-rich-editor-surface');
 		if (!(element instanceof HTMLElement)) {
-			throw new Error('The rich text editor host is missing its visual editor surface.');
+			throw new Error('The rich text editor host is missing its mounted editor surface.');
 		}
 
 		return element;

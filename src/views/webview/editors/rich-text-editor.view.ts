@@ -75,31 +75,30 @@ export class RichTextEditorView {
 		${RichTextEditorView.renderModeButton('visual', 'Visual', ariaPressedVisual, disabledAttr)}
 		${RichTextEditorView.renderModeButton('wiki', 'Wiki', ariaPressedWiki, disabledAttr)}
 	</div>
-	<div class="jira-rich-editor-surface" data-rich-editor-surface>
-		<div
-			class="jira-rich-editor-visual"
-			contenteditable="${options.disabled ? 'false' : 'true'}"
-			data-placeholder="${placeholder}"
-			id="${fieldId}-visual"
-			role="textbox"
-			aria-multiline="true"
-		></div>
-		<textarea
-			class="jira-rich-editor-plain"
-			id="${fieldId}-plain"
-			placeholder="${placeholder}"
-			aria-label="Wiki markup fallback"
-			${disabledAttr}
-		>${plainValue}</textarea>
-		<textarea
-			class="jira-rich-editor-value"
-			id="${fieldId}"
-			name="${fieldName}"
-			hidden
-			${disabledAttr}
-			aria-hidden="true"
-		>${value}</textarea>
-	</div>
+	<div
+		class="jira-rich-editor-surface jira-rich-editor-visual"
+		data-rich-editor-surface
+		contenteditable="${options.disabled ? 'false' : 'true'}"
+		data-placeholder="${placeholder}"
+		id="${fieldId}-visual"
+		role="textbox"
+		aria-multiline="true"
+	></div>
+	<textarea
+		class="jira-rich-editor-plain"
+		id="${fieldId}-plain"
+		placeholder="${placeholder}"
+		aria-label="Wiki markup fallback"
+		${disabledAttr}
+	>${plainValue}</textarea>
+	<textarea
+		class="jira-rich-editor-value"
+		id="${fieldId}"
+		name="${fieldName}"
+		hidden
+		${disabledAttr}
+		aria-hidden="true"
+	>${value}</textarea>
 </div>`;
 	}
 
@@ -165,58 +164,49 @@ export class RichTextEditorView {
 		.jira-rich-editor-mode-button {
 			min-width: 64px;
 		}
-		.jira-rich-editor-surface {
-			display: grid;
-			grid-template-areas: 'surface';
-			min-height: 220px;
-			border: 1px solid var(--vscode-input-border);
-			border-radius: 0 0 8px 8px;
-			overflow: hidden;
-			background: var(--vscode-input-background);
-			box-sizing: border-box;
-		}
-		.jira-rich-editor-visual,
+		.jira-rich-editor-surface,
 		.jira-rich-editor-plain {
-			grid-area: surface;
 			width: 100%;
 			min-height: 220px;
 			margin: 0;
 			padding: 12px 14px;
-			border: 0;
+			border: 1px solid var(--vscode-input-border);
+			border-top: none;
+			border-radius: 0 0 8px 8px;
 			box-sizing: border-box;
 			background: var(--vscode-input-background);
 			color: var(--vscode-input-foreground);
 			font: inherit;
 			line-height: 1.5;
-			resize: vertical;
 		}
-		.jira-rich-editor-visual {
+		.jira-rich-editor-surface {
 			overflow: auto;
 			white-space: pre-wrap;
 			word-break: break-word;
 		}
-		.jira-rich-editor-visual:empty::before {
+		.jira-rich-editor-plain {
+			resize: vertical;
+			display: none;
+		}
+		.jira-rich-editor-surface:empty::before {
 			content: attr(data-placeholder);
 			color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
 			pointer-events: none;
 		}
-		.jira-rich-editor-visual:focus {
+		.jira-rich-editor-surface:focus {
 			outline: none;
 		}
-		.jira-rich-editor-visual[contenteditable='false'] {
+		.jira-rich-editor-surface[contenteditable='false'] {
 			opacity: 0.75;
 			cursor: not-allowed;
 		}
-		.jira-rich-editor-plain {
-			display: none;
-		}
-		.jira-rich-editor-host[data-mode='wiki'] .jira-rich-editor-visual {
+		.jira-rich-editor-host[data-mode='wiki'] .jira-rich-editor-surface {
 			display: none;
 		}
 		.jira-rich-editor-host[data-mode='wiki'] .jira-rich-editor-plain {
 			display: block;
 		}
-		.jira-rich-editor-host[data-mode='visual'] .jira-rich-editor-visual {
+		.jira-rich-editor-host[data-mode='visual'] .jira-rich-editor-surface {
 			display: block;
 		}
 		.jira-rich-editor-host[data-mode='visual'] .jira-rich-editor-plain {
