@@ -133,7 +133,18 @@ export class RichTextEditorBehavior {
 	 */
 	private normalizePastedHtml(html: string): string | undefined {
 		const normalized = html.trim();
-		return normalized.length > 0 ? normalized : undefined;
+		if (!normalized) {
+			return undefined;
+		}
+
+		const parsed = new DOMParser().parseFromString(normalized, 'text/html');
+		const container = document.createElement('div');
+		if (!this.appendSanitizedPasteNodes(container, Array.from(parsed.body.childNodes))) {
+			return undefined;
+		}
+
+		const sanitized = container.innerHTML.trim();
+		return sanitized.length > 0 ? sanitized : undefined;
 	}
 
 	/**
@@ -145,6 +156,136 @@ export class RichTextEditorBehavior {
 		}
 
 		return JiraWikiDocumentCodec.convertPlainTextToEditorHtml(text);
+	}
+
+	/**
+	 * Appends sanitized clipboard nodes to a container while preserving only supported inline structure.
+	 */
+	private appendSanitizedPasteNodes(target: HTMLElement, nodes: ChildNode[]): boolean {
+		for (const node of nodes) {
+			if (!this.appendSanitizedPasteNode(target, node)) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Appends one sanitized clipboard node to a container or rejects the paste fragment.
+	 */
+	private appendSanitizedPasteNode(target: HTMLElement, node: ChildNode): boolean {
+		if (node.nodeType === Node.TEXT_NODE) {
+			target.append(node.textContent ?? '');
+			return true;
+		}
+
+		if (node.nodeType !== Node.ELEMENT_NODE) {
+			return true;
+		}
+
+		const element = node as HTMLElement;
+		const tagName = element.tagName.toLowerCase();
+
+		if (this.isUnsupportedPasteTag(tagName)) {
+			return false;
+		}
+
+		switch (tagName) {
+			case 'br':
+				target.append(document.createElement('br'));
+				return true;
+			case 'strong':
+			case 'b':
+				return this.appendWrappedPasteNode(target, 'strong', element.childNodes);
+			case 'em':
+			case 'i':
+				return this.appendWrappedPasteNode(target, 'em', element.childNodes);
+			case 'u':
+				return this.appendWrappedPasteNode(target, 'u', element.childNodes);
+			case 'a':
+				return this.appendLinkedPasteNode(target, element);
+			case 'p':
+				return this.appendWrappedPasteNode(target, 'p', element.childNodes);
+			case 'div':
+			case 'span':
+				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+			default:
+				return false;
+		}
+	}
+
+	/**
+	 * Appends a sanitized wrapper element around a nested clipboard fragment.
+	 */
+	private appendWrappedPasteNode(target: HTMLElement, tagName: 'p' | 'strong' | 'em' | 'u', nodes: ChildNode[]): boolean {
+		const wrapper = document.createElement(tagName);
+		if (!this.appendSanitizedPasteNodes(wrapper, nodes)) {
+			return false;
+		}
+
+		target.append(wrapper);
+		return true;
+	}
+
+	/**
+	 * Appends a sanitized link element while preserving only its destination URL.
+	 */
+	private appendLinkedPasteNode(target: HTMLElement, element: HTMLElement): boolean {
+		const href = element.getAttribute('href')?.trim();
+		if (!href) {
+			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+		}
+
+		const link = document.createElement('a');
+		link.setAttribute('href', href);
+		if (!this.appendSanitizedPasteNodes(link, Array.from(element.childNodes))) {
+			return false;
+		}
+
+		target.append(link);
+		return true;
+	}
+
+	/**
+	 * Returns whether a pasted element should force a plain-text fallback instead of being imported structurally.
+	 */
+	private isUnsupportedPasteTag(tagName: string): boolean {
+		return (
+			tagName === 'ul' ||
+			tagName === 'ol' ||
+			tagName === 'li' ||
+			tagName === 'table' ||
+			tagName === 'thead' ||
+			tagName === 'tbody' ||
+			tagName === 'tfoot' ||
+			tagName === 'tr' ||
+			tagName === 'td' ||
+			tagName === 'th' ||
+			tagName === 'caption' ||
+			tagName === 'colgroup' ||
+			tagName === 'blockquote' ||
+			tagName === 'pre' ||
+			tagName === 'code' ||
+			tagName === 'img' ||
+			tagName === 'hr' ||
+			tagName === 'iframe' ||
+			tagName === 'svg' ||
+			tagName === 'math' ||
+			tagName === 'script' ||
+			tagName === 'style' ||
+			tagName === 'details' ||
+			tagName === 'summary' ||
+			tagName === 'figure' ||
+			tagName === 'figcaption' ||
+			tagName === 'section' ||
+			tagName === 'article' ||
+			tagName === 'aside' ||
+			tagName === 'header' ||
+			tagName === 'footer' ||
+			tagName === 'main' ||
+			tagName === 'nav'
+		);
 	}
 
 	/**

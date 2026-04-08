@@ -315,6 +315,37 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toBe('Readable text');
 	});
 
+	it('does not import pasted list HTML as real list structure', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<ul><li>One</li><li>Two</li></ul>', 'One\nTwo');
+
+		expect(harness.getMountedEditor().querySelector('ul')).toBeNull();
+		expect(harness.getMountedEditor().querySelector('li')).toBeNull();
+		expect(harness.hiddenValueField.value).toBe('One\\\\Two');
+	});
+
+	it('falls back to plain text when pasted HTML is layout heavy', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<table><tr><td>A</td><td>B</td></tr></table>', 'A\tB');
+
+		expect(harness.getMountedEditor().querySelector('table')).toBeNull();
+		expect(harness.getMountedEditor().innerHTML).toContain('A');
+		expect(harness.getMountedEditor().innerHTML).toContain('B');
+		expect(harness.hiddenValueField.value).toBe('A B');
+	});
+
 	it('keeps literal Jira markers plain when pasting HTML', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',
