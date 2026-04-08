@@ -68,7 +68,15 @@ export class RichTextEditorBehavior {
 	createEditorProps(): EditorOptions['editorProps'] {
 		return {
 			handleDOMEvents: {
+				focus: () => {
+					this.options.onInteractionStateChanged();
+					return false;
+				},
 				focusin: () => {
+					this.options.onInteractionStateChanged();
+					return false;
+				},
+				blur: () => {
 					this.options.onInteractionStateChanged();
 					return false;
 				},
@@ -77,7 +85,120 @@ export class RichTextEditorBehavior {
 					return false;
 				},
 			},
+			handleKeyDown: (_view, event) => this.handleKeyDown(event),
 		};
+	}
+
+	/**
+	 * Applies the keyboard rules that keep paragraph and list behavior explicit in visual mode.
+	 */
+	private handleKeyDown(event: KeyboardEvent): boolean {
+		if (!this.editor || !this.options.isVisualMode() || this.options.isDisabled()) {
+			return false;
+		}
+
+		if (event.key === 'Enter' && event.shiftKey) {
+			event.preventDefault();
+			this.editor.commands.setHardBreak();
+			return true;
+		}
+
+		if (event.key === 'Enter' && this.isSelectionInsideListItem()) {
+			event.preventDefault();
+			if (this.isCurrentTextBlockEmpty()) {
+				this.editor.commands.liftListItem('listItem');
+				return true;
+			}
+
+			return this.editor.commands.splitListItem('listItem');
+		}
+
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			return this.editor.commands.splitBlock();
+		}
+
+		if (event.key === 'Backspace' && this.isSelectionInsideListItem() && this.isCurrentTextBlockEmpty()) {
+			event.preventDefault();
+			this.editor.commands.liftListItem('listItem');
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Resolves whether the current selection is inside a list item node.
+	 */
+	private isSelectionInsideListItem(): boolean {
+		const anchorNode = window.getSelection()?.anchorNode;
+		if (anchorNode) {
+			const domListItem = this.findAncestorElement(anchorNode, 'LI');
+			if (domListItem) {
+				return true;
+			}
+		}
+
+		if (!this.editor) {
+			return false;
+		}
+
+		const { $from } = this.editor.state.selection;
+		for (let depth = $from.depth; depth >= 0; depth--) {
+			if ($from.node(depth).type.name === 'listItem') {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Resolves whether the active text block has no text or inline content.
+	 */
+	private isCurrentTextBlockEmpty(): boolean {
+		const anchorNode = window.getSelection()?.anchorNode;
+		if (anchorNode) {
+			for (let current: Node | null = anchorNode; current; current = current.parentNode) {
+				if (!(current instanceof HTMLElement)) {
+					continue;
+				}
+
+				if (current.tagName === 'LI' || current.tagName === 'UL' || current.tagName === 'OL') {
+					continue;
+				}
+
+				const normalizedText = current.textContent?.replace(/[\u200b\u200c\u200d\ufeff]/g, '').trim() ?? '';
+				return normalizedText.length === 0;
+			}
+		}
+
+		if (!this.editor) {
+			return false;
+		}
+
+		const { $from } = this.editor.state.selection;
+		for (let depth = $from.depth; depth >= 0; depth--) {
+			const node = $from.node(depth);
+			if (node.isTextblock) {
+				return node.content.size === 0;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Finds the nearest ancestor element with the requested tag name.
+	 */
+	private findAncestorElement(node: Node, tagName: string): HTMLElement | undefined {
+		for (let current: Node | null = node; current; current = current.parentNode) {
+			if (current instanceof HTMLElement && current.tagName === tagName) {
+				return current;
+			}
+		}
+
+		return undefined;
 	}
 
 	/**

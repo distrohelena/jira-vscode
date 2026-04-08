@@ -179,6 +179,87 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
 	});
 
+	it('inserts a soft line break inside a paragraph when Shift+Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text');
+		harness.pressEditorKey('Enter', { shiftKey: true });
+
+		expect(harness.mountedSurface.querySelectorAll('p')).toHaveLength(1);
+		expect(harness.mountedSurface.innerHTML).toContain('<br>');
+	});
+
+	it('splits a non-empty list item when Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '* Item one',
+			plainValue: '* Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one');
+		harness.pressEditorKey('Enter');
+
+		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(2);
+	});
+
+	it('exits an empty list item when Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '* Item one',
+			plainValue: '* Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one', 'Item one'.length);
+		harness.pressEditorKey('Enter');
+		const emptyParagraph = harness.getMountedEditor().querySelector('li p');
+		if (!(emptyParagraph instanceof HTMLElement)) {
+			throw new Error('The empty list item paragraph was not rendered.');
+		}
+
+		const range = document.createRange();
+		range.setStart(emptyParagraph, 0);
+		range.collapse(true);
+		const selection = window.getSelection();
+		selection?.removeAllRanges();
+		selection?.addRange(range);
+		harness.getMountedEditor().focus();
+		harness.pressEditorKey('Enter');
+
+		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
+		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
+	});
+
+	it('lifts an empty list item when Backspace is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '* Item one',
+			plainValue: '* Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one', 'Item one'.length);
+		harness.pressEditorKey('Enter');
+		const emptyParagraph = harness.getMountedEditor().querySelector('li p');
+		if (!(emptyParagraph instanceof HTMLElement)) {
+			throw new Error('The empty list item paragraph was not rendered.');
+		}
+
+		const range = document.createRange();
+		range.setStart(emptyParagraph, 0);
+		range.collapse(true);
+		const selection = window.getSelection();
+		selection?.removeAllRanges();
+		selection?.addRange(range);
+		harness.getMountedEditor().focus();
+		harness.pressEditorKey('Backspace');
+
+		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
+		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
+	});
+
 	it('stops redirecting mounted-surface clicks after the controller is destroyed', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',

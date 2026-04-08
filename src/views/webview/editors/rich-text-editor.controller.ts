@@ -268,7 +268,6 @@ export class RichTextEditorController {
 					codeBlock: false,
 					dropcursor: false,
 					gapcursor: false,
-					hardBreak: false,
 					heading: false,
 					horizontalRule: false,
 					link: false,

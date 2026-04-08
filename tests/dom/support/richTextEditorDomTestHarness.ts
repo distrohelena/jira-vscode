@@ -126,6 +126,7 @@ export class RichTextEditorDomTestHarness {
 				'HTMLSpanElement',
 				'Element',
 				'Node',
+				'NodeFilter',
 				'Event',
 				'MouseEvent',
 				'KeyboardEvent',
@@ -158,6 +159,7 @@ export class RichTextEditorDomTestHarness {
 			HTMLSpanElement: window.HTMLSpanElement,
 			Element: window.Element,
 			Node: window.Node,
+			NodeFilter: window.NodeFilter,
 			Event: window.Event,
 			MouseEvent: window.MouseEvent,
 			KeyboardEvent: window.KeyboardEvent,
@@ -175,6 +177,35 @@ export class RichTextEditorDomTestHarness {
 		};
 		for (const [key, value] of Object.entries(assignments)) {
 			(globalThis as any)[key] = value;
+		}
+
+		RichTextEditorDomTestHarness.installLayoutMeasurementPolyfills(window);
+	}
+
+	/**
+	 * Installs the minimal DOM geometry methods that ProseMirror expects during jsdom selection updates.
+	 */
+	private static installLayoutMeasurementPolyfills(window: Window): void {
+		const zeroRect = () => new window.DOMRect(0, 0, 0, 0);
+		const zeroRects = () => [zeroRect()] as unknown as DOMRectList;
+		const patch = (prototype: object, key: 'getClientRects' | 'getBoundingClientRect'): void => {
+			if (typeof (prototype as any)[key] === 'function') {
+				return;
+			}
+
+			Object.defineProperty(prototype, key, {
+				configurable: true,
+				value: key === 'getClientRects' ? zeroRects : zeroRect,
+			});
+		};
+
+		patch(window.Node.prototype, 'getClientRects');
+		patch(window.Node.prototype, 'getBoundingClientRect');
+		patch(window.Range.prototype, 'getClientRects');
+		patch(window.Range.prototype, 'getBoundingClientRect');
+
+		if (typeof window.document.elementFromPoint !== 'function') {
+			window.document.elementFromPoint = () => window.document.querySelector('.ProseMirror');
 		}
 	}
 
@@ -247,6 +278,45 @@ export class RichTextEditorDomTestHarness {
 	setWikiValue(value: string): void {
 		this.plainTextarea.value = value;
 		this.plainTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+	}
+
+	/**
+	 * Places the caret at the end of the first text node containing the requested text.
+	 */
+	placeCaretAtText(searchText: string, offsetFromEnd = 0): void {
+		const editor = this.getMountedEditor();
+		const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+			if (!node.textContent?.includes(searchText)) {
+				continue;
+			}
+
+			const offset = Math.max(0, node.textContent.length - offsetFromEnd);
+			const range = document.createRange();
+			range.setStart(node, offset);
+			range.collapse(true);
+			const selection = window.getSelection();
+			selection?.removeAllRanges();
+			selection?.addRange(range);
+			this.getMountedEditor().focus();
+			return;
+		}
+
+		throw new Error(`Could not place the caret for text: ${searchText}`);
+	}
+
+	/**
+	 * Dispatches a keyboard event against the mounted editor root.
+	 */
+	pressEditorKey(key: string, options?: { shiftKey?: boolean }): void {
+		this.getMountedEditor().dispatchEvent(
+			new KeyboardEvent('keydown', {
+				key,
+				shiftKey: options?.shiftKey ?? false,
+				bubbles: true,
+				cancelable: true,
+			})
+		);
 	}
 
 	/**
