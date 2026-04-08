@@ -64,11 +64,11 @@
             },
             {
                 "command": "jira.refreshItemsView",
-                "title": "🗘 Refresh"
+                "title": "ðŸ—˜ Refresh"
             },
             {
                 "command": "jira.refreshProjectsView",
-                "title": "🗘 Refresh Projects"
+                "title": "ðŸ—˜ Refresh Projects"
             },
             {
                 "command": "jira.showAllProjects",
@@ -394,6 +394,10 @@
         "vitest": "^3.2.4"
     },
     "dependencies": {
+        "@tiptap/core": "^3.22.3",
+        "@tiptap/extension-link": "^3.22.3",
+        "@tiptap/extension-underline": "^3.22.3",
+        "@tiptap/starter-kit": "^3.22.3",
         "axios": "^1.6.2",
         "rollup": "^4.60.1"
     }
