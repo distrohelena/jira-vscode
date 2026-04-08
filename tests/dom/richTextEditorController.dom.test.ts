@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { RichTextEditorBehavior } from '../../src/views/webview/editors/rich-text-editor.behavior';
 import { RichTextEditorController } from '../../src/views/webview/editors/rich-text-editor.controller';
 import { RichTextEditorDomTestHarness } from './support/richTextEditorDomTestHarness';
 
@@ -186,11 +187,32 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		});
 
 		harness.initialize();
-		harness.placeCaretAtText('Paragraph text');
+		harness.placeCaretAtText('Paragraph text', 4);
 		harness.pressEditorKey('Enter', { shiftKey: true });
 
 		expect(harness.mountedSurface.querySelectorAll('p')).toHaveLength(1);
 		expect(harness.mountedSurface.innerHTML).toContain('<br>');
+	});
+
+	it('preserves a hard break through wiki mode after Shift+Enter', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'ParagraphText',
+			plainValue: 'ParagraphText',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('ParagraphText', 4);
+		harness.pressEditorKey('Enter', { shiftKey: true });
+
+		expect(harness.hiddenValueField.value).toBe('Paragraph\\\\Text');
+
+		harness.click(harness.getModeToggleButton());
+		expect(harness.plainTextarea.value).toBe('Paragraph\\\\Text');
+
+		harness.click(harness.getModeToggleButton());
+		expect(harness.mountedSurface.innerHTML).toContain('<br>');
+		expect(harness.mountedSurface.innerHTML).toContain('Paragraph');
+		expect(harness.mountedSurface.innerHTML).toContain('Text');
 	});
 
 	it('splits a non-empty list item when Enter is pressed', () => {
@@ -220,13 +242,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			throw new Error('The empty list item paragraph was not rendered.');
 		}
 
-		const range = document.createRange();
-		range.setStart(emptyParagraph, 0);
-		range.collapse(true);
-		const selection = window.getSelection();
-		selection?.removeAllRanges();
-		selection?.addRange(range);
-		harness.getMountedEditor().focus();
+		harness.placeCaretAtElement(emptyParagraph);
 		harness.pressEditorKey('Enter');
 
 		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
@@ -247,17 +263,143 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			throw new Error('The empty list item paragraph was not rendered.');
 		}
 
-		const range = document.createRange();
-		range.setStart(emptyParagraph, 0);
-		range.collapse(true);
-		const selection = window.getSelection();
-		selection?.removeAllRanges();
-		selection?.addRange(range);
-		harness.getMountedEditor().focus();
+		harness.placeCaretAtElement(emptyParagraph);
 		harness.pressEditorKey('Backspace');
 
 		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
 		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
+	});
+
+	it('does not override Enter when modifier keys are held', () => {
+		const mountedSurface = document.createElement('div');
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface,
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let setHardBreakCalls = 0;
+		let splitListItemCalls = 0;
+		let splitBlockCalls = 0;
+		let liftListItemCalls = 0;
+		behavior.attach({
+			state: {
+				selection: {
+					$from: {
+						depth: 0,
+						node: () => ({
+							type: { name: 'paragraph' },
+							isTextblock: true,
+							content: { size: 1 },
+						}),
+					},
+				},
+			},
+			commands: {
+				setHardBreak: () => {
+					setHardBreakCalls += 1;
+					return true;
+				},
+				splitListItem: () => {
+					splitListItemCalls += 1;
+					return true;
+				},
+				splitBlock: () => {
+					splitBlockCalls += 1;
+					return true;
+				},
+				liftListItem: () => {
+					liftListItemCalls += 1;
+					return true;
+				},
+			},
+		} as never);
+
+		const handleKeyDown = behavior.createEditorProps()?.handleKeyDown;
+		if (!handleKeyDown) {
+			throw new Error('The keyboard handler was not created.');
+		}
+
+		for (const modifier of ['ctrlKey', 'metaKey', 'altKey'] as const) {
+			const init: KeyboardEventInit = {
+				key: 'Enter',
+				bubbles: true,
+				cancelable: true,
+			};
+			init[modifier] = true;
+			const event = new KeyboardEvent('keydown', init);
+
+			expect(handleKeyDown({} as never, event)).toBe(false);
+		}
+
+		expect(setHardBreakCalls).toBe(0);
+		expect(splitListItemCalls).toBe(0);
+		expect(splitBlockCalls).toBe(0);
+		expect(liftListItemCalls).toBe(0);
+	});
+
+	it('does not override Enter during composition', () => {
+		const mountedSurface = document.createElement('div');
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface,
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let setHardBreakCalls = 0;
+		let splitListItemCalls = 0;
+		let splitBlockCalls = 0;
+		let liftListItemCalls = 0;
+		behavior.attach({
+			state: {
+				selection: {
+					$from: {
+						depth: 0,
+						node: () => ({
+							type: { name: 'paragraph' },
+							isTextblock: true,
+							content: { size: 1 },
+						}),
+					},
+				},
+			},
+			commands: {
+				setHardBreak: () => {
+					setHardBreakCalls += 1;
+					return true;
+				},
+				splitListItem: () => {
+					splitListItemCalls += 1;
+					return true;
+				},
+				splitBlock: () => {
+					splitBlockCalls += 1;
+					return true;
+				},
+				liftListItem: () => {
+					liftListItemCalls += 1;
+					return true;
+				},
+			},
+		} as never);
+
+		const handleKeyDown = behavior.createEditorProps()?.handleKeyDown;
+		if (!handleKeyDown) {
+			throw new Error('The keyboard handler was not created.');
+		}
+
+		const event = new KeyboardEvent('keydown', {
+			key: 'Enter',
+			isComposing: true,
+			bubbles: true,
+			cancelable: true,
+		});
+
+		expect(handleKeyDown({} as never, event)).toBe(false);
+		expect(setHardBreakCalls).toBe(0);
+		expect(splitListItemCalls).toBe(0);
+		expect(splitBlockCalls).toBe(0);
+		expect(liftListItemCalls).toBe(0);
 	});
 
 	it('stops redirecting mounted-surface clicks after the controller is destroyed', () => {

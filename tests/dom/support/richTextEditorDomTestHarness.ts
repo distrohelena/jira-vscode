@@ -292,13 +292,7 @@ export class RichTextEditorDomTestHarness {
 			}
 
 			const offset = Math.max(0, node.textContent.length - offsetFromEnd);
-			const range = document.createRange();
-			range.setStart(node, offset);
-			range.collapse(true);
-			const selection = window.getSelection();
-			selection?.removeAllRanges();
-			selection?.addRange(range);
-			this.getMountedEditor().focus();
+			this.placeCaretAtNode(node, offset);
 			return;
 		}
 
@@ -306,17 +300,54 @@ export class RichTextEditorDomTestHarness {
 	}
 
 	/**
+	 * Places the caret at a specific DOM position inside the mounted editor.
+	 */
+	placeCaretAtNode(node: Node, offset: number): void {
+		const editorElement = this.getMountedEditor() as HTMLElement & { editor?: any };
+		const editor = editorElement.editor;
+		if (editor && typeof editor.chain === 'function' && typeof editor.view?.posAtDOM === 'function') {
+			const position = editor.view.posAtDOM(node, offset);
+			editor.chain().focus().setTextSelection(position).run();
+			return;
+		}
+
+		const range = document.createRange();
+		range.setStart(node, offset);
+		range.collapse(true);
+		const selection = window.getSelection();
+		selection?.removeAllRanges();
+		selection?.addRange(range);
+		this.getMountedEditor().focus();
+		document.dispatchEvent(new Event('selectionchange'));
+	}
+
+	/**
+	 * Places the caret at the start of a rendered element.
+	 */
+	placeCaretAtElement(element: Element, offset = 0): void {
+		this.placeCaretAtNode(element, offset);
+	}
+
+	/**
 	 * Dispatches a keyboard event against the mounted editor root.
 	 */
-	pressEditorKey(key: string, options?: { shiftKey?: boolean }): void {
-		this.getMountedEditor().dispatchEvent(
-			new KeyboardEvent('keydown', {
-				key,
-				shiftKey: options?.shiftKey ?? false,
-				bubbles: true,
-				cancelable: true,
-			})
-		);
+	pressEditorKey(
+		key: string,
+		options?: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; isComposing?: boolean }
+	): KeyboardEvent {
+		const editor = this.getMountedEditor();
+		const event = new KeyboardEvent('keydown', {
+			key,
+			shiftKey: options?.shiftKey ?? false,
+			ctrlKey: options?.ctrlKey ?? false,
+			metaKey: options?.metaKey ?? false,
+			altKey: options?.altKey ?? false,
+			isComposing: options?.isComposing ?? false,
+			bubbles: true,
+			cancelable: true,
+		});
+		editor.dispatchEvent(event);
+		return event;
 	}
 
 	/**

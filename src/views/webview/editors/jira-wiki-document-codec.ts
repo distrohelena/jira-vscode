@@ -80,6 +80,7 @@ export class JiraWikiDocumentCodec {
 	 */
 	private static convertInlineWikiToHtml(text: string): string {
 		let html = JiraWikiDocumentCodec.escapeHtml(text);
+		html = html.replace(/\\\\/g, '<br>');
 		html = html.replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
 		html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
 		html = html.replace(/\+([^+]+)\+/g, '<u>$1</u>');
@@ -233,7 +234,7 @@ export class JiraWikiDocumentCodec {
 	 */
 	private static serializeElement(node: HtmlElementNode): string {
 		if (node.tagName === 'br') {
-			return '\n';
+			return '\\\\';
 		}
 
 		if (node.tagName === 'blockquote') {
@@ -383,7 +384,7 @@ export class JiraWikiDocumentCodec {
 		}
 
 		if (node.tagName === 'br') {
-			return '\n';
+			return '\\\\';
 		}
 
 		if (JiraWikiDocumentCodec.isInlineWrapper(node.tagName)) {

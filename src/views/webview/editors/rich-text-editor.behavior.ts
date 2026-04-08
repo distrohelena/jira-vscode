@@ -97,6 +97,10 @@ export class RichTextEditorBehavior {
 			return false;
 		}
 
+		if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
+			return false;
+		}
+
 		if (event.key === 'Enter' && event.shiftKey) {
 			event.preventDefault();
 			this.editor.commands.setHardBreak();
@@ -131,14 +135,6 @@ export class RichTextEditorBehavior {
 	 * Resolves whether the current selection is inside a list item node.
 	 */
 	private isSelectionInsideListItem(): boolean {
-		const anchorNode = window.getSelection()?.anchorNode;
-		if (anchorNode) {
-			const domListItem = this.findAncestorElement(anchorNode, 'LI');
-			if (domListItem) {
-				return true;
-			}
-		}
-
 		if (!this.editor) {
 			return false;
 		}
@@ -157,22 +153,6 @@ export class RichTextEditorBehavior {
 	 * Resolves whether the active text block has no text or inline content.
 	 */
 	private isCurrentTextBlockEmpty(): boolean {
-		const anchorNode = window.getSelection()?.anchorNode;
-		if (anchorNode) {
-			for (let current: Node | null = anchorNode; current; current = current.parentNode) {
-				if (!(current instanceof HTMLElement)) {
-					continue;
-				}
-
-				if (current.tagName === 'LI' || current.tagName === 'UL' || current.tagName === 'OL') {
-					continue;
-				}
-
-				const normalizedText = current.textContent?.replace(/[\u200b\u200c\u200d\ufeff]/g, '').trim() ?? '';
-				return normalizedText.length === 0;
-			}
-		}
-
 		if (!this.editor) {
 			return false;
 		}
@@ -186,19 +166,6 @@ export class RichTextEditorBehavior {
 		}
 
 		return false;
-	}
-
-	/**
-	 * Finds the nearest ancestor element with the requested tag name.
-	 */
-	private findAncestorElement(node: Node, tagName: string): HTMLElement | undefined {
-		for (let current: Node | null = node; current; current = current.parentNode) {
-			if (current instanceof HTMLElement && current.tagName === tagName) {
-				return current;
-			}
-		}
-
-		return undefined;
 	}
 
 	/**
