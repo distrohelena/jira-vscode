@@ -22,18 +22,6 @@ import { AssigneePickerOverlay } from './assignee-picker.overlay';
 import { ParentIssuePickerOverlay } from './parent-issue-picker.overlay';
 import { SharedParentPicker } from './shared-parent-picker';
 
-type RichTextEditorRenderOptions = {
-	editorId: string;
-	name?: string;
-	value: string;
-	placeholder: string;
-	disabled?: boolean;
-	minRows?: number;
-	inputClassName?: string;
-	editorClassName?: string;
-	ariaLabel?: string;
-};
-
 /**
  * Carries the shared visual contract for the Assign to Me quick-action button.
  */
@@ -207,9 +195,7 @@ export class JiraWebviewPanel {
 			: '';
 	const commentsSection = renderCommentsSection(options);
 	const sharedRichTextEditorStyles = RichTextEditorView.renderStyles();
-	const richTextEditorStyles = renderRichTextEditorStyles();
 	const richTextEditorScriptTag = renderRichTextEditorScriptTag(webview, nonce);
-	const richTextEditorBootstrapScript = renderRichTextEditorBootstrapScript();
 	const statusPickerStyles = renderStatusPickerStylesV2();
 	const statusPickerBootstrapScript = renderStatusPickerBootstrapScriptV2(
 		JiraWebviewPanel.buildStatusIconFallbacks(webview)
@@ -660,21 +646,6 @@ export class JiraWebviewPanel {
 		cursor: pointer;
 		margin-top: 8px;
 	}
-	.jira-description-preview {
-		display: none;
-		margin-top: 8px;
-		font-size: 0.85em;
-		color: var(--vscode-descriptionForeground);
-		padding: 3px 8px;
-		border: 1px dashed var(--vscode-panel-border, rgba(255,255,255,0.22));
-		border-radius: 4px;
-		width: fit-content;
-		user-select: none;
-		cursor: pointer;
-	}
-	.issue-description-block:hover .jira-description-preview {
-		display: inline-block;
-	}
 	.issue-description-block:hover .jira-description-display {
 		border-color: var(--vscode-textLink-foreground);
 	}
@@ -688,80 +659,8 @@ export class JiraWebviewPanel {
 	.issue-description-block.editor-open .jira-description-editor {
 		display: flex;
 	}
-	.issue-description-block.editor-open .jira-description-display,
-	.issue-description-block.editor-open .jira-description-preview {
+	.issue-description-block.editor-open .jira-description-display {
 		display: none;
-	}
-	.jira-description-visual-editor {
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
-	}
-	.jira-description-toolbar {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-	}
-		.jira-description-editor-input {
-			width: 100%;
-			box-sizing: border-box;
-			min-height: 360px;
-			height: 360px;
-			resize: none;
-		overflow-y: auto;
-		background: var(--vscode-input-background);
-		color: var(--vscode-input-foreground);
-		border: 1px solid var(--vscode-input-border);
-		border-radius: 4px;
-		padding: 10px;
-		font-family: var(--vscode-font-family);
-		font-size: var(--vscode-font-size);
-		line-height: 1.45;
-		white-space: pre-wrap;
-		word-break: break-word;
-	}
-	.jira-description-editor-input[contenteditable='true']:focus {
-		outline: none;
-		border-color: var(--vscode-focusBorder, var(--vscode-input-border));
-		box-shadow: 0 0 0 1px var(--vscode-focusBorder, transparent);
-	}
-	.jira-description-editor-input[contenteditable='true']:empty::before {
-		content: attr(data-placeholder);
-		color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
-		pointer-events: none;
-	}
-	.jira-description-editor-input h1,
-	.jira-description-editor-input h2,
-	.jira-description-editor-input h3,
-	.jira-description-editor-input h4,
-	.jira-description-editor-input h5,
-	.jira-description-editor-input h6 {
-		margin: 0.4em 0 0.3em 0;
-	}
-	.jira-description-editor-input p {
-		margin: 0 0 0.8em 0;
-	}
-	.jira-description-editor-input ul,
-	.jira-description-editor-input ol {
-		margin: 0 0 0.8em 1.2em;
-	}
-	.jira-description-editor-input blockquote {
-		margin: 0 0 0.8em 0;
-		padding-left: 10px;
-		border-left: 3px solid var(--vscode-panel-border, rgba(255,255,255,0.2));
-		color: var(--vscode-descriptionForeground);
-	}
-	.jira-description-editor-input pre {
-		background: var(--vscode-editor-background);
-		border: 1px solid var(--vscode-input-border);
-		border-radius: 4px;
-		padding: 8px;
-		overflow-x: auto;
-	}
-	.jira-description-editor-input code {
-		background: var(--vscode-editorWidget-background, rgba(255,255,255,0.04));
-		padding: 1px 4px;
-		border-radius: 3px;
 	}
 	.jira-description-actions {
 		display: flex;
@@ -781,19 +680,6 @@ export class JiraWebviewPanel {
 	.jira-description-cancel:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
-	}
-	.description-edit-pending .jira-description-preview {
-		display: inline-block;
-	}
-	.description-edit-pending .jira-description-preview::before {
-		content: 'Saving description...';
-	}
-	.description-edit-pending .jira-description-preview span {
-		display: none;
-	}
-	.description-edit-disabled .jira-description-preview,
-	.description-edit-disabled:hover .jira-description-preview {
-		display: none;
 	}
 	.issue-description-error {
 		margin-top: 8px;
@@ -1118,7 +1004,6 @@ export class JiraWebviewPanel {
 		}
 		${statusPickerStyles}
 		${sharedRichTextEditorStyles}
-		${richTextEditorStyles}
 			${ParentIssuePickerOverlay.renderStyles()}
 			${AssigneePickerOverlay.renderStyles()}
 			@media (max-width: 900px) {
@@ -1185,9 +1070,7 @@ export class JiraWebviewPanel {
 							// Ignore logging failures to avoid impacting issue actions.
 						}
 					};
-					${richTextEditorBootstrapScript}
 					${statusPickerBootstrapScript}
-					initializeJiraRichTextEditors(document);
 					window.initializeJiraRichTextEditors?.(document);
 					initializeJiraStatusPickers(document, vscode);
 					const applyIssueHeaderIconFallback = (image) => {
@@ -1319,187 +1202,7 @@ export class JiraWebviewPanel {
 							.replace(/\\n{3,}/g, '\\n\\n')
 							trim();
 					};
-					const serializeInlineNodeToWiki = (node) => {
-						if (!node) {
-							return '';
-						}
-						if (node.nodeType === Node.TEXT_NODE) {
-							return (node.textContent || '').replace(/\u00A0/g, ' ');
-						}
-						if (!(node instanceof HTMLElement)) {
-							return '';
-						}
-						const tag = node.tagName.toLowerCase();
-						const content = Array.from(node.childNodes).map(serializeInlineNodeToWiki).join('');
-						switch (tag) {
-							case 'strong':
-							case 'b':
-								return content ? '*' + content + '*' : '';
-							case 'em':
-							case 'i':
-								return content ? '_' + content + '_' : '';
-							case 'u':
-								return content ? '+' + content + '+' : '';
-							case 's':
-							case 'strike':
-							case 'del':
-								return content ? '-' + content + '-' : '';
-							case 'code':
-								return '{{' + (node.textContent || '') + '}}';
-							case 'a': {
-								const href = (node.getAttribute('href') || '').trim();
-								const linkText = content.trim() || href;
-								return href ? '[' + linkText + '|' + href + ']' : linkText;
-							}
-							case 'br':
-								return '\\n';
-							default:
-								return content;
-						}
-					};
-					const serializeBlockNodeToWiki = (node) => {
-						if (!node) {
-							return '';
-						}
-						if (node.nodeType === Node.TEXT_NODE) {
-							return (node.textContent || '').trim();
-						}
-						if (!(node instanceof HTMLElement)) {
-							return '';
-						}
-						const tag = node.tagName.toLowerCase();
-						const inline = Array.from(node.childNodes).map(serializeInlineNodeToWiki).join('').trim();
-						switch (tag) {
-							case 'h2':
-								return inline ? 'h2. ' + inline : '';
-							case 'h3':
-								return inline ? 'h3. ' + inline : '';
-							case 'h4':
-								return inline ? 'h4. ' + inline : '';
-							case 'blockquote':
-								return inline ? 'bq. ' + inline : '';
-							case 'ul': {
-								const items = Array.from(node.children)
-									.filter((child) => child.tagName.toLowerCase() === 'li')
-									.map((item) =>
-										Array.from(item.childNodes)
-											.map(serializeInlineNodeToWiki)
-											.join('')
-											.trim()
-									)
-									.filter((item) => item.length > 0);
-								return items.map((item) => '* ' + item).join('\\n');
-							}
-							case 'ol': {
-								const items = Array.from(node.children)
-									.filter((child) => child.tagName.toLowerCase() === 'li')
-									.map((item) =>
-										Array.from(item.childNodes)
-											.map(serializeInlineNodeToWiki)
-											.join('')
-											.trim()
-									)
-									.filter((item) => item.length > 0);
-								return items.map((item) => '# ' + item).join('\\n');
-							}
-							case 'pre': {
-								const codeContent = (node.textContent || '').replace(/\\r/g, '').trimEnd();
-								return codeContent ? '{code}\\n' + codeContent + '\\n{code}' : '';
-							}
-							case 'p':
-							case 'div':
-							case 'section':
-								return inline;
-							default:
-								return inline;
-						}
-					};
-					const serializeDescriptionHtmlToWiki = (html) => {
-						const container = document.createElement('div');
-						container.innerHTML = html || '';
-						const blocks = Array.from(container.childNodes)
-							.map(serializeBlockNodeToWiki)
-							.map((block) => block.trim())
-							.filter((block) => block.length > 0);
-						if (blocks.length === 0) {
-							return '';
-						}
-						return normalizeDescriptionText(blocks.join('\\n\\n'));
-					};
-					const applyDescriptionFormatting = (input, action) => {
-						if (!input || input.getAttribute('contenteditable') !== 'true') {
-							return;
-						}
-						input.focus();
-						switch (action) {
-							case 'bold':
-								document.execCommand('bold');
-								break;
-							case 'italic':
-								document.execCommand('italic');
-								break;
-							case 'underline':
-								document.execCommand('underline');
-								break;
-							case 'strike':
-								document.execCommand('strikeThrough');
-								break;
-							case 'h2':
-								document.execCommand('formatBlock', false, 'h2');
-								break;
-							case 'bullet':
-								document.execCommand('insertUnorderedList');
-								break;
-							case 'number':
-								document.execCommand('insertOrderedList');
-								break;
-							case 'quote':
-								document.execCommand('formatBlock', false, 'blockquote');
-								break;
-							case 'link': {
-								const url = window.prompt('Enter URL');
-								if (url && url.trim()) {
-									document.execCommand('createLink', false, url.trim());
-								}
-								break;
-							}
-							case 'code': {
-								const selection = window.getSelection();
-								if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-									document.execCommand('insertHTML', false, '<code>code</code>');
-								} else {
-									const range = selection.getRangeAt(0);
-									const code = document.createElement('code');
-									code.textContent = selection.toString();
-									range.deleteContents();
-									range.insertNode(code);
-									selection.removeAllRanges();
-									const nextRange = document.createRange();
-									nextRange.selectNodeContents(code);
-									selection.addRange(nextRange);
-								}
-								break;
-							}
-							case 'codeblock': {
-								const selection = window.getSelection();
-								const pre = document.createElement('pre');
-								if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-									pre.textContent = 'code';
-									document.execCommand('insertHTML', false, pre.outerHTML);
-								} else {
-									pre.textContent = selection.toString();
-									const range = selection.getRangeAt(0);
-									range.deleteContents();
-									range.insertNode(pre);
-								}
-								break;
-							}
-							default:
-								break;
-						}
-					};
 					const descriptionDisplay = descriptionBlock.querySelector('.jira-description-display');
-					const descriptionPreview = descriptionBlock.querySelector('.jira-description-preview');
 					const descriptionEditor = descriptionBlock.querySelector('.jira-description-editor');
 					const descriptionHost = descriptionBlock.querySelector('.jira-description-editor [data-jira-rich-editor]');
 					const descriptionValue = descriptionBlock.querySelector('#issue-description-input');
@@ -1555,12 +1258,6 @@ export class JiraWebviewPanel {
 					if (descriptionDisplay) {
 						descriptionDisplay.addEventListener('click', () => {
 							logDebug('description.clickDisplay', { issueKey });
-							openDescriptionEditor();
-						});
-					}
-					if (descriptionPreview) {
-						descriptionPreview.addEventListener('click', () => {
-							logDebug('description.clickPreview', { issueKey });
 							openDescriptionEditor();
 						});
 					}
@@ -1762,8 +1459,8 @@ export class JiraWebviewPanel {
 					if (!editCommentId) {
 						return;
 					}
-					const rawEl = form.querySelector('.jira-rich-editor-raw');
-					const body = rawEl?.value || '';
+					const valueEl = form.querySelector('.jira-rich-editor-value');
+					const body = valueEl?.value || '';
 					if (!body.trim()) {
 						return;
 					}
@@ -1771,19 +1468,17 @@ export class JiraWebviewPanel {
 					if (saveButton) { saveButton.disabled = true; }
 					vscode.postMessage({ type: 'saveEditComment', commentId: editCommentId, body, format: 'wiki' });
 				});
-				const editor = form.querySelector('.jira-rich-editor');
-				if (editor) {
-					const rawEl = editor.querySelector('.jira-rich-editor-raw');
-					const saveButton = form.querySelector('.comment-edit-save');
-					if (rawEl && saveButton) {
-						const updateSaveState = () => {
-							const pending = saveButton.textContent?.includes('Saving');
-							const hasText = rawEl.value.trim().length > 0;
-							saveButton.disabled = pending || !hasText;
-						};
-						rawEl.addEventListener('input', updateSaveState);
-						updateSaveState();
-					}
+				const editorHost = form.querySelector('[data-jira-rich-editor]');
+				const valueEl = form.querySelector('.jira-rich-editor-value');
+				const saveButton = form.querySelector('.comment-edit-save');
+				if (editorHost && valueEl && saveButton) {
+					const updateSaveState = () => {
+						const pending = saveButton.textContent?.includes('Saving');
+						const hasText = valueEl.value.trim().length > 0;
+						saveButton.disabled = pending || !hasText;
+					};
+					editorHost.addEventListener('input', updateSaveState);
+					updateSaveState();
 				}
 			});
 			const refreshButton = document.querySelector('.comment-refresh');
@@ -1834,9 +1529,7 @@ export class JiraWebviewPanel {
 	const statusPending = state.statusPending ?? false;
 	const statusError = state.statusError;
 	const sharedRichTextEditorStyles = RichTextEditorView.renderStyles();
-	const richTextEditorStyles = renderRichTextEditorStyles();
 	const richTextEditorScriptTag = renderRichTextEditorScriptTag(webview, nonce);
-	const richTextEditorBootstrapScript = renderRichTextEditorBootstrapScript();
 	const statusPickerStyles = renderStatusPickerStylesV2();
 	const statusPickerBootstrapScript = renderStatusPickerBootstrapScriptV2(
 		JiraWebviewPanel.buildStatusIconFallbacks(webview)
@@ -2162,7 +1855,6 @@ export class JiraWebviewPanel {
 \t\t}
 \t\t${statusPickerStyles}
 \t\t${sharedRichTextEditorStyles}
-\t\t${richTextEditorStyles}
 \t\t${ParentIssuePickerOverlay.renderStyles()}
 \t\t${AssigneePickerOverlay.renderStyles()}
 \t\ta {
@@ -2258,9 +1950,7 @@ export class JiraWebviewPanel {
 \t\t\tconst vscode = acquireVsCodeApi();
 \t\t\t${ParentIssuePickerOverlay.renderBootstrapScript()}
 \t\t\t${AssigneePickerOverlay.renderBootstrapScript()}
-			${richTextEditorBootstrapScript}
 			${statusPickerBootstrapScript}
-			initializeJiraRichTextEditors(document);
 			window.initializeJiraRichTextEditors?.(document);
 			initializeJiraStatusPickers(document, vscode);
 \t\t\tconst form = document.getElementById('create-issue-form');
@@ -2459,16 +2149,6 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 	return htmlToPlainText(renderedContent);
 }
 
-	static deriveEditableDescriptionHtml(renderedContent: string | undefined, fallbackText: string): string {
-	if (renderedContent && renderedContent.trim().length > 0) {
-		return renderedContent;
-	}
-	if (!fallbackText) {
-		return '';
-	}
-	return `<p>${HtmlHelper.escapeHtml(fallbackText).replace(/\r?\n/g, '<br />')}</p>`;
-}
-
 	static htmlToPlainText(html: string): string {
 	const withStructure = html
 		.replace(/<\s*br\s*\/?>/gi, '\n')
@@ -2499,235 +2179,6 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 		});
 }
 
-	static renderRichTextEditor(options: RichTextEditorRenderOptions): string {
-	const disabledAttr = options.disabled ? 'disabled' : '';
-	const wrapperClasses = ['jira-rich-editor'];
-	if (options.editorClassName) {
-		wrapperClasses.push(options.editorClassName);
-	}
-	const inputClasses = ['jira-rich-editor-input'];
-	if (options.inputClassName) {
-		inputClasses.push(options.inputClassName);
-	}
-	const nameAttr = options.name ? `name="${HtmlHelper.escapeAttribute(options.name)}"` : '';
-	const rows = Math.max(3, options.minRows ?? 6);
-	const label = options.ariaLabel ?? 'Rich text input';
-	const escapedValue = HtmlHelper.escapeHtml(options.value);
-	return `<div class="${wrapperClasses.join(' ')}" data-disabled="${options.disabled ? 'true' : 'false'}" data-editor-id="${HtmlHelper.escapeAttribute(options.editorId)}">
-		<div class="jira-rich-editor-toolbar" role="toolbar" aria-label="${HtmlHelper.escapeAttribute(label)} formatting">
-			<button type="button" class="jira-rich-editor-action" data-action="bold" title="Bold (Ctrl+B)" ${disabledAttr}><span class="fmt-bold">B</span></button>
-			<button type="button" class="jira-rich-editor-action" data-action="italic" title="Italic (Ctrl+I)" ${disabledAttr}><span class="fmt-italic">I</span></button>
-			<button type="button" class="jira-rich-editor-action" data-action="underline" title="Underline (Ctrl+U)" ${disabledAttr}><span class="fmt-underline">U</span></button>
-			<button type="button" class="jira-rich-editor-action" data-action="strike" title="Strikethrough" ${disabledAttr}><span class="fmt-strike">S</span></button>
-			<button type="button" class="jira-rich-editor-action" data-action="code" title="Inline code" ${disabledAttr}>{ }</button>
-			<button type="button" class="jira-rich-editor-action" data-action="h2" title="Heading" ${disabledAttr}>H2</button>
-			<button type="button" class="jira-rich-editor-action" data-action="bullet" title="Bulleted list" ${disabledAttr}>• List</button>
-			<button type="button" class="jira-rich-editor-action" data-action="number" title="Numbered list" ${disabledAttr}>1. List</button>
-			<button type="button" class="jira-rich-editor-action" data-action="quote" title="Quote" ${disabledAttr}>&ldquo; Quote</button>
-			<button type="button" class="jira-rich-editor-action" data-action="codeblock" title="Code block" ${disabledAttr}>Code</button>
-			<button type="button" class="jira-rich-editor-action" data-action="link" title="Link" ${disabledAttr}>Link</button>
-			<button type="button" class="jira-rich-editor-action jira-rich-editor-toggle-raw" data-action="toggleRaw" title="Toggle raw wiki markup" ${disabledAttr}>&lt;/&gt;</button>
-		</div>
-		<div class="jira-rich-editor-visual" contenteditable="${options.disabled ? 'false' : 'true'}" data-placeholder="${HtmlHelper.escapeAttribute(options.placeholder)}" id="${HtmlHelper.escapeAttribute(options.editorId)}-visual"></div>
-		<textarea id="${HtmlHelper.escapeAttribute(options.editorId)}" class="${inputClasses.join(' ')} jira-rich-editor-raw" ${nameAttr} rows="${rows}" placeholder="${HtmlHelper.escapeAttribute(options.placeholder)}" ${disabledAttr} style="display:none;">${escapedValue}</textarea>
-	</div>`;
-}
-
-	static renderRichTextEditorStyles(): string {
-	return `
-	.jira-rich-editor {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-	.jira-rich-editor-toolbar {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 4px;
-		padding: 4px;
-		border: 1px solid var(--vscode-input-border);
-		border-radius: 4px 4px 0 0;
-		background: var(--vscode-editor-background);
-	}
-	.jira-rich-editor-action {
-		border-radius: 3px;
-		border: 1px solid transparent;
-		background: transparent;
-		color: var(--vscode-foreground);
-		padding: 4px 7px;
-		cursor: pointer;
-		font-size: 0.85em;
-		line-height: 1.2;
-		min-width: 28px;
-		text-align: center;
-	}
-	.jira-rich-editor-action:hover:not(:disabled) {
-		background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1));
-		border-color: var(--vscode-input-border);
-	}
-	.jira-rich-editor-action:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-	.jira-rich-editor-action.active {
-		background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.15));
-		border-color: var(--vscode-focusBorder);
-	}
-	.jira-rich-editor-toggle-raw.active {
-		background: var(--vscode-button-background);
-		color: var(--vscode-button-foreground);
-		border-color: transparent;
-	}
-	.jira-rich-editor-action .fmt-bold {
-		font-weight: 700;
-	}
-	.jira-rich-editor-action .fmt-italic {
-		font-style: italic;
-	}
-	.jira-rich-editor-action .fmt-underline {
-		text-decoration: underline;
-		text-decoration-thickness: 2px;
-	}
-	.jira-rich-editor-action .fmt-strike {
-		text-decoration: line-through;
-		text-decoration-thickness: 2px;
-	}
-	.jira-rich-editor-visual {
-		display: block;
-		width: 100%;
-		min-height: 120px;
-		background: var(--vscode-input-background);
-		color: var(--vscode-input-foreground);
-		border: 1px solid var(--vscode-input-border);
-		border-radius: 0 0 4px 4px;
-		padding: 8px 10px;
-		font-family: var(--vscode-font-family);
-		font-size: var(--vscode-font-size);
-		line-height: 1.5;
-		caret-color: var(--vscode-input-foreground);
-		overflow-y: auto;
-		white-space: pre-wrap;
-		word-wrap: break-word;
-	}
-	.jira-rich-editor-visual.hidden {
-		display: none;
-	}
-	.jira-rich-editor-visual:empty::before {
-		content: attr(data-placeholder);
-		color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
-		pointer-events: none;
-	}
-	.jira-rich-editor-visual:focus {
-		outline: none;
-		border-color: var(--vscode-focusBorder);
-		box-shadow: 0 0 0 1px var(--vscode-focusBorder);
-	}
-	.jira-rich-editor-visual[contenteditable="false"] {
-		opacity: 0.7;
-		cursor: not-allowed;
-	}
-	.jira-rich-editor-visual strong,
-	.jira-rich-editor-visual b {
-		font-weight: 700;
-	}
-	.jira-rich-editor-visual em,
-	.jira-rich-editor-visual i {
-		font-style: italic;
-	}
-	.jira-rich-editor-visual u {
-		text-decoration: underline;
-		text-decoration-thickness: 2px;
-	}
-	.jira-rich-editor-visual s,
-	.jira-rich-editor-visual strike {
-		text-decoration: line-through;
-	}
-	.jira-rich-editor-visual code {
-		background: var(--vscode-textCodeBlock-background, rgba(255,255,255,0.1));
-		padding: 1px 5px;
-		border-radius: 3px;
-		font-family: var(--vscode-editor-font-family, monospace);
-		font-size: 0.9em;
-	}
-	.jira-rich-editor-visual pre {
-		background: var(--vscode-textCodeBlock-background, rgba(255,255,255,0.1));
-		padding: 10px;
-		border-radius: 4px;
-		overflow-x: auto;
-		font-family: var(--vscode-editor-font-family, monospace);
-		font-size: 0.9em;
-		line-height: 1.4;
-		margin: 4px 0;
-	}
-	.jira-rich-editor-visual h2 {
-		font-size: 1.4em;
-		font-weight: 700;
-		margin: 0.4em 0 0.2em 0;
-		line-height: 1.3;
-	}
-	.jira-rich-editor-visual blockquote {
-		border-left: 3px solid var(--vscode-textSeparator-foreground, rgba(255,255,255,0.3));
-		padding-left: 12px;
-		margin: 4px 0;
-		color: var(--vscode-descriptionForeground);
-	}
-	.jira-rich-editor-visual ul,
-	.jira-rich-editor-visual ol {
-		margin: 4px 0;
-		padding-left: 1.5em;
-	}
-	.jira-rich-editor-visual a {
-		color: var(--vscode-textLink-foreground, #3794ff);
-	}
-	.jira-rich-editor-raw {
-		display: none;
-		width: 100%;
-		min-height: 120px;
-		background: var(--vscode-input-background);
-		color: var(--vscode-input-foreground);
-		border: 1px solid var(--vscode-input-border);
-		border-radius: 0 0 4px 4px;
-		padding: 8px 10px;
-		font-family: var(--vscode-editor-font-family, monospace);
-		font-size: var(--vscode-font-size);
-		line-height: 1.45;
-		resize: vertical;
-	}
-	.jira-rich-editor-raw.visible {
-		display: block;
-	}
-	.jira-rich-editor-raw:focus {
-		outline: none;
-		border-color: var(--vscode-focusBorder);
-		box-shadow: 0 0 0 1px var(--vscode-focusBorder);
-	}
-	.jira-rich-editor-input {
-		width: 100%;
-		background: var(--vscode-input-background);
-		color: var(--vscode-input-foreground);
-		border: 1px solid var(--vscode-input-border);
-		border-radius: 0 0 4px 4px;
-		padding: 8px;
-		font-family: var(--vscode-font-family);
-		font-size: var(--vscode-font-size);
-		line-height: 1.45;
-		caret-color: var(--vscode-input-foreground);
-	}
-	.jira-rich-editor-input::placeholder {
-		color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
-		opacity: 1;
-	}
-	.jira-rich-editor-input:focus {
-		outline: none;
-		border-color: var(--vscode-focusBorder);
-		box-shadow: 0 0 0 1px var(--vscode-focusBorder);
-	}
-	.jira-rich-editor-input:disabled {
-		opacity: 0.7;
-		cursor: not-allowed;
-	}
-	`;
-}
 
 	/**
 	 * Renders the external browser bundle tag for the rich text editor scaffold.
@@ -2740,322 +2191,6 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 		return `<script nonce="${HtmlHelper.escapeAttribute(nonce)}" src="${HtmlHelper.escapeAttribute(scriptSrc)}"></script>`;
 	}
 
-	static renderRichTextEditorBootstrapScript(): string {
-	return `
-				// --- Wiki <-> HTML conversion ---
-				const wikiToHtml = (wiki) => {
-					if (!wiki) return '';
-					let lines = wiki.split('\\n');
-					let html = '';
-					let inCodeBlock = false;
-					let codeBlockContent = '';
-					let inList = null; // 'ul' or 'ol'
-					let listItems = [];
-
-					const flushList = () => {
-						if (inList && listItems.length > 0) {
-							html += '<' + inList + '>' + listItems.join('') + '</' + inList + '>';
-							inList = null;
-							listItems = [];
-						}
-					};
-
-					for (let i = 0; i < lines.length; i++) {
-						let line = lines[i];
-
-						if (inCodeBlock) {
-							if (line.trim().startsWith('{code}') || line.trim() === '{code}') {
-								inCodeBlock = false;
-								html += '<pre>' + escapeHtml(codeBlockContent) + '</pre>';
-								codeBlockContent = '';
-							} else {
-								codeBlockContent += (codeBlockContent ? '\\n' : '') + line;
-							}
-							continue;
-						}
-
-						if (line.trim().startsWith('{code}')) {
-							flushList();
-							inCodeBlock = true;
-							codeBlockContent = line.trim().replace(/^\\{code\\}/, '');
-							continue;
-						}
-
-						// Headings
-						const h2Match = line.match(/^h2\\.\\s+(.+)$/);
-						const h3Match = line.match(/^h3\\.\\s+(.+)$/);
-						if (h2Match) { flushList(); html += '<h2>' + inlineWikiToHtml(h2Match[1]) + '</h2>'; continue; }
-						if (h3Match) { flushList(); html += '<h3>' + inlineWikiToHtml(h3Match[1]) + '</h3>'; continue; }
-
-						// Blockquote
-						if (line.startsWith('bq. ')) { flushList(); html += '<blockquote>' + inlineWikiToHtml(line.slice(4)) + '</blockquote>'; continue; }
-
-						// Bullet list
-						if (line.startsWith('* ')) {
-							if (inList === 'ol') flushList();
-							inList = 'ul';
-							listItems.push('<li>' + inlineWikiToHtml(line.slice(2)) + '</li>');
-							continue;
-						}
-
-						// Numbered list
-						if (/^#\\s/.test(line)) {
-							if (inList === 'ul') flushList();
-							inList = 'ol';
-							listItems.push('<li>' + inlineWikiToHtml(line.slice(2)) + '</li>');
-							continue;
-						}
-
-						// Regular paragraph
-						flushList();
-						if (line.trim() === '') { continue; }
-						html += '<p>' + inlineWikiToHtml(line) + '</p>';
-					}
-					flushList();
-					if (inCodeBlock) { html += '<pre>' + escapeHtml(codeBlockContent) + '</pre>'; }
-					return html;
-				};
-
-				const escapeHtml = (text) => text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-				const inlineWikiToHtml = (text) => {
-					let result = text;
-					result = result.replace(/\\{code\\}([^]*?)\\{code\\}/g, '<code>$1</code>');
-					result = result.replace(/\\{\\{(.*?)\\}\\}/g, '<code>$1</code>');
-					result = result.replace(/\\*([^*]+)\\*/g, '<strong>$1</strong>');
-					result = result.replace(/_([^_]+)_/g, '<em>$1</em>');
-					result = result.replace(/\\+([^+]+)\\+/g, '<u>$1</u>');
-					result = result.replace(/-([^\\s][^-]*[^-]|[^-])-/g, '<s>$1</s>');
-					result = result.replace(/\\[([^|\\]]+)\\|([^\\]]+)\\]/g, '<a href="$2" target="_blank">$1</a>');
-					return result;
-				};
-
-				const htmlToWiki = (html) => {
-					if (!html) return '';
-					let wiki = html;
-					// Preserve code blocks
-					wiki = wiki.replace(/<pre[^>]*>([\\s\\S]*?)<\\/pre>/gi, (_m, content) => {
-						const cleaned = content.replace(/<br\\s*\\/?>/gi, '\\n').replace(/<[^>]+>/g, '');
-						return '{code}' + decodeEntities(cleaned) + '{code}';
-					});
-					wiki = wiki.replace(/<code[^>]*>(.*?)<\\/code>/gi, '{{$1}}');
-					wiki = wiki.replace(/<h2[^>]*>(.*?)<\\/h2>/gi, 'h2. $1');
-					wiki = wiki.replace(/<h3[^>]*>(.*?)<\\/h3>/gi, 'h3. $1');
-					wiki = wiki.replace(/<blockquote[^>]*>(.*?)<\\/blockquote>/gi, 'bq. $1');
-					wiki = wiki.replace(/<strong[^>]*>(.*?)<\\/strong>/gi, '*$1*');
-					wiki = wiki.replace(/<b[^>]*>(.*?)<\\/b>/gi, '*$1*');
-					wiki = wiki.replace(/<em[^>]*>(.*?)<\\/em>/gi, '_$1_');
-					wiki = wiki.replace(/<i[^>]*>(.*?)<\\/i>/gi, '_$1_');
-					wiki = wiki.replace(/<u[^>]*>(.*?)<\\/u>/gi, '+$1+');
-					wiki = wiki.replace(/<s[^>]*>(.*?)<\\/s>/gi, '-$1-');
-					wiki = wiki.replace(/<strike[^>]*>(.*?)<\\/strike>/gi, '-$1-');
-					wiki = wiki.replace(/<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\\/a>/gi, '[$2|$1]');
-					wiki = wiki.replace(/<li[^>]*>(.*?)<\\/li>/gi, '$1');
-					wiki = wiki.replace(/<br\\s*\\/?>/gi, '\\n');
-					wiki = wiki.replace(/<p[^>]*>(.*?)<\\/p>/gi, '$1');
-					wiki = wiki.replace(/<div[^>]*>(.*?)<\\/div>/gi, '$1');
-					wiki = wiki.replace(/<[^>]+>/g, '');
-					wiki = decodeEntities(wiki);
-					return wiki.trim();
-				};
-
-				const decodeEntities = (text) => {
-					const el = document.createElement('textarea');
-					el.innerHTML = text;
-					return el.value;
-				};
-
-				const syncVisualToRaw = (visualEl, rawEl) => {
-					const wiki = htmlToWiki(visualEl.innerHTML);
-					if (rawEl.value !== wiki) {
-						rawEl.value = wiki;
-						rawEl.dispatchEvent(new Event('input', { bubbles: true }));
-					}
-				};
-
-				const syncRawToVisual = (rawEl, visualEl) => {
-					const html = wikiToHtml(rawEl.value);
-					visualEl.innerHTML = html;
-				};
-
-				// --- Editor actions using document.execCommand ---
-				const execAction = (command, value) => {
-					document.execCommand(command, false, value);
-				};
-
-				const insertWikiCode = (visualEl, rawEl, wrapper) => {
-					const sel = window.getSelection();
-					if (!sel || sel.rangeCount === 0) return;
-					const range = sel.getRangeAt(0);
-					const text = range.toString() || 'code';
-					const node = document.createTextNode(wrapper.replace('{}', text));
-					range.deleteContents();
-					range.insertNode(node);
-					range.setStart(node, wrapper.indexOf('{}'));
-					range.setEnd(node, wrapper.indexOf('{}') + text.length);
-					sel.removeAllRanges();
-					sel.addRange(range);
-					syncVisualToRaw(visualEl, rawEl);
-				};
-
-				const insertWikiBlock = (visualEl, rawEl, prefix, suffix, placeholder) => {
-					const sel = window.getSelection();
-					if (!sel || sel.rangeCount === 0) return;
-					const range = sel.getRangeAt(0);
-					const text = range.toString() || placeholder;
-					const full = prefix + text + suffix;
-					const node = document.createTextNode(full);
-					range.deleteContents();
-					range.insertNode(node);
-					range.setStart(node, prefix.length);
-					range.setEnd(node, prefix.length + text.length);
-					sel.removeAllRanges();
-					sel.addRange(range);
-					syncVisualToRaw(visualEl, rawEl);
-				};
-
-				const insertHeading = (visualEl, rawEl) => {
-					execAction('formatBlock', 'h2');
-					syncVisualToRaw(visualEl, rawEl);
-				};
-
-				const insertBulletList = (visualEl, rawEl) => {
-					execAction('insertUnorderedList');
-					syncVisualToRaw(visualEl, rawEl);
-				};
-
-				const insertNumberedList = (visualEl, rawEl) => {
-					execAction('insertOrderedList');
-					syncVisualToRaw(visualEl, rawEl);
-				};
-
-				const insertBlockquote = (visualEl, rawEl) => {
-					execAction('formatBlock', 'blockquote');
-					syncVisualToRaw(visualEl, rawEl);
-				};
-
-				const insertLink = (visualEl, rawEl) => {
-					const sel = window.getSelection();
-					const text = (sel && sel.rangeCount > 0) ? sel.toString() : '';
-					const url = prompt('Enter URL:', 'https://');
-					if (url) {
-						if (text) {
-							execAction('createLink', url);
-						} else {
-							const node = document.createElement('a');
-							node.href = url;
-							node.textContent = url;
-							node.target = '_blank';
-							if (sel && sel.rangeCount > 0) {
-								sel.getRangeAt(0).insertNode(node);
-							}
-						}
-						syncVisualToRaw(visualEl, rawEl);
-					}
-				};
-
-				const isCommandActive = (command) => {
-					try { return document.queryCommandState(command); } catch { return false; }
-				};
-
-				const updateToolbarState = (editor) => {
-					editor.querySelectorAll('.jira-rich-editor-action').forEach(btn => {
-						const action = btn.dataset.action;
-						const cmdMap = { bold: 'bold', italic: 'italic', underline: 'underline', strike: 'strikeThrough' };
-						if (cmdMap[action]) {
-							btn.classList.toggle('active', isCommandActive(cmdMap[action]));
-						}
-					});
-				};
-
-				const actionHandlers = {
-					bold: (v, r) => { execAction('bold'); syncVisualToRaw(v, r); },
-					italic: (v, r) => { execAction('italic'); syncVisualToRaw(v, r); },
-					underline: (v, r) => { execAction('underline'); syncVisualToRaw(v, r); },
-					strike: (v, r) => { execAction('strikeThrough'); syncVisualToRaw(v, r); },
-					code: (v, r) => insertWikiCode(v, r, '{{}}'),
-					h2: insertHeading,
-					bullet: insertBulletList,
-					number: insertNumberedList,
-					quote: insertBlockquote,
-					codeblock: (v, r) => insertWikiBlock(v, r, '{code}\\n', '\\n{code}', 'code here'),
-					link: insertLink,
-					toggleRaw: (v, r, editor) => {
-						const isRaw = editor.classList.contains('raw-mode');
-						const toggleBtn = editor.querySelector('.jira-rich-editor-toggle-raw');
-						if (isRaw) {
-							editor.classList.remove('raw-mode');
-							v.style.display = 'block';
-							r.style.display = 'none';
-							syncRawToVisual(r, v);
-							toggleBtn?.classList.remove('active');
-							v.focus();
-						} else {
-							syncVisualToRaw(v, r);
-							editor.classList.add('raw-mode');
-							v.style.display = 'none';
-							r.style.display = 'block';
-							toggleBtn?.classList.add('active');
-							r.focus();
-						}
-					},
-				};
-
-				const initializeJiraRichTextEditors = (root) => {
-					const editorNodes = Array.from((root || document).querySelectorAll('.jira-rich-editor'));
-					editorNodes.forEach((editor) => {
-						const visualEl = editor.querySelector('.jira-rich-editor-visual');
-						const rawEl = editor.querySelector('.jira-rich-editor-input, .jira-rich-editor-raw');
-						if (!visualEl || !rawEl) return;
-
-						// Initialize visual from raw value
-						const initialWiki = rawEl.value || '';
-						if (initialWiki) {
-							visualEl.innerHTML = wikiToHtml(initialWiki);
-						}
-
-						// Sync on every input
-						visualEl.addEventListener('input', () => {
-							if (!editor.classList.contains('raw-mode')) {
-								syncVisualToRaw(visualEl, rawEl);
-							}
-							updateToolbarState(editor);
-						});
-						visualEl.addEventListener('keyup', () => updateToolbarState(editor));
-						visualEl.addEventListener('mouseup', () => updateToolbarState(editor));
-
-						// Keyboard shortcuts
-						visualEl.addEventListener('keydown', (e) => {
-							if (e.ctrlKey || e.metaKey) {
-								if (e.key === 'b') { e.preventDefault(); actionHandlers.bold(visualEl, rawEl); }
-								if (e.key === 'i') { e.preventDefault(); actionHandlers.italic(visualEl, rawEl); }
-								if (e.key === 'u') { e.preventDefault(); actionHandlers.underline(visualEl, rawEl); }
-							}
-						});
-
-						// Raw textarea sync
-						rawEl.addEventListener('input', () => {
-							if (editor.classList.contains('raw-mode')) {
-								syncRawToVisual(rawEl, visualEl);
-							}
-						});
-
-						// Toolbar buttons
-						editor.querySelectorAll('.jira-rich-editor-action').forEach((btn) => {
-							btn.addEventListener('click', () => {
-								const action = btn.dataset.action;
-								const handler = actionHandlers[action];
-								if (handler) {
-									handler(visualEl, rawEl, editor);
-									visualEl.focus();
-									updateToolbarState(editor);
-								}
-							});
-						});
-					});
-				};
-	`;
-}
 
 	static renderCommentsSection(options?: IssuePanelOptions): string {
 	const comments = options?.comments ?? [];
@@ -3076,7 +2211,6 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 		listContent = `${loadingBanner}<ul class="comment-list">${renderCommentList(comments, options)}</ul>`;
 	}
 
-	const refreshLabel = pending ? 'Refreshing…' : 'Refresh';
 	const refreshDisabledAttr = pending ? 'disabled' : '';
 	return `<div class="section comments-section">
 		<div class="comments-header">
@@ -3295,15 +2429,13 @@ static renderCommentEditForm(comment: JiraIssueComment, options?: IssuePanelOpti
 		? `<div class="comment-edit-error">${HtmlHelper.escapeHtml(options.commentSubmitError)}</div>`
 		: '<div class="comment-edit-error hidden"></div>';
 	return `<form class="comment-edit-form" data-edit-comment-id="${HtmlHelper.escapeAttribute(comment.id ?? '')}">
-		${renderRichTextEditor({
-			editorId: `edit-comment-${comment.id}`,
+		${RichTextEditorView.render({
+			fieldId: `edit-comment-${comment.id}`,
+			fieldName: 'commentEditDraft',
 			value: draftValue,
+			plainValue: draftValue,
 			placeholder: 'Edit your comment',
 			disabled: pending,
-			minRows: 6,
-			inputClassName: 'comment-input',
-			editorClassName: 'comment-editor',
-			ariaLabel: 'Edit comment',
 		})}
 		<div class="comment-edit-controls">
 			<button type="submit" class="comment-edit-save" ${buttonDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(
@@ -4621,13 +3753,9 @@ const renderParentMetadataSection = JiraWebviewPanel.renderParentMetadataSection
 const renderChildrenSection = JiraWebviewPanel.renderChildrenSection;
 const renderDescriptionSection = JiraWebviewPanel.renderDescriptionSection;
 const deriveEditableDescriptionText = JiraWebviewPanel.deriveEditableDescriptionText;
-const deriveEditableDescriptionHtml = JiraWebviewPanel.deriveEditableDescriptionHtml;
 const htmlToPlainText = JiraWebviewPanel.htmlToPlainText;
 const decodeHtmlEntities = JiraWebviewPanel.decodeHtmlEntities;
-const renderRichTextEditor = JiraWebviewPanel.renderRichTextEditor;
-const renderRichTextEditorStyles = JiraWebviewPanel.renderRichTextEditorStyles;
 const renderRichTextEditorScriptTag = JiraWebviewPanel.renderRichTextEditorScriptTag;
-const renderRichTextEditorBootstrapScript = JiraWebviewPanel.renderRichTextEditorBootstrapScript;
 const renderCommentsSection = JiraWebviewPanel.renderCommentsSection;
 const renderCommentList = JiraWebviewPanel.renderCommentList;
 const renderCommentItem = JiraWebviewPanel.renderCommentItem;

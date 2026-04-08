@@ -140,12 +140,14 @@ afterEach(() => {
 });
 
 describe('Rich text editor WYSIWYG behavior', () => {
-	it('loads the rich text editor bundle as an external webview script', () => {
+	it('does not render the legacy execCommand bootstrap path', () => {
 		const html = RichTextEditorHarness.renderIssuePanelHtml({
 			comments: [RichTextEditorHarness.createComment()],
 		});
 
 		expect(html).toContain('dist/webview/rich-text-editor.js');
+		expect(html).not.toContain('document.execCommand');
+		expect(html).not.toContain('initializeJiraRichTextEditors(document);');
 		expect(html).toContain('window.initializeJiraRichTextEditors?.(document);');
 	});
 

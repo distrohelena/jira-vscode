@@ -363,6 +363,36 @@ describe('Issue panel editor interactions', () => {
 		expect(messages.some((message) => message?.type === 'cancelCommentReply')).toBe(true);
 	});
 
+	it('renders the shared editor in comment edit mode and saves the hidden wiki value', () => {
+		const { dom, messages, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(
+			{
+				comments: [IssuePanelTestHarness.createComment({ id: 'comment-42' })],
+				commentEditingId: 'comment-42',
+			},
+			undefined
+		);
+		expect(scriptErrors).toEqual([]);
+		const editForm = dom.window.document.querySelector('.comment-edit-form') as HTMLFormElement | null;
+		const editEditor = editForm?.querySelector('[data-jira-rich-editor]') as HTMLElement | null;
+		const hiddenValueField = editForm?.querySelector('.jira-rich-editor-value') as HTMLTextAreaElement | null;
+		const visualSurface = editForm?.querySelector('.jira-rich-editor-surface') as HTMLElement | null;
+		expect(editForm).toBeTruthy();
+		expect(editEditor).toBeTruthy();
+		expect(editForm?.querySelector('.jira-rich-editor-raw')).toBeNull();
+		expect(hiddenValueField).toBeTruthy();
+		expect(visualSurface).toBeTruthy();
+
+		hiddenValueField!.value = '*Edited comment body*';
+		visualSurface!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+		editForm!.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+		const saveMessage = messages.find((message) => message?.type === 'saveEditComment');
+		expect(saveMessage).toBeTruthy();
+		expect(saveMessage.commentId).toBe('comment-42');
+		expect(saveMessage.body).toBe('*Edited comment body*');
+		expect(saveMessage.format).toBe('wiki');
+	});
+
 	it('opens the parent picker modal from the issue parent section', () => {
 		const { dom, messages, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
 			parent: {
