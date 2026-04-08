@@ -68,7 +68,6 @@ export class RichTextEditorController {
 		this.hiddenValueField = this.resolveHiddenValueField();
 		this.currentMode = this.resolveInitialMode();
 		this.behavior = new RichTextEditorBehavior({
-			hostElement: this.hostElement,
 			mountedSurface: this.mountedSurface,
 			isVisualMode: () => this.currentMode === 'visual',
 			isDisabled: () => this.hiddenValueField.disabled,
@@ -92,6 +91,7 @@ export class RichTextEditorController {
 	 * Destroys the underlying Tiptap editor when the host leaves the document.
 	 */
 	destroy(): void {
+		this.toolbarController.destroy();
 		this.behavior.destroy();
 		this.editor.destroy();
 	}
@@ -251,7 +251,6 @@ export class RichTextEditorController {
 			content: JiraWikiDocumentCodec.convertWikiToEditorHtml(initialWiki),
 			editable: !this.hiddenValueField.disabled,
 			editorProps: {
-				...this.behavior.createEditorProps(),
 				attributes: this.createMountedEditorAttributes(),
 			},
 			extensions: [

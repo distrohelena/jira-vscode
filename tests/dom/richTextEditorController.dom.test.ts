@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { RichTextEditorController } from '../../src/views/webview/editors/rich-text-editor.controller';
 import { RichTextEditorDomTestHarness } from './support/richTextEditorDomTestHarness';
 
 describe('RichTextEditorBrowserBootstrap', () => {
@@ -175,6 +176,36 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.mouseDownUpClick(harness.mountedSurface);
 
 		expect(document.activeElement).toBe(harness.getMountedEditor());
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+	});
+
+	it('stops redirecting mounted-surface clicks after the controller is destroyed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+			placeholder: 'What needs to be done?',
+		});
+		const controller = new RichTextEditorController(harness.host);
+
+		const beforeDestroyMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		harness.mountedSurface.dispatchEvent(beforeDestroyMouseDown);
+		expect(beforeDestroyMouseDown.defaultPrevented).toBe(true);
+		expect(document.activeElement).toBe(harness.getMountedEditor());
+
+		controller.destroy();
+
+		const outsideButton = document.createElement('button');
+		document.body.appendChild(outsideButton);
+		outsideButton.focus();
+
+		const afterDestroyMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		harness.mountedSurface.dispatchEvent(afterDestroyMouseDown);
+		const toolbarMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		harness.getCommandButton('bold').dispatchEvent(toolbarMouseDown);
+
+		expect(document.activeElement).toBe(outsideButton);
+		expect(afterDestroyMouseDown.defaultPrevented).toBe(false);
+		expect(toolbarMouseDown.defaultPrevented).toBe(false);
 		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
 	});
 });
