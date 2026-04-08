@@ -50,6 +50,41 @@ describe('RichTextEditorView', () => {
 		expect(styles).toMatch(/\.jira-rich-editor-plain[\s\S]*font-family:\s*monospace;/);
 	});
 
+	it('renders the same shared shell markup for comment and description surfaces', () => {
+		const commentHost = document.createElement('div');
+		commentHost.innerHTML = RichTextEditorView.render({
+			fieldId: 'comment',
+			fieldName: 'comment',
+			value: 'Comment value',
+			plainValue: 'Comment plain',
+			placeholder: 'Add a comment',
+		});
+
+		const descriptionHost = document.createElement('div');
+		descriptionHost.innerHTML = RichTextEditorView.render({
+			fieldId: 'description',
+			fieldName: 'description',
+			value: 'Description value',
+			plainValue: 'Description plain',
+			placeholder: 'Describe the issue',
+		});
+
+		const commentMarkup = commentHost.innerHTML
+			.replaceAll('Add a comment', '__PLACEHOLDER__')
+			.replaceAll('Comment plain', '__PLAIN__')
+			.replaceAll('Comment value', '__VALUE__')
+			.replaceAll('comment', '__FIELD__');
+		const descriptionMarkup = descriptionHost.innerHTML
+			.replaceAll('Describe the issue', '__PLACEHOLDER__')
+			.replaceAll('Description plain', '__PLAIN__')
+			.replaceAll('Description value', '__VALUE__')
+			.replaceAll('description', '__FIELD__');
+
+		expect(commentMarkup).toBe(descriptionMarkup);
+		expect(commentHost.querySelector('[id="comment"]')).toBeTruthy();
+		expect(descriptionHost.querySelector('[id="description"]')).toBeTruthy();
+	});
+
 	it('disables the submitted field when the host is rendered disabled', () => {
 		const host = document.createElement('div');
 		host.innerHTML = RichTextEditorView.render({
