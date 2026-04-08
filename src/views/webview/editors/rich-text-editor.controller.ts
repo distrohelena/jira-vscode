@@ -67,7 +67,7 @@ export class RichTextEditorController {
 			isCommandActive: this.isCommandActive.bind(this),
 			getCurrentMode: this.getCurrentMode.bind(this),
 			onCommandRequested: this.executeCommand.bind(this),
-			onModeRequested: this.setMode.bind(this),
+			onModeToggleRequested: this.toggleMode.bind(this),
 		});
 		this.plainTextarea.addEventListener('input', this.handlePlainTextareaInput.bind(this));
 		this.synchronizeWikiFieldsFromEditor();
@@ -163,6 +163,13 @@ export class RichTextEditorController {
 		this.currentMode = mode;
 		this.applyCurrentMode();
 		this.toolbarController.refreshState();
+	}
+
+	/**
+	 * Switches the current visible mode to the opposite surface requested by the toolbar toggle.
+	 */
+	private toggleMode(): void {
+		this.setMode(this.currentMode === 'wiki' ? 'visual' : 'wiki');
 	}
 
 	/**

@@ -25,9 +25,9 @@ export type RichTextToolbarControllerOptions = {
 	onCommandRequested: (command: RichTextToolbarCommand) => void;
 
 	/**
-	 * Switches the editor into the requested visible mode.
+	 * Requests a toggle between the visual and wiki surfaces.
 	 */
-	onModeRequested: (mode: RichTextEditorViewMode) => void;
+	onModeToggleRequested: () => void;
 };
 
 /**
@@ -50,9 +50,9 @@ export class RichTextToolbarController {
 	private readonly commandButtons: Map<RichTextToolbarCommand, HTMLButtonElement>;
 
 	/**
-	 * Stores the mode buttons keyed by their visible editor mode.
+	 * Stores the single toggle button used to switch between visual and wiki modes.
 	 */
-	private readonly modeButtons: Map<RichTextEditorViewMode, HTMLButtonElement>;
+	private readonly modeToggleButton: HTMLButtonElement;
 
 	/**
 	 * Creates a toolbar controller around one rendered toolbar host.
@@ -61,7 +61,9 @@ export class RichTextToolbarController {
 		this.toolbarElement = toolbarElement;
 		this.options = options;
 		this.commandButtons = this.resolveCommandButtons();
-		this.modeButtons = this.resolveModeButtons();
+		this.modeToggleButton = this.resolveButton(
+			'.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]'
+		);
 		this.toolbarElement.addEventListener('click', this.handleToolbarClick.bind(this));
 		this.refreshState();
 	}
@@ -75,35 +77,13 @@ export class RichTextToolbarController {
 		}
 
 		const currentMode = this.options.getCurrentMode();
-		for (const [mode, button] of this.modeButtons) {
-			button.setAttribute('aria-pressed', mode === currentMode ? 'true' : 'false');
-		}
-	}
-
-	/**
-	 * Resolves the full formatting button set required by the shared editor host.
-	 */
-	private resolveCommandButtons(): Map<RichTextToolbarCommand, HTMLButtonElement> {
-		const commands: RichTextToolbarCommand[] = ['bold', 'italic', 'underline', 'bulletList', 'orderedList', 'link'];
-		const buttons = new Map<RichTextToolbarCommand, HTMLButtonElement>();
-		for (const command of commands) {
-			buttons.set(command, this.resolveButton(`.jira-rich-editor-button[data-command="${command}"]`));
-		}
-
-		return buttons;
-	}
-
-	/**
-	 * Resolves the visual and wiki mode buttons required by the shared editor host.
-	 */
-	private resolveModeButtons(): Map<RichTextEditorViewMode, HTMLButtonElement> {
-		const modes: RichTextEditorViewMode[] = ['visual', 'wiki'];
-		const buttons = new Map<RichTextEditorViewMode, HTMLButtonElement>();
-		for (const mode of modes) {
-			buttons.set(mode, this.resolveButton(`.jira-rich-editor-mode-button[data-mode="${mode}"]`));
-		}
-
-		return buttons;
+		const targetMode = currentMode === 'wiki' ? 'visual' : 'wiki';
+		this.modeToggleButton.textContent = currentMode === 'wiki' ? 'Visual' : 'Wiki';
+		this.modeToggleButton.setAttribute('data-target-mode', targetMode);
+		this.modeToggleButton.setAttribute(
+			'aria-label',
+			currentMode === 'wiki' ? 'Switch to visual mode' : 'Switch to wiki mode'
+		);
 	}
 
 	/**
@@ -138,9 +118,8 @@ export class RichTextToolbarController {
 			return;
 		}
 
-		const mode = button.getAttribute('data-mode');
-		if (this.isViewMode(mode)) {
-			this.options.onModeRequested(mode);
+		if (button.getAttribute('data-secondary-action') === 'toggleMode') {
+			this.options.onModeToggleRequested();
 		}
 	}
 
@@ -159,9 +138,15 @@ export class RichTextToolbarController {
 	}
 
 	/**
-	 * Returns whether a string is one of the supported editor modes.
+	 * Resolves the full formatting button set required by the shared editor host.
 	 */
-	private isViewMode(mode: string | null): mode is RichTextEditorViewMode {
-		return mode === 'visual' || mode === 'wiki';
+	private resolveCommandButtons(): Map<RichTextToolbarCommand, HTMLButtonElement> {
+		const commands: RichTextToolbarCommand[] = ['bold', 'italic', 'underline', 'bulletList', 'orderedList', 'link'];
+		const buttons = new Map<RichTextToolbarCommand, HTMLButtonElement>();
+		for (const command of commands) {
+			buttons.set(command, this.resolveButton(`.jira-rich-editor-button[data-command="${command}"]`));
+		}
+
+		return buttons;
 	}
 }

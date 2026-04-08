@@ -69,14 +69,27 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		});
 
 		harness.initialize();
-		harness.initialize();
-		harness.click(harness.getModeButton('wiki'));
+		harness.click(harness.getModeToggleButton());
+		expect(harness.host.getAttribute('data-mode')).toBe('wiki');
+		expect(harness.getModeToggleButton().textContent?.trim()).toBe('Visual');
 		harness.setWikiValue('*bold* _italic_');
-		harness.click(harness.getModeButton('visual'));
+		harness.click(harness.getModeToggleButton());
 
 		expect(harness.host.getAttribute('data-mode')).toBe('visual');
 		expect(harness.mountedSurface.innerHTML).toContain('<strong>bold</strong>');
 		expect(harness.mountedSurface.innerHTML).toContain('<em>italic</em>');
 		expect(harness.hiddenValueField.value).toBe('*bold* _italic_');
+	});
+
+	it('boots against the compact shell without requiring the removed dual mode buttons', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		expect(() => harness.initialize()).not.toThrow();
+		expect(harness.host.getAttribute('data-mode')).toBe('visual');
+		expect(harness.getModeToggleButton().textContent?.trim()).toBe('Wiki');
+		expect(harness.getModeToggleButton().getAttribute('data-target-mode')).toBe('wiki');
 	});
 });

@@ -203,12 +203,14 @@ export class RichTextEditorDomTestHarness {
 	}
 
 	/**
-	 * Returns the toolbar button for a visual mode selection.
+	 * Returns the single toolbar button used to toggle between visual and wiki mode.
 	 */
-	getModeButton(mode: 'visual' | 'wiki'): HTMLButtonElement {
-		const button = this.host.querySelector(`.jira-rich-editor-mode-button[data-mode="${mode}"]`);
+	getModeToggleButton(): HTMLButtonElement {
+		const button = this.host.querySelector(
+			'.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]'
+		);
 		if (!(button instanceof HTMLButtonElement)) {
-			throw new Error(`The mode button "${mode}" was not rendered.`);
+			throw new Error('The mode toggle button was not rendered.');
 		}
 
 		return button;
