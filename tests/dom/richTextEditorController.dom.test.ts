@@ -23,6 +23,45 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toBe('Plain text value');
 	});
 
+	it('uses the hidden submitted value as the canonical startup source when fields diverge', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '*Hidden source*',
+			plainValue: 'Plain source',
+		});
+
+		harness.initialize();
+
+		expect(harness.mountedSurface.innerHTML).toContain('<strong>Hidden source</strong>');
+		expect(harness.hiddenValueField.value).toBe('*Hidden source*');
+		expect(harness.plainTextarea.value).toBe('*Hidden source*');
+	});
+
+	it('preserves the empty placeholder contract after Tiptap mounts', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+			placeholder: 'Describe the issue',
+		});
+
+		harness.initialize();
+
+		expect(harness.getMountedEditor().getAttribute('data-placeholder')).toBe('Describe the issue');
+		expect(harness.mountedSurface.getAttribute('data-editor-empty')).toBe('true');
+	});
+
+	it('preserves the disabled editor contract after Tiptap mounts', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '*Disabled value*',
+			plainValue: '*Disabled value*',
+			disabled: true,
+		});
+
+		harness.initialize();
+
+		expect(harness.getMountedEditor().getAttribute('contenteditable')).toBe('false');
+		expect(harness.mountedSurface.getAttribute('data-editor-disabled')).toBe('true');
+	});
+
 	it('round-trips wiki mode changes back into the hidden value field', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',

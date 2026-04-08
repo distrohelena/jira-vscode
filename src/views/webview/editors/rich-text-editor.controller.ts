@@ -61,6 +61,7 @@ export class RichTextEditorController {
 		this.plainTextarea = this.resolvePlainTextarea();
 		this.hiddenValueField = this.resolveHiddenValueField();
 		this.currentMode = this.resolveInitialMode();
+		this.applyMountedSurfaceState(this.resolveCanonicalWikiValue().trim().length === 0);
 		this.editor = this.createEditor();
 		this.toolbarController = new RichTextToolbarController(this.toolbarElement, {
 			isCommandActive: this.isCommandActive.bind(this),
@@ -180,6 +181,7 @@ export class RichTextEditorController {
 		const wiki = JiraWikiDocumentCodec.convertEditorHtmlToWiki(this.editor.getHTML());
 		this.plainTextarea.value = wiki;
 		this.hiddenValueField.value = wiki;
+		this.applyMountedSurfaceState(this.editor.isEmpty);
 	}
 
 	/**
@@ -197,16 +199,38 @@ export class RichTextEditorController {
 	}
 
 	/**
+	 * Applies the stable mounted-surface state used by placeholder and disabled styling.
+	 */
+	private applyMountedSurfaceState(isEmpty: boolean): void {
+		this.mountedSurface.setAttribute('data-editor-empty', isEmpty ? 'true' : 'false');
+		this.mountedSurface.setAttribute('data-editor-disabled', this.hiddenValueField.disabled ? 'true' : 'false');
+	}
+
+	/**
+	 * Creates the mounted ProseMirror attributes needed by the shared surface contract.
+	 */
+	private createMountedEditorAttributes(): Record<string, string> {
+		return {
+			class: 'jira-rich-editor-prosemirror',
+			'data-placeholder': this.resolvePlaceholderText(),
+			'aria-disabled': this.hiddenValueField.disabled ? 'true' : 'false',
+		};
+	}
+
+	/**
 	 * Creates the Tiptap editor and binds its change notifications back into the toolbar and hidden field.
 	 */
 	private createEditor(): Editor {
-		const initialWiki = this.resolveInitialWikiValue();
+		const initialWiki = this.resolveCanonicalWikiValue();
 		this.mountedSurface.removeAttribute('contenteditable');
 
 		return new Editor({
 			element: this.mountedSurface,
 			content: JiraWikiDocumentCodec.convertWikiToEditorHtml(initialWiki),
 			editable: !this.hiddenValueField.disabled,
+			editorProps: {
+				attributes: this.createMountedEditorAttributes(),
+			},
 			extensions: [
 				StarterKit.configure({
 					blockquote: false,
@@ -347,11 +371,14 @@ export class RichTextEditorController {
 	/**
 	 * Resolves the wiki source used to seed the initial Tiptap document.
 	 */
-	private resolveInitialWikiValue(): string {
-		if (this.plainTextarea.value.trim().length > 0) {
-			return this.plainTextarea.value;
-		}
-
+	private resolveCanonicalWikiValue(): string {
 		return this.hiddenValueField.value;
+	}
+
+	/**
+	 * Resolves the placeholder text encoded on the mounted surface contract.
+	 */
+	private resolvePlaceholderText(): string {
+		return this.mountedSurface.getAttribute('data-placeholder') ?? '';
 	}
 }

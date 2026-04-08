@@ -184,6 +184,10 @@ export class RichTextEditorView {
 			white-space: pre-wrap;
 			word-break: break-word;
 		}
+		.jira-rich-editor-prosemirror {
+			min-height: 100%;
+			outline: none;
+		}
 		.jira-rich-editor-plain {
 			resize: vertical;
 			display: none;
@@ -193,10 +197,19 @@ export class RichTextEditorView {
 			color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
 			pointer-events: none;
 		}
-		.jira-rich-editor-surface:focus {
+		.jira-rich-editor-surface[data-editor-empty='true'] .jira-rich-editor-prosemirror::before {
+			content: attr(data-placeholder);
+			color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+			float: left;
+			height: 0;
+			pointer-events: none;
+		}
+		.jira-rich-editor-surface:focus,
+		.jira-rich-editor-prosemirror:focus {
 			outline: none;
 		}
-		.jira-rich-editor-surface[contenteditable='false'] {
+		.jira-rich-editor-surface[contenteditable='false'],
+		.jira-rich-editor-surface[data-editor-disabled='true'] .jira-rich-editor-prosemirror {
 			opacity: 0.75;
 			cursor: not-allowed;
 		}

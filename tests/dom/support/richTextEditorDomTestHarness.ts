@@ -85,6 +85,18 @@ export class RichTextEditorDomTestHarness {
 	}
 
 	/**
+	 * Returns the mounted ProseMirror root created by Tiptap inside the surface contract.
+	 */
+	getMountedEditor(): HTMLElement {
+		const editor = this.mountedSurface.querySelector('.ProseMirror');
+		if (!(editor instanceof HTMLElement)) {
+			throw new Error('The mounted ProseMirror editor root is missing.');
+		}
+
+		return editor;
+	}
+
+	/**
 	 * Returns the toolbar button for a formatting command.
 	 */
 	getCommandButton(command: string): HTMLButtonElement {
