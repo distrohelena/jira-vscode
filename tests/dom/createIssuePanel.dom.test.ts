@@ -7,6 +7,7 @@ import { CreateIssuePanelState } from '../../src/model/jira.type';
 import { ParentIssuePickerOverlay } from '../../src/views/webview/parent-issue-picker.overlay';
 import { SharedParentPicker } from '../../src/views/webview/shared-parent-picker';
 import { JiraWebviewPanel } from '../../src/views/webview/webview.panel';
+import { RichTextEditorDomTestHarness } from './support/richTextEditorDomTestHarness';
 import { Uri } from 'vscode';
 
 type RenderedCreateIssueDom = {
@@ -91,6 +92,7 @@ const renderCreateIssuePanelDom = (overrides?: Partial<CreateIssuePanelState>): 
 			});
 		},
 	});
+	(RichTextEditorDomTestHarness as any).initialize(dom.window.document);
 
 	return {
 		dom,
@@ -166,6 +168,58 @@ describe('Create issue panel', () => {
 		const createMessage = messages.find((entry) => entry?.type === 'createIssue');
 		expect(createMessage).toBeTruthy();
 		expect(createMessage.values.status).toBe('To Do');
+	});
+
+	it('renders the shared rich text editor contract in the create issue description field', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const descriptionEditor = dom.window.document.querySelector(
+			'#create-issue-form [data-jira-rich-editor]'
+		) as HTMLElement | null;
+		const hiddenValueField = descriptionEditor?.querySelector('.jira-rich-editor-value') as HTMLTextAreaElement | null;
+		const plainTextarea = descriptionEditor?.querySelector('.jira-rich-editor-plain') as HTMLTextAreaElement | null;
+		const rawTextarea = descriptionEditor?.querySelector('.jira-rich-editor-raw');
+
+		expect(descriptionEditor).toBeTruthy();
+		expect(descriptionEditor?.getAttribute('data-mode')).toBe('visual');
+		expect(descriptionEditor?.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
+		expect(descriptionEditor?.querySelector('.jira-rich-editor-button[data-command="orderedList"]')).toBeTruthy();
+		expect(descriptionEditor?.querySelector('.jira-rich-editor-mode-button[data-mode="visual"]')).toBeTruthy();
+		expect(descriptionEditor?.querySelector('.jira-rich-editor-mode-button[data-mode="wiki"]')).toBeTruthy();
+		expect(hiddenValueField?.name).toBe('description');
+		expect(hiddenValueField?.classList.contains('jira-rich-editor-value')).toBe(true);
+		expect(plainTextarea?.placeholder).toBe('What needs to be done?');
+		expect(rawTextarea).toBeNull();
+	});
+
+	it('posts create issue descriptions from the shared editor hidden value field', () => {
+		const { dom, messages, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const form = dom.window.document.getElementById('create-issue-form') as HTMLFormElement | null;
+		const summaryInput = dom.window.document.querySelector('input[name="summary"]') as HTMLInputElement | null;
+		const descriptionEditor = dom.window.document.querySelector(
+			'#create-issue-form [data-jira-rich-editor]'
+		) as HTMLElement | null;
+		const hiddenValueField = descriptionEditor?.querySelector('.jira-rich-editor-value') as HTMLTextAreaElement | null;
+		const visualSurface = descriptionEditor?.querySelector('.jira-rich-editor-surface') as HTMLElement | null;
+
+		expect(form).toBeTruthy();
+		expect(summaryInput).toBeTruthy();
+		expect(descriptionEditor).toBeTruthy();
+		expect(hiddenValueField).toBeTruthy();
+		expect(visualSurface).toBeTruthy();
+
+		summaryInput!.value = 'Ticket with shared description';
+		hiddenValueField!.value = '*shared wiki description*';
+		visualSurface!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+		form!.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+		const message = messages.find((entry) => entry?.type === 'createIssue');
+		expect(message).toBeTruthy();
+		expect(message.values.summary).toBe('Ticket with shared description');
+		expect(message.values.description).toBe('*shared wiki description*');
 	});
 
 	it('falls back to the packaged status icon when the selected starting status image fails to load', () => {

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EnvironmentRuntime } from '../../src/environment.runtime';
 import { JiraIssue, JiraIssueComment, IssuePanelOptions } from '../../src/model/jira.type';
 import { JiraWebviewPanel } from '../../src/views/webview/webview.panel';
+import { RichTextEditorDomTestHarness } from './support/richTextEditorDomTestHarness';
 import { Uri } from 'vscode';
 
 type RenderedDom = {
@@ -13,7 +14,13 @@ type RenderedDom = {
 	scriptErrors: string[];
 };
 
+/**
+ * Hosts the DOM assertions for the issue-panel rich text editor integration.
+ */
 class RichTextEditorHarness {
+	/**
+	 * Creates a renderable issue record with stable defaults for DOM tests.
+	 */
 	static createIssue(overrides?: Partial<JiraIssue>): JiraIssue {
 		return {
 			id: overrides?.id ?? '1000',
@@ -28,6 +35,9 @@ class RichTextEditorHarness {
 		};
 	}
 
+	/**
+	 * Creates a renderable comment record with stable defaults for DOM tests.
+	 */
 	static createComment(overrides?: Partial<JiraIssueComment>): JiraIssueComment {
 		return {
 			id: overrides?.id ?? 'comment-1',
@@ -40,7 +50,10 @@ class RichTextEditorHarness {
 		};
 	}
 
-	static renderIssuePanelDom(options?: IssuePanelOptions, issueOverrides?: Partial<JiraIssue>): RenderedDom {
+	/**
+	 * Renders the issue panel HTML so tests can inspect the generated webview contract.
+	 */
+	static renderIssuePanelHtml(options?: IssuePanelOptions, issueOverrides?: Partial<JiraIssue>): string {
 		EnvironmentRuntime.initializeEnvironment(new Uri('file:///workspace/jira-vscode'));
 		const issue = RichTextEditorHarness.createIssue(issueOverrides);
 		const panel: any = {
@@ -51,16 +64,29 @@ class RichTextEditorHarness {
 			},
 		};
 		JiraWebviewPanel.renderIssuePanelContent(panel, issue, options);
+		return panel.webview.html;
+	}
 
+	/**
+	 * Renders the issue panel into JSDOM so tests can exercise the editor runtime.
+	 */
+	static renderIssuePanelDom(options?: IssuePanelOptions, issueOverrides?: Partial<JiraIssue>): RenderedDom {
+		const html = RichTextEditorHarness.renderIssuePanelHtml(options, issueOverrides);
 		const scriptErrors: string[] = [];
-		const scriptMatch = panel.webview.html.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
-		if (scriptMatch?.[1]) {
+		const inlineScriptMatches = html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi);
+		let inlineScriptIndex = 0;
+		for (const scriptMatch of inlineScriptMatches) {
+			const scriptBody = scriptMatch[1];
+			if (!scriptBody) {
+				continue;
+			}
 			try {
-				new vm.Script(scriptMatch[1], { filename: 'issue-panel-inline.js' });
+				new vm.Script(scriptBody, { filename: `issue-panel-inline-${inlineScriptIndex}.js` });
 			} catch (error) {
 				const message = error instanceof Error ? error.stack ?? error.message : String(error);
-				scriptErrors.push(`inline-compile: ${message}`);
+				scriptErrors.push(`inline-compile-${inlineScriptIndex}: ${message}`);
 			}
+			inlineScriptIndex++;
 		}
 
 		const virtualConsole = new VirtualConsole();
@@ -69,7 +95,7 @@ class RichTextEditorHarness {
 		});
 
 		const messages: any[] = [];
-		const dom = new JSDOM(panel.webview.html, {
+		const dom = new JSDOM(html, {
 			runScripts: 'dangerously',
 			pretendToBeVisual: true,
 			virtualConsole,
@@ -79,29 +105,46 @@ class RichTextEditorHarness {
 				});
 			},
 		});
+		(RichTextEditorDomTestHarness as any).initialize(dom.window.document);
 
 		return { dom, messages, scriptErrors };
 	}
 
+	/**
+	 * Returns the shared editor contract rendered inside the issue panel.
+	 */
+	static getSharedEditor(dom: JSDOM): { host: HTMLElement; visual: HTMLElement; plain: HTMLTextAreaElement; value: HTMLTextAreaElement } | null {
+		const host = dom.window.document.querySelector('[data-jira-rich-editor]') as HTMLElement | null;
+		if (!host) {
+			return null;
+		}
+		const visual = host.querySelector('.jira-rich-editor-surface') as HTMLElement | null;
+		const plain = host.querySelector('.jira-rich-editor-plain') as HTMLTextAreaElement | null;
+		const value = host.querySelector('.jira-rich-editor-value') as HTMLTextAreaElement | null;
+		if (!visual || !plain || !value) {
+			return null;
+		}
+		return { host, visual, plain, value };
+	}
+
+	/**
+	 * Dispatches a click event on a rendered element.
+	 */
 	static click(element: Element, window: Window): void {
 		element.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-	}
-
-	static getRichTextEditor(dom: JSDOM): { editor: Element; visual: HTMLElement; raw: HTMLTextAreaElement } | null {
-		const editor = dom.window.document.querySelector('.jira-rich-editor');
-		if (!editor) return null;
-		const visual = editor.querySelector('.jira-rich-editor-visual') as HTMLElement;
-		const raw = editor.querySelector('.jira-rich-editor-raw') as HTMLTextAreaElement;
-		if (!visual || !raw) return null;
-		return { editor, visual, raw };
-	}
-
-	static getToolbarButton(dom: JSDOM, action: string): HTMLButtonElement | null {
-		return dom.window.document.querySelector(`.jira-rich-editor-action[data-action="${action}"]`) as HTMLButtonElement | null;
 	}
 }
 
 describe('Rich text editor WYSIWYG behavior', () => {
+	it('loads the rich text editor bundle as an external webview script', () => {
+		const html = RichTextEditorHarness.renderIssuePanelHtml({
+			comments: [RichTextEditorHarness.createComment()],
+		});
+
+		expect(html).toContain('dist/webview/rich-text-editor.js');
+		expect(html).toContain('window.initializeJiraRichTextEditors?.(document);');
+	});
+
 	it('compiles without script errors', () => {
 		const { scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
 			comments: [RichTextEditorHarness.createComment()],
@@ -109,179 +152,64 @@ describe('Rich text editor WYSIWYG behavior', () => {
 		expect(scriptErrors).toEqual([]);
 	});
 
-	it('renders a visual editor and a hidden raw textarea', () => {
+	it('renders the shared comment reply editor contract with the stable toolbar buttons', () => {
 		const { dom, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
 			comments: [RichTextEditorHarness.createComment()],
-		});
-		expect(scriptErrors).toEqual([]);
-
-		const editorEl = RichTextEditorHarness.getRichTextEditor(dom);
-		expect(editorEl).toBeTruthy();
-		expect(editorEl!.visual.getAttribute('contenteditable')).toBe('true');
-		expect(editorEl!.raw.style.display).toBe('none');
-	});
-
-	it('renders the full toolbar with all action buttons', () => {
-		const { dom, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
-			comments: [RichTextEditorHarness.createComment()],
-		});
-		expect(scriptErrors).toEqual([]);
-
-		const actions = ['bold', 'italic', 'underline', 'strike', 'code', 'h2', 'bullet', 'number', 'quote', 'codeblock', 'link', 'toggleRaw'];
-		for (const action of actions) {
-			const btn = RichTextEditorHarness.getToolbarButton(dom, action);
-			expect(btn).toBeTruthy();
-		}
-	});
-
-	it('renders the toggle raw button', () => {
-		const { dom, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
-			comments: [RichTextEditorHarness.createComment()],
-		});
-		expect(scriptErrors).toEqual([]);
-
-		const toggleBtn = RichTextEditorHarness.getToolbarButton(dom, 'toggleRaw');
-		expect(toggleBtn).toBeTruthy();
-		expect(toggleBtn!.textContent?.trim()).toBe('</>');
-	});
-
-	it('toggles to raw mode when toggle button is clicked', () => {
-		const { dom, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
-			comments: [RichTextEditorHarness.createComment()],
-		});
-		expect(scriptErrors).toEqual([]);
-
-		const editorEl = RichTextEditorHarness.getRichTextEditor(dom);
-		const toggleBtn = RichTextEditorHarness.getToolbarButton(dom, 'toggleRaw');
-		expect(editorEl).toBeTruthy();
-		expect(toggleBtn).toBeTruthy();
-
-		RichTextEditorHarness.click(toggleBtn!, dom.window);
-
-		expect(editorEl!.editor.classList.contains('raw-mode')).toBe(true);
-		expect(editorEl!.visual.style.display).toBe('none');
-		expect(editorEl!.raw.style.display).toBe('');
-		expect(toggleBtn!.classList.contains('active')).toBe(true);
-	});
-
-	it('toggles back to visual mode when toggle button is clicked again', () => {
-		const { dom, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
-			comments: [RichTextEditorHarness.createComment()],
-		});
-		expect(scriptErrors).toEqual([]);
-
-		const editorEl = RichTextEditorHarness.getRichTextEditor(dom);
-		const toggleBtn = RichTextEditorHarness.getToolbarButton(dom, 'toggleRaw');
-		expect(editorEl).toBeTruthy();
-		expect(toggleBtn).toBeTruthy();
-
-		// Toggle to raw
-		RichTextEditorHarness.click(toggleBtn!, dom.window);
-		expect(editorEl!.editor.classList.contains('raw-mode')).toBe(true);
-
-		// Toggle back to visual
-		RichTextEditorHarness.click(toggleBtn!, dom.window);
-		expect(editorEl!.editor.classList.contains('raw-mode')).toBe(false);
-		expect(editorEl!.visual.style.display).toBe('');
-		expect(editorEl!.raw.style.display).toBe('none');
-		expect(toggleBtn!.classList.contains('active')).toBe(false);
-	});
-
-	it('renders wiki markup as HTML when toggling from raw to visual', () => {
-		const { dom, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
-			comments: [RichTextEditorHarness.createComment()],
-			commentDraft: '*bold* and _italic_',
-		});
-		expect(scriptErrors).toEqual([]);
-
-		const editorEl = RichTextEditorHarness.getRichTextEditor(dom);
-		const toggleBtn = RichTextEditorHarness.getToolbarButton(dom, 'toggleRaw');
-		expect(editorEl).toBeTruthy();
-		expect(toggleBtn).toBeTruthy();
-
-		// Go to raw mode
-		RichTextEditorHarness.click(toggleBtn!, dom.window);
-		editorEl!.raw.value = '**new bold** and __new italic__';
-		editorEl!.raw.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-
-		// Go back to visual
-		RichTextEditorHarness.click(toggleBtn!, dom.window);
-		expect(editorEl!.visual.innerHTML).toContain('<strong>new bold</strong>');
-		expect(editorEl!.visual.innerHTML).toContain('<em>new italic</em>');
-	});
-
-	it('populates raw textarea when typing in visual editor', () => {
-		const { dom, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
-			comments: [RichTextEditorHarness.createComment()],
-		});
-		expect(scriptErrors).toEqual([]);
-
-		const editorEl = RichTextEditorHarness.getRichTextEditor(dom);
-		expect(editorEl).toBeTruthy();
-
-		// Simulate typing by setting innerHTML and dispatching input
-		editorEl!.visual.innerHTML = '<strong>bold text</strong>';
-		editorEl!.visual.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-
-		expect(editorEl!.raw.value).toBe('*bold text*');
-	});
-
-	it('converts wiki markup to rendered HTML on initialization', () => {
-		const { dom, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom(
-			{
-				comments: [RichTextEditorHarness.createComment()],
-				commentDraft: '*bold text* and _italic_',
+			commentReplyContext: {
+				commentId: 'comment-42',
+				authorName: 'Helena',
+				timestampLabel: '2/23/2026, 12:30:00 PM',
+				excerpt: 'Original comment body',
 			},
-		);
+		});
 		expect(scriptErrors).toEqual([]);
 
-		const editorEl = RichTextEditorHarness.getRichTextEditor(dom);
-		expect(editorEl).toBeTruthy();
-		// Raw should have the wiki markup
-		expect(editorEl!.raw.value).toBe('*bold text* and _italic_');
-		// Visual should have HTML rendered from wiki
-		expect(editorEl!.visual.innerHTML).toContain('<strong>bold text</strong>');
-		expect(editorEl!.visual.innerHTML).toContain('<em>italic</em>');
+		const commentForm = dom.window.document.querySelector('.comment-form') as HTMLFormElement | null;
+		const editor = RichTextEditorHarness.getSharedEditor(dom);
+		expect(commentForm).toBeTruthy();
+		expect(editor).toBeTruthy();
+		expect(editor!.host.getAttribute('data-mode')).toBe('visual');
+		expect(editor!.visual.getAttribute('contenteditable')).toBe('true');
+		expect(editor!.plain.getAttribute('placeholder')).toBe('Write your reply');
+		expect(editor!.value.getAttribute('name')).toBe('commentDraft');
+		expect(editor!.value.classList.contains('jira-rich-editor-value')).toBe(true);
+		expect(commentForm?.querySelector('.jira-rich-editor-raw')).toBeNull();
+		expect(commentForm?.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
+		expect(commentForm?.querySelector('.jira-rich-editor-button[data-command="orderedList"]')).toBeTruthy();
+		expect(commentForm?.querySelector('.jira-rich-editor-mode-button[data-mode="visual"]')).toBeTruthy();
+		expect(commentForm?.querySelector('.jira-rich-editor-mode-button[data-mode="wiki"]')).toBeTruthy();
 	});
 
-	it.skip('bold button wraps selection in strong tags (requires real browser)', () => {
-		// document.execCommand is not implemented in jsdom
-	});
-
-	it('posts addComment with wiki markup on comment form submit', () => {
+	it('posts comment draft changes and reply submits from the canonical shared editor field', () => {
 		const { dom, messages, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
 			comments: [RichTextEditorHarness.createComment()],
+			commentReplyContext: {
+				commentId: 'comment-42',
+				authorName: 'Helena',
+				timestampLabel: '2/23/2026, 12:30:00 PM',
+				excerpt: 'Original comment body',
+			},
 		});
 		expect(scriptErrors).toEqual([]);
 
-		const editorEl = RichTextEditorHarness.getRichTextEditor(dom);
-		const submitBtn = dom.window.document.querySelector('.comment-submit');
-		expect(editorEl).toBeTruthy();
-		expect(submitBtn).toBeTruthy();
+		const commentForm = dom.window.document.querySelector('.comment-form') as HTMLFormElement | null;
+		const editor = RichTextEditorHarness.getSharedEditor(dom);
+		expect(commentForm).toBeTruthy();
+		expect(editor).toBeTruthy();
 
-		// Set bold content directly in visual and sync
-		editorEl!.visual.innerHTML = '<strong>my comment</strong>';
-		editorEl!.visual.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+		editor!.value.value = '*typed reply*';
+		editor!.visual.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 
-		// Submit the form
-		const form = dom.window.document.querySelector('.comment-form');
-		form!.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+		const draftMessage = messages.find((message) => message?.type === 'commentDraftChanged');
+		expect(draftMessage).toBeTruthy();
+		expect(draftMessage.value).toBe('*typed reply*');
 
-		const addCommentMsg = messages.find((m) => m?.type === 'addComment');
+		commentForm!.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+		const addCommentMsg = messages.find((message) => message?.type === 'addComment');
 		expect(addCommentMsg).toBeTruthy();
-		expect(addCommentMsg.body).toBe('*my comment*');
+		expect(addCommentMsg.body).toBe('*typed reply*');
 		expect(addCommentMsg.format).toBe('wiki');
-	});
-
-	it.skip('handles heading formatting (requires real browser)', () => {
-		// document.execCommand('formatBlock') is not implemented in jsdom
-	});
-
-	it.skip('handles list formatting (requires real browser)', () => {
-		// document.execCommand('insertUnorderedList') is not implemented in jsdom
-	});
-
-	it.skip('handles blockquote formatting (requires real browser)', () => {
-		// document.execCommand('formatBlock') is not implemented in jsdom
+		expect(addCommentMsg.parentId).toBe('comment-42');
 	});
 });
