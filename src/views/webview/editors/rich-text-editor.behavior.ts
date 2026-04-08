@@ -97,6 +97,14 @@ export class RichTextEditorBehavior {
 			return false;
 		}
 
+		if (
+			(event.key === 'Enter' || event.key === 'Backspace') &&
+			(event.isComposing || event.ctrlKey || event.metaKey || event.altKey)
+		) {
+			event.preventDefault();
+			return true;
+		}
+
 		if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
 			return false;
 		}
