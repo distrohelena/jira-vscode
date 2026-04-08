@@ -72,14 +72,20 @@ class RichTextEditorHarness {
 	static renderIssuePanelDom(options?: IssuePanelOptions, issueOverrides?: Partial<JiraIssue>): RenderedDom {
 		const html = RichTextEditorHarness.renderIssuePanelHtml(options, issueOverrides);
 		const scriptErrors: string[] = [];
-		const scriptMatch = html.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
-		if (scriptMatch?.[1]) {
+		const inlineScriptMatches = html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi);
+		let inlineScriptIndex = 0;
+		for (const scriptMatch of inlineScriptMatches) {
+			const scriptBody = scriptMatch[1];
+			if (!scriptBody) {
+				continue;
+			}
 			try {
-				new vm.Script(scriptMatch[1], { filename: 'issue-panel-inline.js' });
+				new vm.Script(scriptBody, { filename: `issue-panel-inline-${inlineScriptIndex}.js` });
 			} catch (error) {
 				const message = error instanceof Error ? error.stack ?? error.message : String(error);
-				scriptErrors.push(`inline-compile: ${message}`);
+				scriptErrors.push(`inline-compile-${inlineScriptIndex}: ${message}`);
 			}
+			inlineScriptIndex++;
 		}
 
 		const virtualConsole = new VirtualConsole();
