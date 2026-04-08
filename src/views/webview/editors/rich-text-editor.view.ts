@@ -96,6 +96,7 @@ export class RichTextEditorView {
 			id="${fieldId}"
 			name="${fieldName}"
 			hidden
+			${disabledAttr}
 			aria-hidden="true"
 		>${value}</textarea>
 	</div>
