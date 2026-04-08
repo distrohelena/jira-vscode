@@ -233,7 +233,7 @@ export class JiraWebviewPanel {
 <html lang="en">
 <head>
 	<meta charset="UTF-8" />
-	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; font-src ${cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https: data:; font-src ${cspSource}; style-src 'unsafe-inline'; script-src ${cspSource} 'nonce-${nonce}';" />
 	<title>${HtmlHelper.escapeHtml(issue.key)}</title>
 	<style>
 	body {
