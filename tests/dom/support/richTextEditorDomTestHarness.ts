@@ -291,7 +291,13 @@ export class RichTextEditorDomTestHarness {
 				continue;
 			}
 
-			const offset = Math.max(0, node.textContent.length - offsetFromEnd);
+			if (!Number.isInteger(offsetFromEnd) || offsetFromEnd < 0 || offsetFromEnd > node.textContent.length) {
+				throw new Error(
+					`The caret offset ${offsetFromEnd} is outside the text node length ${node.textContent.length} for text: ${searchText}`
+				);
+			}
+
+			const offset = node.textContent.length - offsetFromEnd;
 			this.placeCaretAtNode(node, offset);
 			return;
 		}

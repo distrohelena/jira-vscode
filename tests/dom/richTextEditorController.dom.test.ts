@@ -214,6 +214,19 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.mountedSurface.innerHTML).toContain('Paragraph text');
 	});
 
+	it('rejects out-of-range caret offsets in the text helper', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+
+		expect(() => harness.placeCaretAtText('Paragraph text', 999)).toThrow(
+			'The caret offset 999 is outside the text node length 14 for text: Paragraph text'
+		);
+	});
+
 	it('preserves a hard break through wiki mode after Shift+Enter', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: 'ParagraphText',
@@ -268,14 +281,13 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		});
 
 		harness.initialize();
-		harness.placeCaretAtText('Item one', 'Item one'.length);
+		harness.placeCaretAtText('Item one');
 		harness.pressEditorKey('Enter');
 		const emptyParagraph = harness.getMountedEditor().querySelector('li p');
 		if (!(emptyParagraph instanceof HTMLElement)) {
 			throw new Error('The empty list item paragraph was not rendered.');
 		}
 
-		harness.placeCaretAtElement(emptyParagraph);
 		harness.pressEditorKey('Enter');
 
 		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
@@ -289,14 +301,13 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		});
 
 		harness.initialize();
-		harness.placeCaretAtText('Item one', 'Item one'.length);
+		harness.placeCaretAtText('Item one');
 		harness.pressEditorKey('Enter');
 		const emptyParagraph = harness.getMountedEditor().querySelector('li p');
 		if (!(emptyParagraph instanceof HTMLElement)) {
 			throw new Error('The empty list item paragraph was not rendered.');
 		}
 
-		harness.placeCaretAtElement(emptyParagraph);
 		harness.pressEditorKey('Backspace');
 
 		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
