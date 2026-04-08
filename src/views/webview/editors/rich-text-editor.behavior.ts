@@ -102,29 +102,52 @@ export class RichTextEditorBehavior {
 		}
 
 		if (event.key === 'Enter' && event.shiftKey) {
+			const handled = this.editor.commands.setHardBreak();
+			if (!handled) {
+				return false;
+			}
+
 			event.preventDefault();
-			this.editor.commands.setHardBreak();
 			return true;
 		}
 
 		if (event.key === 'Enter' && this.isSelectionInsideListItem()) {
-			event.preventDefault();
 			if (this.isCurrentTextBlockEmpty()) {
-				this.editor.commands.liftListItem('listItem');
+				const handled = this.editor.commands.liftListItem('listItem');
+				if (!handled) {
+					return false;
+				}
+
+				event.preventDefault();
 				return true;
 			}
 
-			return this.editor.commands.splitListItem('listItem');
+			const handled = this.editor.commands.splitListItem('listItem');
+			if (!handled) {
+				return false;
+			}
+
+			event.preventDefault();
+			return true;
 		}
 
 		if (event.key === 'Enter') {
+			const handled = this.editor.commands.splitBlock();
+			if (!handled) {
+				return false;
+			}
+
 			event.preventDefault();
-			return this.editor.commands.splitBlock();
+			return true;
 		}
 
 		if (event.key === 'Backspace' && this.isSelectionInsideListItem() && this.isCurrentTextBlockEmpty()) {
+			const handled = this.editor.commands.liftListItem('listItem');
+			if (!handled) {
+				return false;
+			}
+
 			event.preventDefault();
-			this.editor.commands.liftListItem('listItem');
 			return true;
 		}
 

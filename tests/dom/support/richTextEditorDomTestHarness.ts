@@ -305,20 +305,12 @@ export class RichTextEditorDomTestHarness {
 	placeCaretAtNode(node: Node, offset: number): void {
 		const editorElement = this.getMountedEditor() as HTMLElement & { editor?: any };
 		const editor = editorElement.editor;
-		if (editor && typeof editor.chain === 'function' && typeof editor.view?.posAtDOM === 'function') {
-			const position = editor.view.posAtDOM(node, offset);
-			editor.chain().focus().setTextSelection(position).run();
-			return;
+		if (!editor || typeof editor.chain !== 'function' || typeof editor.view?.posAtDOM !== 'function') {
+			throw new Error('The mounted editor does not expose the Tiptap selection API required by the test harness.');
 		}
 
-		const range = document.createRange();
-		range.setStart(node, offset);
-		range.collapse(true);
-		const selection = window.getSelection();
-		selection?.removeAllRanges();
-		selection?.addRange(range);
-		this.getMountedEditor().focus();
-		document.dispatchEvent(new Event('selectionchange'));
+		const position = editor.view.posAtDOM(node, offset);
+		editor.chain().focus().setTextSelection(position).run();
 	}
 
 	/**

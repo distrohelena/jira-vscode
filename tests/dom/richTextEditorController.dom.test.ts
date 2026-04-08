@@ -194,6 +194,26 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.mountedSurface.innerHTML).toContain('<br>');
 	});
 
+	it('inserts a soft line break at the end of a paragraph when Shift+Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text');
+		harness.pressEditorKey('Enter', { shiftKey: true });
+
+		expect(harness.hiddenValueField.value).toBe('Paragraph text\\\\');
+
+		harness.click(harness.getModeToggleButton());
+		expect(harness.plainTextarea.value).toBe('Paragraph text\\\\');
+
+		harness.click(harness.getModeToggleButton());
+		expect(harness.mountedSurface.innerHTML).toContain('<br>');
+		expect(harness.mountedSurface.innerHTML).toContain('Paragraph text');
+	});
+
 	it('preserves a hard break through wiki mode after Shift+Enter', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: 'ParagraphText',
@@ -226,6 +246,19 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.pressEditorKey('Enter');
 
 		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(2);
+	});
+
+	it('splits a non-empty ordered list item when Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '# Item one',
+			plainValue: '# Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one');
+		harness.pressEditorKey('Enter');
+
+		expect(harness.mountedSurface.querySelectorAll('ol li')).toHaveLength(2);
 	});
 
 	it('exits an empty list item when Enter is pressed', () => {
@@ -268,6 +301,104 @@ describe('RichTextEditorBrowserBootstrap', () => {
 
 		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
 		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
+	});
+
+	it('does not swallow Shift+Enter when a hard break command cannot run', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let hardBreakCalls = 0;
+		behavior.attach({
+			state: {
+				selection: {
+					$from: {
+						depth: 0,
+						node: () => ({
+							type: { name: 'paragraph' },
+							isTextblock: true,
+							content: { size: 1 },
+						}),
+					},
+				},
+			},
+			commands: {
+				setHardBreak: () => {
+					hardBreakCalls += 1;
+					return false;
+				},
+			},
+		} as never);
+
+		const handleKeyDown = behavior.createEditorProps()?.handleKeyDown;
+		if (!handleKeyDown) {
+			throw new Error('The keyboard handler was not created.');
+		}
+
+		const event = new KeyboardEvent('keydown', {
+			key: 'Enter',
+			shiftKey: true,
+			bubbles: true,
+			cancelable: true,
+		});
+
+		expect(handleKeyDown({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(hardBreakCalls).toBe(1);
+	});
+
+	it('does not swallow Backspace when lifting an empty list item cannot run', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let liftCalls = 0;
+		behavior.attach({
+			state: {
+				selection: {
+					$from: {
+						depth: 1,
+						node: (depth: number) =>
+							depth === 1
+								? {
+										type: { name: 'listItem' },
+										isTextblock: false,
+										content: { size: 1 },
+									}
+								: {
+										type: { name: 'paragraph' },
+										isTextblock: true,
+										content: { size: 0 },
+									},
+					},
+				},
+			},
+			commands: {
+				liftListItem: () => {
+					liftCalls += 1;
+					return false;
+				},
+			},
+		} as never);
+
+		const handleKeyDown = behavior.createEditorProps()?.handleKeyDown;
+		if (!handleKeyDown) {
+			throw new Error('The keyboard handler was not created.');
+		}
+
+		const event = new KeyboardEvent('keydown', {
+			key: 'Backspace',
+			bubbles: true,
+			cancelable: true,
+		});
+
+		expect(handleKeyDown({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(liftCalls).toBe(1);
 	});
 
 	it('does not override Enter when modifier keys are held', () => {
