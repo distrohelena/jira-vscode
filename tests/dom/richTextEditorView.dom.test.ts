@@ -17,19 +17,37 @@ describe('RichTextEditorView', () => {
 		const primaryActions = host.querySelector('.jira-rich-editor-primary-actions') as HTMLElement | null;
 		const secondaryActions = host.querySelector('.jira-rich-editor-secondary-actions') as HTMLElement | null;
 		const commandButtons = host.querySelectorAll('.jira-rich-editor-button[data-command]');
+		const commandNames = Array.from(commandButtons, (button) => (button as HTMLButtonElement).dataset.command);
 		const wikiToggleButton = host.querySelector(
 			'.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]'
 		) as HTMLButtonElement | null;
+		const hiddenMirror = host.querySelector('.jira-rich-editor-value') as HTMLTextAreaElement | null;
+		const styles = RichTextEditorView.renderStyles();
 
 		expect(editor).toBeTruthy();
 		expect(editor?.getAttribute('data-mode')).toBe('visual');
 		expect(primaryActions).toBeTruthy();
 		expect(secondaryActions).toBeTruthy();
 		expect(commandButtons).toHaveLength(6);
+		expect(commandNames).toEqual(['bold', 'italic', 'underline', 'link', 'bulletList', 'orderedList']);
+		expect(host.querySelector('[data-command="heading"]')).toBeNull();
+		expect(host.querySelector('[data-command="blockquote"]')).toBeNull();
+		expect(host.querySelector('[data-command="strike"]')).toBeNull();
+		expect(host.querySelector('[data-command="code"]')).toBeNull();
+		expect(host.querySelector('[data-command="codeBlock"]')).toBeNull();
 		expect(host.querySelector('.jira-rich-editor-mode-button')).toBeNull();
 		expect(wikiToggleButton).toBeTruthy();
 		expect(wikiToggleButton?.textContent?.trim()).toBe('Wiki');
 		expect(wikiToggleButton?.getAttribute('data-target-mode')).toBe('wiki');
+		expect(hiddenMirror).toBeTruthy();
+		expect(hiddenMirror?.id).toBe('description');
+		expect(hiddenMirror?.name).toBe('description');
+		expect(hiddenMirror?.value).toBe('Existing description');
+		expect(hiddenMirror?.hidden).toBe(true);
+		expect(hiddenMirror?.getAttribute('aria-hidden')).toBe('true');
+		expect(styles).toMatch(/\.jira-rich-editor-surface,\s*\.jira-rich-editor-plain[\s\S]*border:\s*none;/);
+		expect(styles).toMatch(/\.jira-rich-editor-secondary-button[\s\S]*background:\s*transparent;/);
+		expect(styles).toMatch(/\.jira-rich-editor-plain[\s\S]*font-family:\s*monospace;/);
 	});
 
 	it('disables the submitted field when the host is rendered disabled', () => {
