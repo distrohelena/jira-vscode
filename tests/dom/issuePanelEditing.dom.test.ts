@@ -429,6 +429,12 @@ describe('Issue panel editor interactions', () => {
 		expect(editForm).toBeTruthy();
 		expect(editEditor).toBeTruthy();
 		expect(editForm?.querySelector('.jira-rich-editor-raw')).toBeNull();
+		expect(editForm?.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
+		expect(editForm?.querySelector('.jira-rich-editor-button[data-command="orderedList"]')).toBeTruthy();
+		expect(editForm?.querySelector('.jira-rich-editor-mode-button')).toBeNull();
+		expect(
+			editForm?.querySelector('.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]')
+		).toBeTruthy();
 		expect(hiddenValueField).toBeTruthy();
 		expect(visualSurface).toBeTruthy();
 
