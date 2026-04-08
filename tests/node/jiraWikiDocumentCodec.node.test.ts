@@ -45,6 +45,19 @@ test('convertEditorHtmlToWiki round-trips hard breaks without turning them into 
 	assert.equal(JiraWikiDocumentCodec.convertWikiToEditorHtml(wiki), '<p>Line one<br>Line two</p>');
 });
 
+test('convertPlainTextToEditorHtml preserves soft breaks inside plain text pastes', () => {
+	assert.equal(
+		JiraWikiDocumentCodec.convertPlainTextToEditorHtml('Line one\nLine two'),
+		'<p>Line one<br>Line two</p>'
+	);
+	assert.equal(
+		JiraWikiDocumentCodec.convertEditorHtmlToWiki(
+			JiraWikiDocumentCodec.convertPlainTextToEditorHtml('Line one\nLine two')
+		),
+		'Line one\\\\Line two'
+	);
+});
+
 test('convertEditorHtmlToWiki does not throw on malformed numeric entities', () => {
 	assert.doesNotThrow(() => JiraWikiDocumentCodec.convertEditorHtmlToWiki('&#999999999;'));
 	assert.equal(JiraWikiDocumentCodec.convertEditorHtmlToWiki('&#999999999;'), '&#999999999;');

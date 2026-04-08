@@ -76,6 +76,25 @@ export class JiraWikiDocumentCodec {
 	}
 
 	/**
+	 * Converts pasted plain text into editor-safe HTML while preserving readable soft breaks.
+	 */
+	static convertPlainTextToEditorHtml(text: string): string {
+		const normalized = text.replace(/\r\n?/g, '\n');
+		if (!normalized.trim()) {
+			return '<p></p>';
+		}
+
+		return normalized
+			.trim()
+			.split(/\n{2,}/)
+			.map((paragraph) => {
+				const escaped = JiraWikiDocumentCodec.escapeHtml(paragraph);
+				return `<p>${escaped.replace(/\n/g, '<br>')}</p>`;
+			})
+			.join('');
+	}
+
+	/**
 	 * Converts inline Jira wiki markers into the editor's HTML tags.
 	 */
 	private static convertInlineWikiToHtml(text: string): string {

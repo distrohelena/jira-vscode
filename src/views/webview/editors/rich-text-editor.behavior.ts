@@ -1,5 +1,7 @@
 import type { Editor, EditorOptions } from '@tiptap/core';
 
+import { JiraWikiDocumentCodec } from './jira-wiki-document-codec';
+
 /**
  * Describes the runtime dependencies required to own one rich text editor's interaction behavior.
  */
@@ -86,7 +88,71 @@ export class RichTextEditorBehavior {
 				},
 			},
 			handleKeyDown: (_view, event) => this.handleKeyDown(event),
+			handlePaste: (_view, event) => this.handlePaste(event),
 		};
+	}
+
+	/**
+	 * Normalizes pasted content before it enters the document so only supported structure is imported.
+	 */
+	private handlePaste(event: ClipboardEvent): boolean {
+		if (!this.editor || !this.options.isVisualMode() || this.options.isDisabled()) {
+			return false;
+		}
+
+		const clipboardData = event.clipboardData;
+		if (!clipboardData) {
+			return false;
+		}
+
+		const html = clipboardData.getData('text/html').trim();
+		const text = clipboardData.getData('text/plain');
+		const normalizedContent = this.normalizePasteContent(html, text);
+		if (!normalizedContent) {
+			return false;
+		}
+
+		event.preventDefault();
+		return this.editor.chain().focus().insertContent(normalizedContent).run();
+	}
+
+	/**
+	 * Resolves the normalized editor HTML for the clipboard payload, preferring semantic HTML when available.
+	 */
+	private normalizePasteContent(html: string, text: string): string | undefined {
+		const normalizedHtml = html.length > 0 ? this.normalizePastedHtml(html) : undefined;
+		if (normalizedHtml && normalizedHtml !== '<p></p>') {
+			return normalizedHtml;
+		}
+
+		return this.normalizePastedText(text);
+	}
+
+	/**
+	 * Converts pasted HTML into the editor's supported HTML subset by routing it through the wiki codec.
+	 */
+	private normalizePastedHtml(html: string): string | undefined {
+		try {
+			const wiki = JiraWikiDocumentCodec.convertEditorHtmlToWiki(html);
+			if (!wiki) {
+				return undefined;
+			}
+
+			return JiraWikiDocumentCodec.convertWikiToEditorHtml(wiki);
+		} catch {
+			return undefined;
+		}
+	}
+
+	/**
+	 * Converts pasted plain text into editor-safe HTML with readable paragraph and line-break boundaries.
+	 */
+	private normalizePastedText(text: string): string | undefined {
+		if (!text.trim()) {
+			return undefined;
+		}
+
+		return JiraWikiDocumentCodec.convertPlainTextToEditorHtml(text);
 	}
 
 	/**

@@ -273,6 +273,48 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.mountedSurface.innerHTML).toContain('Text');
 	});
 
+	it('normalizes pasted HTML down to supported inline marks', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste(
+			'<p><span class="MsoNormal" style="color: red"><strong>Bold</strong> <em>Italic</em> <u>Underline</u> <a href="https://example.test" style="font-weight: 700">Docs</a></span></p>',
+			'Bold Italic Underline Docs'
+		);
+
+		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
+		expect(harness.getMountedEditor().innerHTML).toContain('<em>Italic</em>');
+		expect(harness.getMountedEditor().innerHTML).toContain('<u>Underline</u>');
+		expect(harness.getMountedEditor().innerHTML).toContain('href="https://example.test"');
+		expect(harness.getMountedEditor().innerHTML).toContain('Docs</a>');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<span');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('style=');
+		expect(harness.hiddenValueField.value).toBe('*Bold* _Italic_ +Underline+ [Docs|https://example.test]');
+	});
+
+	it('degrades noisy pasted markup into readable text', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste(
+			'<div class="MsoNormal" style="margin-left: 36pt"><span style="font-size: 18pt">Readable</span><span class="noise"> text</span></div>',
+			'Readable text'
+		);
+
+		expect(harness.getMountedEditor().innerHTML).toBe('<p>Readable text</p>');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<span');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('style=');
+		expect(harness.hiddenValueField.value).toBe('Readable text');
+	});
+
 	it('splits a non-empty list item when Enter is pressed', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '* Item one',

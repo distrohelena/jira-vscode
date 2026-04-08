@@ -255,6 +255,31 @@ export class RichTextEditorDomTestHarness {
 	}
 
 	/**
+	 * Dispatches a paste event against the mounted editor using the provided clipboard payload.
+	 */
+	paste(html: string, text: string): void {
+		const pasteEvent = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(pasteEvent, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return html;
+					}
+
+					if (type === 'text/plain') {
+						return text;
+					}
+
+					return '';
+				},
+			},
+		});
+		this.getMountedEditor().dispatchEvent(pasteEvent);
+	}
+
+	/**
 	 * Simulates the browser's full mouse interaction sequence on a mounted element.
 	 */
 	mouseDownUpClick(element: HTMLElement): void {
