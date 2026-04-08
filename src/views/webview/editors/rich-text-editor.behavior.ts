@@ -129,19 +129,11 @@ export class RichTextEditorBehavior {
 	}
 
 	/**
-	 * Converts pasted HTML into the editor's supported HTML subset by routing it through the wiki codec.
+	 * Converts pasted HTML into editor-safe content without reinterpreting Jira wiki markers.
 	 */
 	private normalizePastedHtml(html: string): string | undefined {
-		try {
-			const wiki = JiraWikiDocumentCodec.convertEditorHtmlToWiki(html);
-			if (!wiki) {
-				return undefined;
-			}
-
-			return JiraWikiDocumentCodec.convertWikiToEditorHtml(wiki);
-		} catch {
-			return undefined;
-		}
+		const normalized = html.trim();
+		return normalized.length > 0 ? normalized : undefined;
 	}
 
 	/**

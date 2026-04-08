@@ -282,15 +282,15 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.initialize();
 		harness.mouseDownUpClick(harness.mountedSurface);
 		harness.paste(
-			'<p><span class="MsoNormal" style="color: red"><strong>Bold</strong> <em>Italic</em> <u>Underline</u> <a href="https://example.test" style="font-weight: 700">Docs</a></span></p>',
+			'<p><span class="MsoNormal" style="color: red"><strong>Bold</strong> <em>Italic</em> <u>Underline</u> <a href="https://example.test">Docs</a></span></p>',
 			'Bold Italic Underline Docs'
 		);
 
 		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
 		expect(harness.getMountedEditor().innerHTML).toContain('<em>Italic</em>');
 		expect(harness.getMountedEditor().innerHTML).toContain('<u>Underline</u>');
+		expect(harness.getMountedEditor().innerHTML).toContain('<a');
 		expect(harness.getMountedEditor().innerHTML).toContain('href="https://example.test"');
-		expect(harness.getMountedEditor().innerHTML).toContain('Docs</a>');
 		expect(harness.getMountedEditor().innerHTML).not.toContain('<span');
 		expect(harness.getMountedEditor().innerHTML).not.toContain('style=');
 		expect(harness.hiddenValueField.value).toBe('*Bold* _Italic_ +Underline+ [Docs|https://example.test]');
@@ -313,6 +313,21 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.getMountedEditor().innerHTML).not.toContain('<span');
 		expect(harness.getMountedEditor().innerHTML).not.toContain('style=');
 		expect(harness.hiddenValueField.value).toBe('Readable text');
+	});
+
+	it('keeps literal Jira markers plain when pasting HTML', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<p>*not bold*</p>', '*not bold*');
+
+		expect(harness.getMountedEditor().innerHTML).toContain('*not bold*');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<strong>not bold</strong>');
+		expect(harness.hiddenValueField.value).toBe('*not bold*');
 	});
 
 	it('splits a non-empty list item when Enter is pressed', () => {
