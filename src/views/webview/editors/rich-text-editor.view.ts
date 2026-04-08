@@ -171,16 +171,7 @@ export class RichTextEditorView {
 			border-color: var(--vscode-focusBorder);
 		}
 		.jira-rich-editor-secondary-button {
-			min-height: 28px;
-			padding: 4px 10px;
-			border: 1px solid transparent;
-			border-radius: 4px;
-			background: transparent;
 			color: var(--vscode-descriptionForeground);
-			cursor: pointer;
-			font: inherit;
-			line-height: 1;
-			white-space: nowrap;
 		}
 		.jira-rich-editor-surface,
 		.jira-rich-editor-plain {
@@ -188,8 +179,9 @@ export class RichTextEditorView {
 			min-height: 220px;
 			margin: 0;
 			padding: 12px 14px;
-			border: none;
-			border-radius: 0;
+			border: 1px solid var(--vscode-input-border);
+			border-top: none;
+			border-radius: 0 0 6px 6px;
 			box-sizing: border-box;
 			background: var(--vscode-input-background);
 			color: var(--vscode-input-foreground);
@@ -206,7 +198,6 @@ export class RichTextEditorView {
 			outline: none;
 		}
 		.jira-rich-editor-plain {
-			font-family: monospace;
 			resize: vertical;
 			display: none;
 		}
