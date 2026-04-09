@@ -399,6 +399,10 @@ export class RichTextEditorBehavior {
 		}
 
 		if (this.isParagraphLikePasteWrapperTag(tagName)) {
+			if (tagName !== 'p') {
+				state.canFailOpen = false;
+			}
+
 			if (tagName === 'div' && this.hasBlockPasteChildren(element)) {
 				state.canFailOpen = false;
 				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes), state);

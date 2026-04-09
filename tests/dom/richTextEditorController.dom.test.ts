@@ -864,9 +864,9 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			text: 'Docs',
 		},
 		{
-			name: 'preserves harmless canonicalization on a simple wrapper div',
-			html: '<div>Docs</div>',
-			text: 'Docs',
+			name: 'preserves harmless canonicalization on a shape-preserving paragraph',
+			html: '<P><STRONG>Bold</STRONG></P>',
+			text: 'Bold',
 		},
 	])('$name', ({ html, text }) => {
 		const behavior = new RichTextEditorBehavior({
@@ -916,7 +916,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(event.defaultPrevented).toBe(false);
 	});
 
-	it('fails closed for links with unsupported attributes', () => {
+	it('fails closed for div wrapper rewrites when every insert path fails', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -948,7 +948,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			value: {
 				getData: (type: string) => {
 					if (type === 'text/html') {
-						return '<p><a href="https://example.test" title="Docs">Docs</a></p>';
+						return '<div>Docs</div>';
 					}
 
 					if (type === 'text/plain') {
