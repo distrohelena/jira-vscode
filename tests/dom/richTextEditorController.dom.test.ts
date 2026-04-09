@@ -346,6 +346,20 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toBe('A B');
 	});
 
+	it('falls back to readable text when layout-heavy HTML has no usable plain text', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<table><tr><td>A</td><td>B</td></tr></table>', '');
+
+		expect(harness.getMountedEditor().querySelector('table')).toBeNull();
+		expect(harness.hiddenValueField.value).toBe('A B');
+	});
+
 	it('keeps literal Jira markers plain when pasting HTML', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',

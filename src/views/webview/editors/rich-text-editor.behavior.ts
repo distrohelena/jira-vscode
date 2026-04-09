@@ -125,7 +125,12 @@ export class RichTextEditorBehavior {
 			return normalizedHtml;
 		}
 
-		return this.normalizePastedText(text);
+		const normalizedText = this.normalizePastedText(text);
+		if (normalizedText) {
+			return normalizedText;
+		}
+
+		return this.normalizeReadableTextFromHtml(html);
 	}
 
 	/**
@@ -156,6 +161,85 @@ export class RichTextEditorBehavior {
 		}
 
 		return JiraWikiDocumentCodec.convertPlainTextToEditorHtml(text);
+	}
+
+	/**
+	 * Derives readable plain text from rejected HTML so the paste still lands without structural import.
+	 */
+	private normalizeReadableTextFromHtml(html: string): string | undefined {
+		const normalized = html.trim();
+		if (!normalized) {
+			return undefined;
+		}
+
+		const parsed = new DOMParser().parseFromString(normalized, 'text/html');
+		const text = this.collectReadableText(Array.from(parsed.body.childNodes)).trim();
+		if (!text) {
+			return undefined;
+		}
+
+		return JiraWikiDocumentCodec.convertPlainTextToEditorHtml(text);
+	}
+
+	/**
+	 * Collects readable text from HTML nodes while preserving coarse boundaries between cells and blocks.
+	 */
+	private collectReadableText(nodes: ChildNode[]): string {
+		let text = '';
+		for (const node of nodes) {
+			text += this.collectReadableTextNode(node);
+		}
+
+		return text
+			.replace(/\u00a0/g, ' ')
+			.replace(/[ \t\f\v]+/g, ' ')
+			.replace(/ *\n */g, '\n')
+			.replace(/\n{3,}/g, '\n\n');
+	}
+
+	/**
+	 * Collects readable text from one HTML node.
+	 */
+	private collectReadableTextNode(node: ChildNode): string {
+		if (node.nodeType === Node.TEXT_NODE) {
+			return node.textContent ?? '';
+		}
+
+		if (node.nodeType !== Node.ELEMENT_NODE) {
+			return '';
+		}
+
+		const element = node as HTMLElement;
+		const tagName = element.tagName.toLowerCase();
+		const children = this.collectReadableText(Array.from(element.childNodes));
+
+		switch (tagName) {
+			case 'br':
+				return '\n';
+			case 'td':
+			case 'th':
+				return `${children.trim()} `;
+			case 'tr':
+			case 'li':
+			case 'p':
+			case 'div':
+			case 'section':
+			case 'article':
+			case 'aside':
+			case 'header':
+			case 'footer':
+			case 'main':
+			case 'nav':
+			case 'blockquote':
+			case 'figure':
+			case 'figcaption':
+			case 'thead':
+			case 'tbody':
+			case 'tfoot':
+				return `${children.trim()}\n`;
+			default:
+				return children;
+		}
 	}
 
 	/**
