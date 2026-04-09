@@ -391,7 +391,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toContain('1');
 	});
 
-	it('does not let degraded block content inherit a surrounding link', () => {
+	it('does not let degraded block content inherit a surrounding link or reorder text', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',
 			plainValue: '',
@@ -400,16 +400,18 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.initialize();
 		harness.mouseDownUpClick(harness.mountedSurface);
 		harness.paste(
-			'<p><a href="https://example.test">Docs<table><tr><td>One</td></tr></table></a></p>',
-			'Docs One'
+			'<p><a href="https://example.test">Docs<table><tr><td>One</td></tr></table>Tail</a></p>',
+			'Docs One Tail'
 		);
 
-		const link = harness.getMountedEditor().querySelector('a');
-		expect(link?.textContent).toBe('Docs');
-		expect(harness.getMountedEditor().innerHTML).toContain('One');
-		expect(harness.hiddenValueField.value).toContain('[Docs|https://example.test]');
-		expect(harness.hiddenValueField.value).toContain('One');
-		expect(harness.hiddenValueField.value).not.toContain('DocsOne');
+		expect(harness.getMountedEditor().querySelector('a')).toBeNull();
+		expect(harness.hiddenValueField.value.indexOf('Docs')).toBeGreaterThanOrEqual(0);
+		expect(harness.hiddenValueField.value.indexOf('One')).toBeGreaterThan(
+			harness.hiddenValueField.value.indexOf('Docs')
+		);
+		expect(harness.hiddenValueField.value.indexOf('Tail')).toBeGreaterThan(
+			harness.hiddenValueField.value.indexOf('One')
+		);
 	});
 
 	it('keeps supported paragraphs when mixed with unsupported block HTML', () => {
@@ -450,7 +452,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toContain('[Docs|https://example.test]');
 	});
 
-	it('preserves a readable separator between sibling div blocks', () => {
+	it('preserves readable block boundaries for headings and paragraphs', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',
 			plainValue: '',
@@ -458,9 +460,10 @@ describe('RichTextEditorBrowserBootstrap', () => {
 
 		harness.initialize();
 		harness.mouseDownUpClick(harness.mountedSurface);
-		harness.paste('<div>One</div><div>Two</div>', '');
+		harness.paste('<h1>Title</h1><p>Body</p>', '');
 
-		expect(harness.hiddenValueField.value).toBe('One\n\nTwo');
+		expect(harness.getMountedEditor().querySelectorAll('p')).toHaveLength(2);
+		expect(harness.hiddenValueField.value).toBe('Title\n\nBody');
 	});
 
 	it('flattens nested div containers without creating nested paragraphs', () => {

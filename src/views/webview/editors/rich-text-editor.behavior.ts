@@ -273,6 +273,12 @@ export class RichTextEditorBehavior {
 			case 'li':
 			case 'p':
 			case 'div':
+			case 'h1':
+			case 'h2':
+			case 'h3':
+			case 'h4':
+			case 'h5':
+			case 'h6':
 			case 'section':
 			case 'article':
 			case 'aside':
@@ -321,8 +327,24 @@ export class RichTextEditorBehavior {
 		const element = node as HTMLElement;
 		const tagName = element.tagName.toLowerCase();
 
-		if (this.isUnsupportedPasteWrapperTag(tagName)) {
+		if (this.isInlinePasteWrapperTag(tagName) && this.containsBlockPasteContent(element)) {
+			return this.appendPlainTextPasteNode(target, element);
+		}
+
+		if (tagName === 'blockquote') {
 			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+		}
+
+		if (this.isParagraphLikePasteWrapperTag(tagName)) {
+			if (tagName === 'div' && this.hasBlockPasteChildren(element)) {
+				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+			}
+
+			if (this.containsBlockPasteContent(element)) {
+				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+			}
+
+			return this.appendWrappedPasteNode(target, 'p', element.childNodes);
 		}
 
 		if (this.isUnsupportedPasteStructureTag(tagName)) {
@@ -343,14 +365,6 @@ export class RichTextEditorBehavior {
 				return this.appendWrappedPasteNode(target, 'u', element.childNodes);
 			case 'a':
 				return this.appendLinkedPasteNode(target, element);
-			case 'p':
-				return this.appendWrappedPasteNode(target, 'p', element.childNodes);
-			case 'div':
-				if (this.hasBlockPasteChildren(element)) {
-					return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
-				}
-
-				return this.appendWrappedPasteNode(target, 'p', element.childNodes);
 			case 'span':
 				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
 			default:
@@ -372,18 +386,7 @@ export class RichTextEditorBehavior {
 			return true;
 		}
 
-		const plainText = this.normalizeReadablePlainTextFromHtml(element.outerHTML);
-		if (!plainText) {
-			return true;
-		}
-
-		if (target.parentElement) {
-			target.insertAdjacentText('afterend', plainText);
-			return true;
-		}
-
-		target.insertAdjacentText('beforeend', plainText);
-		return true;
+		return this.appendPlainTextPasteNode(target, element);
 	}
 
 	/**
@@ -417,6 +420,19 @@ export class RichTextEditorBehavior {
 	}
 
 	/**
+	 * Appends a block fragment as plain text when the current target cannot safely host block HTML.
+	 */
+	private appendPlainTextPasteNode(target: HTMLElement, element: HTMLElement): boolean {
+		const plainText = this.normalizeReadablePlainTextFromHtml(element.outerHTML);
+		if (!plainText) {
+			return true;
+		}
+
+		target.insertAdjacentText('beforeend', plainText);
+		return true;
+	}
+
+	/**
 	 * Returns whether a block fragment can be emitted as HTML inside the current target.
 	 */
 	private canContainReadableBlockHtml(target: HTMLElement): boolean {
@@ -427,14 +443,51 @@ export class RichTextEditorBehavior {
 	 * Returns whether a div already contains block-like children that should keep their own boundaries.
 	 */
 	private hasBlockPasteChildren(element: HTMLElement): boolean {
+		return this.containsBlockPasteContent(element);
+	}
+
+	/**
+	 * Returns whether a pasted wrapper is paragraph-like and should be normalized into a paragraph.
+	 */
+	private isParagraphLikePasteWrapperTag(tagName: string): boolean {
+		return (
+			tagName === 'p' ||
+			tagName === 'div' ||
+			tagName === 'h1' ||
+			tagName === 'h2' ||
+			tagName === 'h3' ||
+			tagName === 'h4' ||
+			tagName === 'h5' ||
+			tagName === 'h6'
+		);
+	}
+
+	/**
+	 * Returns whether a pasted wrapper is an inline format wrapper that should only survive when its content stays inline.
+	 */
+	private isInlinePasteWrapperTag(tagName: string): boolean {
+		return tagName === 'a' || tagName === 'strong' || tagName === 'b' || tagName === 'em' || tagName === 'i' || tagName === 'u';
+	}
+
+	/**
+	 * Returns whether a pasted element or any of its descendants contains block-level content.
+	 */
+	private containsBlockPasteContent(element: HTMLElement): boolean {
 		for (const child of Array.from(element.children)) {
 			const childTagName = child.tagName.toLowerCase();
-			if (childTagName === 'p' || childTagName === 'div' || this.isUnsupportedPasteStructureTag(childTagName)) {
+			if (this.isBlockPasteTag(childTagName) || this.containsBlockPasteContent(child)) {
 				return true;
 			}
 		}
 
 		return false;
+	}
+
+	/**
+	 * Returns whether a pasted element should be treated as block content during normalization.
+	 */
+	private isBlockPasteTag(tagName: string): boolean {
+		return this.isParagraphLikePasteWrapperTag(tagName) || this.isUnsupportedPasteStructureTag(tagName) || tagName === 'blockquote' || tagName === 'figure' || tagName === 'figcaption';
 	}
 
 	/**
@@ -476,13 +529,6 @@ export class RichTextEditorBehavior {
 			tagName === 'main' ||
 			tagName === 'nav'
 		);
-	}
-
-	/**
-	 * Returns whether a pasted block wrapper should be flattened so its supported descendants survive.
-	 */
-	private isUnsupportedPasteWrapperTag(tagName: string): boolean {
-		return tagName === 'blockquote';
 	}
 
 	/**
