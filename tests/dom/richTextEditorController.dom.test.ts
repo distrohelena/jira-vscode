@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { RichTextEditorBehavior } from '../../src/views/webview/editors/rich-text-editor.behavior';
 import { RichTextEditorController } from '../../src/views/webview/editors/rich-text-editor.controller';
@@ -145,6 +145,37 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		const modeMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
 		harness.getModeToggleButton().dispatchEvent(modeMouseDown);
 		expect(modeMouseDown.defaultPrevented).toBe(false);
+	});
+
+	it('leaves non-primary mounted-surface clicks unhandled and does not redirect focus', () => {
+		const mountedSurface = document.createElement('div');
+		const mountedEditor = document.createElement('div');
+		const mountedEditorFocus = vi.fn();
+		Object.defineProperty(mountedEditor, 'focus', {
+			value: mountedEditorFocus,
+		});
+		mountedEditor.className = 'ProseMirror';
+		mountedSurface.appendChild(mountedEditor);
+
+		const editorFocus = vi.fn();
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface,
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			commands: {
+				focus: editorFocus,
+			},
+		} as never);
+
+		const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2 });
+		mountedSurface.dispatchEvent(event);
+
+		expect(event.defaultPrevented).toBe(false);
+		expect(editorFocus).not.toHaveBeenCalled();
+		expect(mountedEditorFocus).not.toHaveBeenCalled();
 	});
 
 	it('focuses the ProseMirror editor when the outer surface is clicked', () => {
@@ -525,6 +556,54 @@ describe('RichTextEditorBrowserBootstrap', () => {
 
 					if (type === 'text/plain') {
 						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('consumes script-only unsafe HTML as a handled no-op paste', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<script>alert("blocked")</script>';
+					}
+
+					if (type === 'text/plain') {
+						return '';
 					}
 
 					return '';

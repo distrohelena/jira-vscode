@@ -38,7 +38,7 @@ interface PasteNormalizationState {
 }
 
 /**
- * Captures the sanitized HTML fragment and its fail-open classification.
+ * Captures the sanitized HTML fragment and its fail-open classification, including fragments that sanitize to empty.
  */
 interface NormalizedPasteHtml {
 	/**
@@ -137,7 +137,12 @@ export class RichTextEditorBehavior {
 		}
 
 		const normalizedHtmlContent = html.length > 0 ? this.normalizePastedHtml(html) : undefined;
-		const normalizedContent = normalizedHtmlContent?.html ?? this.normalizePasteContent(html, text);
+		if (normalizedHtmlContent && normalizedHtmlContent.html.length === 0) {
+			event.preventDefault();
+			return true;
+		}
+
+		const normalizedContent = normalizedHtmlContent ? normalizedHtmlContent.html : this.normalizePasteContent(html, text);
 		if (normalizedContent && this.editor.chain().focus().insertContent(normalizedContent).run()) {
 			event.preventDefault();
 			return true;
@@ -218,7 +223,7 @@ export class RichTextEditorBehavior {
 		}
 
 		const sanitized = container.innerHTML.trim();
-		return sanitized.length > 0 ? { html: sanitized, canFailOpen: state.canFailOpen } : undefined;
+		return { html: sanitized, canFailOpen: state.canFailOpen };
 	}
 
 	/**
@@ -764,6 +769,10 @@ export class RichTextEditorBehavior {
 	 */
 	private readonly handleMountedSurfaceMouseDown = (event: MouseEvent): void => {
 		if (!this.editor || !this.options.isVisualMode() || this.options.isDisabled()) {
+			return;
+		}
+
+		if (event.button !== 0) {
 			return;
 		}
 
