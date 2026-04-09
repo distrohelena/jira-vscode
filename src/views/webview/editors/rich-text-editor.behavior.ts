@@ -346,6 +346,10 @@ export class RichTextEditorBehavior {
 			case 'p':
 				return this.appendWrappedPasteNode(target, 'p', element.childNodes);
 			case 'div':
+				if (this.hasBlockPasteChildren(element)) {
+					return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+				}
+
 				return this.appendWrappedPasteNode(target, 'p', element.childNodes);
 			case 'span':
 				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
@@ -363,7 +367,22 @@ export class RichTextEditorBehavior {
 			return true;
 		}
 
-		target.insertAdjacentHTML('beforeend', readable);
+		if (this.canContainReadableBlockHtml(target)) {
+			target.insertAdjacentHTML('beforeend', readable);
+			return true;
+		}
+
+		const plainText = this.normalizeReadablePlainTextFromHtml(element.outerHTML);
+		if (!plainText) {
+			return true;
+		}
+
+		if (target.parentElement) {
+			target.insertAdjacentText('afterend', plainText);
+			return true;
+		}
+
+		target.insertAdjacentText('beforeend', plainText);
 		return true;
 	}
 
@@ -372,11 +391,10 @@ export class RichTextEditorBehavior {
 	 */
 	private appendWrappedPasteNode(target: HTMLElement, tagName: 'p' | 'strong' | 'em' | 'u', nodes: ChildNode[]): boolean {
 		const wrapper = document.createElement(tagName);
+		target.append(wrapper);
 		if (!this.appendSanitizedPasteNodes(wrapper, nodes)) {
 			return false;
 		}
-
-		target.append(wrapper);
 		return true;
 	}
 
@@ -391,12 +409,32 @@ export class RichTextEditorBehavior {
 
 		const link = document.createElement('a');
 		link.setAttribute('href', href);
+		target.append(link);
 		if (!this.appendSanitizedPasteNodes(link, Array.from(element.childNodes))) {
 			return false;
 		}
-
-		target.append(link);
 		return true;
+	}
+
+	/**
+	 * Returns whether a block fragment can be emitted as HTML inside the current target.
+	 */
+	private canContainReadableBlockHtml(target: HTMLElement): boolean {
+		return target.tagName.toLowerCase() === 'div';
+	}
+
+	/**
+	 * Returns whether a div already contains block-like children that should keep their own boundaries.
+	 */
+	private hasBlockPasteChildren(element: HTMLElement): boolean {
+		for (const child of Array.from(element.children)) {
+			const childTagName = child.tagName.toLowerCase();
+			if (childTagName === 'p' || childTagName === 'div' || this.isUnsupportedPasteStructureTag(childTagName)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

@@ -391,6 +391,27 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toContain('1');
 	});
 
+	it('does not let degraded block content inherit a surrounding link', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste(
+			'<p><a href="https://example.test">Docs<table><tr><td>One</td></tr></table></a></p>',
+			'Docs One'
+		);
+
+		const link = harness.getMountedEditor().querySelector('a');
+		expect(link?.textContent).toBe('Docs');
+		expect(harness.getMountedEditor().innerHTML).toContain('One');
+		expect(harness.hiddenValueField.value).toContain('[Docs|https://example.test]');
+		expect(harness.hiddenValueField.value).toContain('One');
+		expect(harness.hiddenValueField.value).not.toContain('DocsOne');
+	});
+
 	it('keeps supported paragraphs when mixed with unsupported block HTML', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',
@@ -439,6 +460,22 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.mouseDownUpClick(harness.mountedSurface);
 		harness.paste('<div>One</div><div>Two</div>', '');
 
+		expect(harness.hiddenValueField.value).toBe('One\n\nTwo');
+	});
+
+	it('flattens nested div containers without creating nested paragraphs', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<div><div>One</div><div>Two</div></div>', '');
+
+		expect(harness.getMountedEditor().querySelectorAll('p')).toHaveLength(2);
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<p><p>');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<p></p>');
 		expect(harness.hiddenValueField.value).toBe('One\n\nTwo');
 	});
 
