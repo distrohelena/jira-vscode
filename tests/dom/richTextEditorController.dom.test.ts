@@ -776,7 +776,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(plainTextContent).toBe('Bold1');
 	});
 
-	it('consumes empty clipboard payloads instead of handing them to raw paste', () => {
+	it('returns false for empty clipboard payloads', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -813,8 +813,8 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			},
 		});
 
-		expect(handlePaste({} as never, event)).toBe(true);
-		expect(event.defaultPrevented).toBe(true);
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
 		expect(insertedContent).toHaveLength(0);
 	});
 

@@ -107,6 +107,10 @@ export class RichTextEditorBehavior {
 
 		const html = clipboardData.getData('text/html').trim();
 		const text = clipboardData.getData('text/plain');
+		if (!html && !text.trim()) {
+			return false;
+		}
+
 		event.preventDefault();
 
 		const normalizedContent = this.normalizePasteContent(html, text);
