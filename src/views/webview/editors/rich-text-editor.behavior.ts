@@ -109,7 +109,14 @@ export class RichTextEditorBehavior {
 		const text = clipboardData.getData('text/plain');
 		const normalizedContent = this.normalizePasteContent(html, text);
 		event.preventDefault();
-		return this.editor.chain().focus().insertContent(normalizedContent).run();
+		const normalizedHandled = this.editor.chain().focus().insertContent(normalizedContent).run();
+		if (normalizedHandled) {
+			return true;
+		}
+
+		const fallbackContent = this.normalizePasteFallbackContent(html, text);
+		this.editor.chain().focus().insertContent(fallbackContent).run();
+		return true;
 	}
 
 	/**
@@ -127,6 +134,13 @@ export class RichTextEditorBehavior {
 		}
 
 		return this.normalizeReadableTextFromHtml(html) ?? '<p></p>';
+	}
+
+	/**
+	 * Resolves the predictable plain-text fallback used when normalized HTML insertion is rejected.
+	 */
+	private normalizePasteFallbackContent(html: string, text: string): string {
+		return this.normalizePastedText(text) ?? this.normalizeReadableTextFromHtml(html) ?? '<p></p>';
 	}
 
 	/**
