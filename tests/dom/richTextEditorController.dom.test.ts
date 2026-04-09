@@ -668,7 +668,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(liftCalls).toBe(1);
 	});
 
-	it('returns false when pasted HTML has no readable content', () => {
+	it('consumes pasted HTML with no readable content as a no-op', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -709,12 +709,12 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			},
 		});
 
-		expect(handlePaste({} as never, event)).toBe(false);
-		expect(event.defaultPrevented).toBe(false);
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
 		expect(insertedContent).toBeUndefined();
 	});
 
-	it('retries paste with plain text when the normalized insert is rejected', () => {
+	it('falls back to plain-text insertion when normalized and fallback html inserts are rejected', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -722,17 +722,26 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			onInteractionStateChanged: () => undefined,
 		});
 		const insertedContent: string[] = [];
-		let attempts = 0;
+		let plainTextContent: string | undefined;
 		behavior.attach({
 			chain: () => ({
 				focus: () => ({
 					insertContent: (content: string) => {
 						insertedContent.push(content);
-						attempts += 1;
 						return {
-							run: () => attempts > 1,
+							run: () => false,
 						};
 					},
+					command: (fn: (args: { tr: { insertText: (content: string) => void } }) => boolean) => ({
+						run: () =>
+							fn({
+								tr: {
+									insertText: (content: string) => {
+										plainTextContent = content;
+									},
+								},
+							}),
+					}),
 				}),
 			}),
 		} as never);
@@ -764,9 +773,10 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(handlePaste({} as never, event)).toBe(true);
 		expect(event.defaultPrevented).toBe(true);
 		expect(insertedContent).toEqual(['<p><strong>Bold</strong>1</p>', '<p>Bold1</p>']);
+		expect(plainTextContent).toBe('Bold1');
 	});
 
-	it('lets the browser paste continue when both custom inserts are rejected', () => {
+	it('consumes empty clipboard payloads instead of handing them to raw paste', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -798,22 +808,14 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		Object.defineProperty(event, 'clipboardData', {
 			value: {
 				getData: (type: string) => {
-					if (type === 'text/html') {
-						return '<p><strong>Bold</strong><sup>1</sup></p>';
-					}
-
-					if (type === 'text/plain') {
-						return 'Bold1';
-					}
-
 					return '';
 				},
 			},
 		});
 
-		expect(handlePaste({} as never, event)).toBe(false);
-		expect(event.defaultPrevented).toBe(false);
-		expect(insertedContent).toEqual(['<p><strong>Bold</strong>1</p>', '<p>Bold1</p>']);
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+		expect(insertedContent).toHaveLength(0);
 	});
 
 	it('does not change the mounted document when Ctrl+Enter is pressed', () => {

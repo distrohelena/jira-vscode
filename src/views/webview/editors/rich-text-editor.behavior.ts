@@ -107,29 +107,31 @@ export class RichTextEditorBehavior {
 
 		const html = clipboardData.getData('text/html').trim();
 		const text = clipboardData.getData('text/plain');
-		const normalizedContent = this.normalizePasteContent(html, text);
-		if (!normalizedContent) {
-			return false;
-		}
+		event.preventDefault();
 
-		const normalizedHandled = this.editor.chain().focus().insertContent(normalizedContent).run();
-		if (normalizedHandled) {
-			event.preventDefault();
+		const normalizedContent = this.normalizePasteContent(html, text);
+		if (normalizedContent && this.editor.chain().focus().insertContent(normalizedContent).run()) {
 			return true;
 		}
 
 		const fallbackContent = this.normalizePasteFallbackContent(html, text);
-		if (!fallbackContent) {
-			return false;
-		}
-
-		const fallbackHandled = this.editor.chain().focus().insertContent(fallbackContent).run();
-		if (fallbackHandled) {
-			event.preventDefault();
+		if (fallbackContent && this.editor.chain().focus().insertContent(fallbackContent).run()) {
 			return true;
 		}
 
-		return false;
+		const plainTextContent = this.normalizePastePlainText(html, text);
+		if (plainTextContent) {
+			this.editor
+				.chain()
+				.focus()
+				.command(({ tr }) => {
+					tr.insertText(plainTextContent);
+					return true;
+				})
+				.run();
+		}
+
+		return true;
 	}
 
 	/**
@@ -154,6 +156,13 @@ export class RichTextEditorBehavior {
 	 */
 	private normalizePasteFallbackContent(html: string, text: string): string | undefined {
 		return this.normalizePastedText(text) ?? this.normalizeReadableTextFromHtml(html);
+	}
+
+	/**
+	 * Resolves the plain text fallback that is inserted without HTML parsing when the HTML path fails.
+	 */
+	private normalizePastePlainText(html: string, text: string): string | undefined {
+		return text.trim() || this.normalizeReadablePlainTextFromHtml(html);
 	}
 
 	/**
@@ -202,6 +211,20 @@ export class RichTextEditorBehavior {
 		}
 
 		return JiraWikiDocumentCodec.convertPlainTextToEditorHtml(text);
+	}
+
+	/**
+	 * Derives plain text from rejected HTML so the paste can fall back to a text-only insertion.
+	 */
+	private normalizeReadablePlainTextFromHtml(html: string): string | undefined {
+		const normalized = html.trim();
+		if (!normalized) {
+			return undefined;
+		}
+
+		const parsed = new DOMParser().parseFromString(normalized, 'text/html');
+		const text = this.collectReadableText(Array.from(parsed.body.childNodes)).trim();
+		return text.length > 0 ? text : undefined;
 	}
 
 	/**
