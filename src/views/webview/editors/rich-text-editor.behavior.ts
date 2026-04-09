@@ -108,6 +108,10 @@ export class RichTextEditorBehavior {
 		const html = clipboardData.getData('text/html').trim();
 		const text = clipboardData.getData('text/plain');
 		const normalizedContent = this.normalizePasteContent(html, text);
+		if (!normalizedContent) {
+			return false;
+		}
+
 		const normalizedHandled = this.editor.chain().focus().insertContent(normalizedContent).run();
 		if (normalizedHandled) {
 			event.preventDefault();
@@ -115,6 +119,10 @@ export class RichTextEditorBehavior {
 		}
 
 		const fallbackContent = this.normalizePasteFallbackContent(html, text);
+		if (!fallbackContent) {
+			return false;
+		}
+
 		const fallbackHandled = this.editor.chain().focus().insertContent(fallbackContent).run();
 		if (fallbackHandled) {
 			event.preventDefault();
@@ -127,9 +135,9 @@ export class RichTextEditorBehavior {
 	/**
 	 * Resolves the normalized editor HTML for the clipboard payload, preferring semantic HTML when available.
 	 */
-	private normalizePasteContent(html: string, text: string): string {
+	private normalizePasteContent(html: string, text: string): string | undefined {
 		const normalizedHtml = html.length > 0 ? this.normalizePastedHtml(html) : undefined;
-		if (normalizedHtml && normalizedHtml !== '<p></p>') {
+		if (normalizedHtml) {
 			return normalizedHtml;
 		}
 
@@ -138,14 +146,14 @@ export class RichTextEditorBehavior {
 			return normalizedText;
 		}
 
-		return this.normalizeReadableTextFromHtml(html) ?? '<p></p>';
+		return this.normalizeReadableTextFromHtml(html);
 	}
 
 	/**
 	 * Resolves the predictable plain-text fallback used when normalized HTML insertion is rejected.
 	 */
-	private normalizePasteFallbackContent(html: string, text: string): string {
-		return this.normalizePastedText(text) ?? this.normalizeReadableTextFromHtml(html) ?? '<p></p>';
+	private normalizePasteFallbackContent(html: string, text: string): string | undefined {
+		return this.normalizePastedText(text) ?? this.normalizeReadableTextFromHtml(html);
 	}
 
 	/**
@@ -286,6 +294,10 @@ export class RichTextEditorBehavior {
 		const element = node as HTMLElement;
 		const tagName = element.tagName.toLowerCase();
 
+		if (this.isUnsupportedPasteWrapperTag(tagName)) {
+			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+		}
+
 		if (this.isUnsupportedPasteStructureTag(tagName)) {
 			return this.appendReadablePasteNode(target, element);
 		}
@@ -399,6 +411,13 @@ export class RichTextEditorBehavior {
 			tagName === 'main' ||
 			tagName === 'nav'
 		);
+	}
+
+	/**
+	 * Returns whether a pasted block wrapper should be flattened so its supported descendants survive.
+	 */
+	private isUnsupportedPasteWrapperTag(tagName: string): boolean {
+		return tagName === 'blockquote';
 	}
 
 	/**

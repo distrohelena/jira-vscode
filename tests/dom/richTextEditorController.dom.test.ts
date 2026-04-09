@@ -408,6 +408,27 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toContain('B');
 	});
 
+	it('preserves supported marks inside unsupported blockquote content', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste(
+			'<blockquote><p><strong>Bold</strong> <a href="https://example.test">Docs</a></p></blockquote>',
+			'Bold Docs'
+		);
+
+		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
+		expect(harness.getMountedEditor().innerHTML).toContain('<a');
+		expect(harness.getMountedEditor().innerHTML).toContain('href="https://example.test"');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<blockquote');
+		expect(harness.hiddenValueField.value).toContain('*Bold*');
+		expect(harness.hiddenValueField.value).toContain('[Docs|https://example.test]');
+	});
+
 	it('preserves a readable separator between sibling div blocks', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',
@@ -419,6 +440,24 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.paste('<div>One</div><div>Two</div>', '');
 
 		expect(harness.hiddenValueField.value).toBe('One\n\nTwo');
+	});
+
+	it('leaves empty clipboard pastes unhandled', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text', 4);
+
+		const beforeHtml = harness.getMountedEditor().innerHTML;
+		const beforeHiddenValue = harness.hiddenValueField.value;
+
+		harness.paste('', '');
+
+		expect(harness.getMountedEditor().innerHTML).toBe(beforeHtml);
+		expect(harness.hiddenValueField.value).toBe(beforeHiddenValue);
 	});
 
 	it('splits a non-empty list item when Enter is pressed', () => {
@@ -629,7 +668,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(liftCalls).toBe(1);
 	});
 
-	it('intercepts unsupported HTML even when no readable plain text is available', () => {
+	it('returns false when pasted HTML has no readable content', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -670,9 +709,9 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			},
 		});
 
-		expect(handlePaste({} as never, event)).toBe(true);
-		expect(event.defaultPrevented).toBe(true);
-		expect(insertedContent).toBeDefined();
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(insertedContent).toBeUndefined();
 	});
 
 	it('retries paste with plain text when the normalized insert is rejected', () => {
