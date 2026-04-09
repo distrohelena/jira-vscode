@@ -108,10 +108,6 @@ export class RichTextEditorBehavior {
 		const html = clipboardData.getData('text/html').trim();
 		const text = clipboardData.getData('text/plain');
 		const normalizedContent = this.normalizePasteContent(html, text);
-		if (!normalizedContent) {
-			return false;
-		}
-
 		event.preventDefault();
 		return this.editor.chain().focus().insertContent(normalizedContent).run();
 	}
@@ -119,7 +115,7 @@ export class RichTextEditorBehavior {
 	/**
 	 * Resolves the normalized editor HTML for the clipboard payload, preferring semantic HTML when available.
 	 */
-	private normalizePasteContent(html: string, text: string): string | undefined {
+	private normalizePasteContent(html: string, text: string): string {
 		const normalizedHtml = html.length > 0 ? this.normalizePastedHtml(html) : undefined;
 		if (normalizedHtml && normalizedHtml !== '<p></p>') {
 			return normalizedHtml;
@@ -130,7 +126,7 @@ export class RichTextEditorBehavior {
 			return normalizedText;
 		}
 
-		return this.normalizeReadableTextFromHtml(html);
+		return this.normalizeReadableTextFromHtml(html) ?? '<p></p>';
 	}
 
 	/**
@@ -271,8 +267,8 @@ export class RichTextEditorBehavior {
 		const element = node as HTMLElement;
 		const tagName = element.tagName.toLowerCase();
 
-		if (this.isUnsupportedPasteTag(tagName)) {
-			return false;
+		if (this.isUnsupportedPasteStructureTag(tagName)) {
+			return this.appendReadablePasteNode(target, element);
 		}
 
 		switch (tagName) {
@@ -297,6 +293,19 @@ export class RichTextEditorBehavior {
 			default:
 				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
 		}
+	}
+
+	/**
+	 * Appends readable text for unsupported structural elements without importing their layout.
+	 */
+	private appendReadablePasteNode(target: HTMLElement, element: HTMLElement): boolean {
+		const readable = this.normalizeReadableTextFromHtml(element.outerHTML);
+		if (!readable) {
+			return true;
+		}
+
+		target.insertAdjacentHTML('beforeend', readable);
+		return true;
 	}
 
 	/**
@@ -334,7 +343,7 @@ export class RichTextEditorBehavior {
 	/**
 	 * Returns whether a pasted element should force a plain-text fallback instead of being imported structurally.
 	 */
-	private isUnsupportedPasteTag(tagName: string): boolean {
+	private isUnsupportedPasteStructureTag(tagName: string): boolean {
 		return (
 			tagName === 'ul' ||
 			tagName === 'ol' ||

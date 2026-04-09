@@ -391,6 +391,23 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toContain('1');
 	});
 
+	it('keeps supported paragraphs when mixed with unsupported block HTML', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<p><strong>Bold</strong></p><table><tr><td>A</td><td>B</td></tr></table>', '');
+
+		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
+		expect(harness.getMountedEditor().querySelector('table')).toBeNull();
+		expect(harness.hiddenValueField.value).toContain('*Bold*');
+		expect(harness.hiddenValueField.value).toContain('A');
+		expect(harness.hiddenValueField.value).toContain('B');
+	});
+
 	it('splits a non-empty list item when Enter is pressed', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '* Item one',
@@ -597,6 +614,52 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(handleKeyDown({} as never, event)).toBe(false);
 		expect(event.defaultPrevented).toBe(false);
 		expect(liftCalls).toBe(1);
+	});
+
+	it('intercepts unsupported HTML even when no readable plain text is available', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let insertedContent: string | undefined;
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: (content: string) => {
+						insertedContent = content;
+						return {
+							run: () => true,
+						};
+					},
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<script>alert(1)</script>';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+		expect(insertedContent).toBeDefined();
 	});
 
 	it('does not change the mounted document when Ctrl+Enter is pressed', () => {
