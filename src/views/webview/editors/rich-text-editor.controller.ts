@@ -244,10 +244,12 @@ export class RichTextEditorController {
 	 * Creates the mounted ProseMirror attributes needed by the shared surface contract.
 	 */
 	private createMountedEditorAttributes(): Record<string, string> {
+		const ariaLabelledById = this.mountedSurface.getAttribute('aria-labelledby');
 		return {
 			class: 'jira-rich-editor-prosemirror',
 			'data-placeholder': this.resolvePlaceholderText(),
 			'aria-disabled': this.hiddenValueField.disabled ? 'true' : 'false',
+			...(ariaLabelledById ? { 'aria-labelledby': ariaLabelledById } : {}),
 		};
 	}
 
