@@ -872,6 +872,105 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(liftCalls).toBe(1);
 	});
 
+	it('falls back without preventing Enter during composition', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let hardBreakCalls = 0;
+		behavior.attach({
+			state: {
+				selection: {
+					$from: {
+						depth: 0,
+						node: () => ({
+							type: { name: 'paragraph' },
+							isTextblock: true,
+							content: { size: 1 },
+						}),
+					},
+				},
+			},
+			commands: {
+				setHardBreak: () => {
+					hardBreakCalls += 1;
+					return true;
+				},
+			},
+		} as never);
+
+		const handleKeyDown = behavior.createEditorProps()?.handleKeyDown;
+		if (!handleKeyDown) {
+			throw new Error('The keyboard handler was not created.');
+		}
+
+		const event = new KeyboardEvent('keydown', {
+			key: 'Enter',
+			bubbles: true,
+			cancelable: true,
+			isComposing: true,
+		});
+
+		expect(handleKeyDown({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(hardBreakCalls).toBe(0);
+	});
+
+	it('falls back without preventing modified Backspace inside a list item', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let liftCalls = 0;
+		behavior.attach({
+			state: {
+				selection: {
+					$from: {
+						depth: 1,
+						node: (depth: number) =>
+							depth === 1
+								? {
+										type: { name: 'listItem' },
+										isTextblock: false,
+										content: { size: 1 },
+									}
+								: {
+										type: { name: 'paragraph' },
+										isTextblock: true,
+										content: { size: 0 },
+									},
+					},
+				},
+			},
+			commands: {
+				liftListItem: () => {
+					liftCalls += 1;
+					return true;
+				},
+			},
+		} as never);
+
+		const handleKeyDown = behavior.createEditorProps()?.handleKeyDown;
+		if (!handleKeyDown) {
+			throw new Error('The keyboard handler was not created.');
+		}
+
+		const event = new KeyboardEvent('keydown', {
+			key: 'Backspace',
+			ctrlKey: true,
+			bubbles: true,
+			cancelable: true,
+		});
+
+		expect(handleKeyDown({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(liftCalls).toBe(0);
+	});
+
 	it('does not surface script or style text during fallback collection', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
@@ -1394,7 +1493,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(insertedContent).toHaveLength(0);
 	});
 
-	it('does not change the mounted document when Ctrl+Enter is pressed', () => {
+	it('lets Ctrl+Enter reach the editor fallback', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: 'Paragraph text',
 			plainValue: 'Paragraph text',
@@ -1402,17 +1501,14 @@ describe('RichTextEditorBrowserBootstrap', () => {
 
 		harness.initialize();
 		harness.placeCaretAtText('Paragraph text', 4);
-
-		const beforeHtml = harness.mountedSurface.innerHTML;
-		const beforeHiddenValue = harness.hiddenValueField.value;
 
 		harness.pressEditorKey('Enter', { ctrlKey: true });
 
-		expect(harness.mountedSurface.innerHTML).toBe(beforeHtml);
-		expect(harness.hiddenValueField.value).toBe(beforeHiddenValue);
+		expect(harness.getMountedEditor().querySelector('br')).toBeTruthy();
+		expect(harness.mountedSurface.innerHTML).toContain('<br>');
 	});
 
-	it('does not change the mounted document when Enter is pressed during composition', () => {
+	it('lets Enter during composition reach the editor fallback', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: 'Paragraph text',
 			plainValue: 'Paragraph text',
@@ -1421,13 +1517,11 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		harness.initialize();
 		harness.placeCaretAtText('Paragraph text', 4);
 
-		const beforeHtml = harness.mountedSurface.innerHTML;
-		const beforeHiddenValue = harness.hiddenValueField.value;
-
 		harness.pressEditorKey('Enter', { isComposing: true });
 
-		expect(harness.mountedSurface.innerHTML).toBe(beforeHtml);
-		expect(harness.hiddenValueField.value).toBe(beforeHiddenValue);
+		expect(harness.getMountedEditor().querySelectorAll('p')).toHaveLength(2);
+		expect(harness.mountedSurface.innerHTML).toContain('<p>Paragraph </p>');
+		expect(harness.mountedSurface.innerHTML).toContain('<p>text</p>');
 	});
 
 	it('stops redirecting mounted-surface clicks after the controller is destroyed', () => {
