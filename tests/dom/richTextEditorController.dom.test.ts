@@ -375,6 +375,22 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toBe('*not bold*');
 	});
 
+	it('keeps supported marks when mixed with unsupported inline HTML', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<p><strong>Bold</strong><sup>1</sup></p>', 'Bold1');
+
+		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
+		expect(harness.getMountedEditor().innerHTML).toContain('1');
+		expect(harness.hiddenValueField.value).toContain('*Bold*');
+		expect(harness.hiddenValueField.value).toContain('1');
+	});
+
 	it('splits a non-empty list item when Enter is pressed', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '* Item one',

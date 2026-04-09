@@ -295,7 +295,7 @@ export class RichTextEditorBehavior {
 			case 'span':
 				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
 			default:
-				return false;
+				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
 		}
 	}
 
