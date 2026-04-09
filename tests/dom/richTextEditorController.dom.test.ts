@@ -786,14 +786,14 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			},
 		});
 
-		expect(handlePaste({} as never, event)).toBe(false);
-		expect(event.defaultPrevented).toBe(false);
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
 		expect(insertedContent.join('')).not.toContain('alert(1)');
 		expect(insertedContent.join('')).not.toContain('color:red');
 		expect(plainTextContent).toBe('Safe Text');
 	});
 
-	it('does not swallow valid normalized HTML when every insert path fails', () => {
+	it('allows already safe HTML to fail open when every insert path fails', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -839,11 +839,11 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			value: {
 				getData: (type: string) => {
 					if (type === 'text/html') {
-						return '<p><strong>Bold</strong><sup>1</sup></p>';
+						return '<p><strong>Bold</strong></p>';
 					}
 
 					if (type === 'text/plain') {
-						return 'Bold1';
+						return 'Bold';
 					}
 
 					return '';
@@ -853,8 +853,72 @@ describe('RichTextEditorBrowserBootstrap', () => {
 
 		expect(handlePaste({} as never, event)).toBe(false);
 		expect(event.defaultPrevented).toBe(false);
-		expect(insertedContent).toEqual(['<p><strong>Bold</strong>1</p>', '<p>Bold1</p>']);
-		expect(plainTextContent).toBe('Bold1');
+		expect(insertedContent).toEqual(['<p><strong>Bold</strong></p>', '<p>Bold</p>']);
+		expect(plainTextContent).toBe('Bold');
+	});
+
+	it('does not fail open for rewritten HTML when every insert path fails', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		const insertedContent: string[] = [];
+		let plainTextContent: string | undefined;
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: (content: string) => {
+						insertedContent.push(content);
+						return {
+							run: () => false,
+						};
+					},
+					command: (fn: (args: { tr: { insertText: (content: string) => void } }) => boolean) => ({
+						run: () => {
+							fn({
+								tr: {
+									insertText: (content: string) => {
+										plainTextContent = content;
+									},
+								},
+							});
+							return false;
+						},
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<div class="MsoNormal" style="margin-left: 36pt"><span style="font-size: 18pt">Readable</span></div>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Readable';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+		expect(insertedContent).toEqual(['<p>Readable</p>', '<p>Readable</p>']);
+		expect(plainTextContent).toBe('Readable');
 	});
 
 	it('consumes handled script-only HTML as a safe no-op', () => {

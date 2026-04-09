@@ -134,7 +134,12 @@ export class RichTextEditorBehavior {
 		}
 
 		if (normalizedHtmlContent) {
-			return false;
+			if (normalizedHtmlContent === html) {
+				return false;
+			}
+
+			event.preventDefault();
+			return true;
 		}
 
 		event.preventDefault();
