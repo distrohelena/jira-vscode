@@ -452,6 +452,26 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toContain('[Docs|https://example.test]');
 	});
 
+	it('preserves supported marks inside a layout section wrapper', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste(
+			'<section><p><strong>Bold</strong> <a href="https://example.test">Docs</a></p></section>',
+			'Bold Docs'
+		);
+
+		expect(harness.getMountedEditor().querySelector('section')).toBeNull();
+		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
+		expect(harness.getMountedEditor().innerHTML).toContain('href="https://example.test"');
+		expect(harness.hiddenValueField.value).toContain('*Bold*');
+		expect(harness.hiddenValueField.value).toContain('[Docs|https://example.test]');
+	});
+
 	it('preserves readable block boundaries for headings and paragraphs', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',

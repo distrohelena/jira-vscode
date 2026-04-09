@@ -335,6 +335,10 @@ export class RichTextEditorBehavior {
 			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
 		}
 
+		if (this.isLayoutPasteWrapperTag(tagName)) {
+			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+		}
+
 		if (this.isParagraphLikePasteWrapperTag(tagName)) {
 			if (tagName === 'div' && this.hasBlockPasteChildren(element)) {
 				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
@@ -520,14 +524,24 @@ export class RichTextEditorBehavior {
 			tagName === 'details' ||
 			tagName === 'summary' ||
 			tagName === 'figure' ||
-			tagName === 'figcaption' ||
+			tagName === 'figcaption'
+		);
+	}
+
+	/**
+	 * Returns whether a pasted tag is a layout wrapper that should flatten its children.
+	 */
+	private isLayoutPasteWrapperTag(tagName: string): boolean {
+		return (
 			tagName === 'section' ||
 			tagName === 'article' ||
 			tagName === 'aside' ||
 			tagName === 'header' ||
 			tagName === 'footer' ||
 			tagName === 'main' ||
-			tagName === 'nav'
+			tagName === 'nav' ||
+			tagName === 'figure' ||
+			tagName === 'figcaption'
 		);
 	}
 
