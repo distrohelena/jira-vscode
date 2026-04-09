@@ -506,7 +506,7 @@ export class RichTextEditorBehavior {
 
 		const link = document.createElement('a');
 		link.setAttribute('href', href);
-		if (!this.hasOnlyAllowedPasteAttributes(element, ['href', 'rel', 'target', 'title'])) {
+		if (!this.hasOnlyAllowedPasteAttributes(element, ['href'])) {
 			state.canFailOpen = false;
 		}
 

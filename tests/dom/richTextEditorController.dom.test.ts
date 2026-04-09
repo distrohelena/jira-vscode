@@ -859,13 +859,13 @@ describe('RichTextEditorBrowserBootstrap', () => {
 
 	it.each([
 		{
-			name: 'preserves harmless canonicalization on links with title',
-			html: '<p><a href="https://example.test" title="Docs">Docs</a></p>',
+			name: 'preserves harmless canonicalization on links with uppercase tags and href only',
+			html: '<P><A HREF="https://example.test">Docs</A></P>',
 			text: 'Docs',
 		},
 		{
-			name: 'preserves harmless canonicalization on links with rel',
-			html: '<p><a href="https://example.test" rel="noopener">Docs</a></p>',
+			name: 'preserves harmless canonicalization on a simple wrapper div',
+			html: '<div>Docs</div>',
 			text: 'Docs',
 		},
 	])('$name', ({ html, text }) => {
@@ -914,6 +914,54 @@ describe('RichTextEditorBrowserBootstrap', () => {
 
 		expect(handlePaste({} as never, event)).toBe(false);
 		expect(event.defaultPrevented).toBe(false);
+	});
+
+	it('fails closed for links with unsupported attributes', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<p><a href="https://example.test" title="Docs">Docs</a></p>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
 	});
 
 	it('does not fail open for rewritten HTML when every insert path fails', () => {
