@@ -178,12 +178,17 @@ export class RichTextEditorController {
 
 		if (mode === 'wiki') {
 			this.synchronizeWikiFieldsFromEditor();
+			this.resolveMountedEditorElement()?.blur();
 		} else {
+			this.plainTextarea.blur();
 			this.applyWikiTextareaToEditor();
 		}
 
 		this.currentMode = mode;
 		this.applyCurrentMode();
+		if (mode === 'wiki') {
+			this.plainTextarea.focus();
+		}
 		this.toolbarController.refreshState();
 	}
 
@@ -371,6 +376,14 @@ export class RichTextEditorController {
 		}
 
 		return element;
+	}
+
+	/**
+	 * Resolves the mounted ProseMirror root when the visual editor has already been created.
+	 */
+	private resolveMountedEditorElement(): HTMLElement | undefined {
+		const element = this.mountedSurface.querySelector('.ProseMirror');
+		return element instanceof HTMLElement ? element : undefined;
 	}
 
 	/**

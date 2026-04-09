@@ -158,7 +158,9 @@ export class RichTextToolbarController {
 			return;
 		}
 
-		event.preventDefault();
+		if (this.isToolbarCommand(button.getAttribute('data-command'))) {
+			event.preventDefault();
+		}
 	}
 
 	/**

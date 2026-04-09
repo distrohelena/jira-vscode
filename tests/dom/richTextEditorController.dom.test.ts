@@ -83,6 +83,42 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toBe('*bold* _italic_');
 	});
 
+	it('moves focus to the wiki textarea when switching away from the visual editor', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.click(harness.getCommandButton('bold'));
+
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('true');
+
+		harness.click(harness.getModeToggleButton());
+
+		expect(harness.host.getAttribute('data-mode')).toBe('wiki');
+		expect(document.activeElement).toBe(harness.plainTextarea);
+	});
+
+	it('keeps toolbar state inactive after switching back to visual mode until the editor is re-entered', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.click(harness.getCommandButton('bold'));
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('true');
+
+		harness.click(harness.getModeToggleButton());
+		harness.click(harness.getModeToggleButton());
+
+		expect(harness.host.getAttribute('data-mode')).toBe('visual');
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+	});
+
 	it('boots against the compact shell without requiring the removed dual mode buttons', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',
@@ -95,7 +131,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.getModeToggleButton().getAttribute('data-target-mode')).toBe('wiki');
 	});
 
-	it('prevents toolbar mousedown from stealing the editor selection before commands run', () => {
+	it('prevents formatting button mousedown from stealing the editor selection before commands run', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: 'Plain text value',
 			plainValue: 'Plain text value',
@@ -108,7 +144,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 
 		const modeMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
 		harness.getModeToggleButton().dispatchEvent(modeMouseDown);
-		expect(modeMouseDown.defaultPrevented).toBe(true);
+		expect(modeMouseDown.defaultPrevented).toBe(false);
 	});
 
 	it('focuses the ProseMirror editor when the outer surface is clicked', () => {
