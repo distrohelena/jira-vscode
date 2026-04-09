@@ -264,6 +264,7 @@ describe('Issue panel editor interactions', () => {
 		const descriptionEditor = dom.window.document.querySelector('.jira-description-editor') as HTMLFormElement;
 		expect(descriptionDisplay).toBeTruthy();
 		expect(descriptionEditor).toBeTruthy();
+		expect(descriptionEditor.querySelector('.jira-rich-editor-surface')).toBeTruthy();
 
 		IssuePanelTestHarness.click(descriptionDisplay, dom.window);
 		expect(descriptionEditor.querySelector('[data-jira-rich-editor]')).toBeTruthy();
@@ -428,6 +429,7 @@ describe('Issue panel editor interactions', () => {
 		const visualSurface = editForm?.querySelector('.jira-rich-editor-surface') as HTMLElement | null;
 		expect(editForm).toBeTruthy();
 		expect(editEditor).toBeTruthy();
+		expect(editForm?.querySelector('.jira-rich-editor-surface')).toBeTruthy();
 		expect(editForm?.querySelector('.jira-rich-editor-raw')).toBeNull();
 		expect(editForm?.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
 		expect(editForm?.querySelector('.jira-rich-editor-button[data-command="orderedList"]')).toBeTruthy();

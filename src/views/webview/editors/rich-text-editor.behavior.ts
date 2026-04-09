@@ -143,6 +143,10 @@ export class RichTextEditorBehavior {
 			return true;
 		}
 
+		if (normalizedHtmlContent?.canFailOpen) {
+			return false;
+		}
+
 		const fallbackContent = this.normalizePasteFallbackContent(html, text);
 		if (fallbackContent && this.editor.chain().focus().insertContent(fallbackContent).run()) {
 			event.preventDefault();
@@ -159,16 +163,11 @@ export class RichTextEditorBehavior {
 		}
 
 		if (normalizedHtmlContent) {
-			if (normalizedHtmlContent.canFailOpen) {
-				return false;
-			}
-
 			event.preventDefault();
 			return true;
 		}
 
-		event.preventDefault();
-		return true;
+		return false;
 	}
 
 	/**

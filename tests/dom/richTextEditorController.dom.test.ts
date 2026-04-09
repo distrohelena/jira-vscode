@@ -1036,7 +1036,73 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(plainTextContent).toBe('Safe Text');
 	});
 
-	it('allows already safe HTML to fail open when every insert path fails', () => {
+	it('fails open for safe HTML before lossy fallback inserts when the sanitized insert rejects', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		const insertedContent: string[] = [];
+		let plainTextContent: string | undefined;
+		let insertAttempt = 0;
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: (content: string) => {
+						insertedContent.push(content);
+						insertAttempt += 1;
+						return {
+							run: () => insertAttempt !== 1,
+						};
+					},
+					command: (fn: (args: { tr: { insertText: (content: string) => void } }) => boolean) => ({
+						run: () => {
+							fn({
+								tr: {
+									insertText: (content: string) => {
+										plainTextContent = content;
+									},
+								},
+							});
+							return false;
+						},
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<p><strong>Bold</strong></p>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Bold';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(insertedContent).toEqual(['<p><strong>Bold</strong></p>']);
+		expect(plainTextContent).toBeUndefined();
+	});
+
+	it('returns false for plain-text-only paste when custom insert paths reject it', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -1082,11 +1148,11 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			value: {
 				getData: (type: string) => {
 					if (type === 'text/html') {
-						return '<P><STRONG>Bold</STRONG></P>';
+						return '';
 					}
 
 					if (type === 'text/plain') {
-						return 'Bold';
+						return 'Plain text';
 					}
 
 					return '';
@@ -1096,8 +1162,8 @@ describe('RichTextEditorBrowserBootstrap', () => {
 
 		expect(handlePaste({} as never, event)).toBe(false);
 		expect(event.defaultPrevented).toBe(false);
-		expect(insertedContent).toEqual(['<p><strong>Bold</strong></p>', '<p>Bold</p>']);
-		expect(plainTextContent).toBe('Bold');
+		expect(insertedContent).toEqual(['<p>Plain text</p>', '<p>Plain text</p>']);
+		expect(plainTextContent).toBe('Plain text');
 	});
 
 	it.each([
