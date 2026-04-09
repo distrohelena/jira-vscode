@@ -857,6 +857,65 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(plainTextContent).toBe('Bold');
 	});
 
+	it.each([
+		{
+			name: 'preserves harmless canonicalization on links with title',
+			html: '<p><a href="https://example.test" title="Docs">Docs</a></p>',
+			text: 'Docs',
+		},
+		{
+			name: 'preserves harmless canonicalization on links with rel',
+			html: '<p><a href="https://example.test" rel="noopener">Docs</a></p>',
+			text: 'Docs',
+		},
+	])('$name', ({ html, text }) => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return html;
+					}
+
+					if (type === 'text/plain') {
+						return text;
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+	});
+
 	it('does not fail open for rewritten HTML when every insert path fails', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),

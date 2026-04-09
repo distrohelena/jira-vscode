@@ -28,6 +28,31 @@ export type RichTextEditorBehaviorOptions = {
 };
 
 /**
+ * Records whether a sanitized HTML fragment stayed within the safe subset that can fail open.
+ */
+interface PasteNormalizationState {
+	/**
+	 * Tracks whether the sanitizer introduced any unsafe rewrite that must remain in the custom path.
+	 */
+	canFailOpen: boolean;
+}
+
+/**
+ * Captures the sanitized HTML fragment and its fail-open classification.
+ */
+interface NormalizedPasteHtml {
+	/**
+	 * Stores the sanitized HTML fragment ready for editor insertion.
+	 */
+	html: string;
+
+	/**
+	 * Tracks whether the original clipboard HTML is still safe to hand back to default paste.
+	 */
+	canFailOpen: boolean;
+}
+
+/**
  * Owns the non-formatting interaction rules for one mounted rich text editor.
  */
 export class RichTextEditorBehavior {
@@ -112,7 +137,7 @@ export class RichTextEditorBehavior {
 		}
 
 		const normalizedHtmlContent = html.length > 0 ? this.normalizePastedHtml(html) : undefined;
-		const normalizedContent = normalizedHtmlContent ?? this.normalizePasteContent(html, text);
+		const normalizedContent = normalizedHtmlContent?.html ?? this.normalizePasteContent(html, text);
 		if (normalizedContent && this.editor.chain().focus().insertContent(normalizedContent).run()) {
 			event.preventDefault();
 			return true;
@@ -134,7 +159,7 @@ export class RichTextEditorBehavior {
 		}
 
 		if (normalizedHtmlContent) {
-			if (this.isSafeToFailOpenPastedHtml(html)) {
+			if (normalizedHtmlContent.canFailOpen) {
 				return false;
 			}
 
@@ -150,7 +175,7 @@ export class RichTextEditorBehavior {
 	 * Resolves the normalized editor HTML for the clipboard payload, preferring semantic HTML when available.
 	 */
 	private normalizePasteContent(html: string, text: string): string | undefined {
-		const normalizedHtml = html.length > 0 ? this.normalizePastedHtml(html) : undefined;
+		const normalizedHtml = html.length > 0 ? this.normalizePastedHtml(html)?.html : undefined;
 		if (normalizedHtml) {
 			return normalizedHtml;
 		}
@@ -180,7 +205,7 @@ export class RichTextEditorBehavior {
 	/**
 	 * Converts pasted HTML into editor-safe content without reinterpreting Jira wiki markers.
 	 */
-	private normalizePastedHtml(html: string): string | undefined {
+	private normalizePastedHtml(html: string): NormalizedPasteHtml | undefined {
 		const normalized = html.trim();
 		if (!normalized) {
 			return undefined;
@@ -188,12 +213,13 @@ export class RichTextEditorBehavior {
 
 		const parsed = new DOMParser().parseFromString(normalized, 'text/html');
 		const container = document.createElement('div');
-		if (!this.appendSanitizedPasteNodes(container, Array.from(parsed.body.childNodes))) {
+		const state: PasteNormalizationState = { canFailOpen: true };
+		if (!this.appendSanitizedPasteNodes(container, Array.from(parsed.body.childNodes), state)) {
 			return undefined;
 		}
 
 		const sanitized = container.innerHTML.trim();
-		return sanitized.length > 0 ? sanitized : undefined;
+		return sanitized.length > 0 ? { html: sanitized, canFailOpen: state.canFailOpen } : undefined;
 	}
 
 	/**
@@ -237,83 +263,6 @@ export class RichTextEditorBehavior {
 		const parsed = new DOMParser().parseFromString(normalized, 'text/html');
 		const text = this.collectReadableText(Array.from(parsed.body.childNodes)).trim();
 		return text.length > 0 ? text : undefined;
-	}
-
-	/**
-	 * Resolves whether an original clipboard HTML fragment is already within the safe subset that can fail open.
-	 */
-	private isSafeToFailOpenPastedHtml(html: string): boolean {
-		const normalized = html.trim();
-		if (!normalized) {
-			return false;
-		}
-
-		const parsed = new DOMParser().parseFromString(normalized, 'text/html');
-		return this.isSafeToFailOpenPastedHtmlNodes(Array.from(parsed.body.childNodes));
-	}
-
-	/**
-	 * Resolves whether all nodes in a clipboard fragment are safe to hand back to default paste.
-	 */
-	private isSafeToFailOpenPastedHtmlNodes(nodes: ChildNode[]): boolean {
-		for (const node of nodes) {
-			if (!this.isSafeToFailOpenPastedHtmlNode(node)) {
-				return false;
-			}
-		}
-
-		return true;
-	}
-
-	/**
-	 * Resolves whether one clipboard node is safe to hand back to default paste.
-	 */
-	private isSafeToFailOpenPastedHtmlNode(node: ChildNode): boolean {
-		if (node.nodeType === Node.TEXT_NODE) {
-			return true;
-		}
-
-		if (node.nodeType !== Node.ELEMENT_NODE) {
-			return false;
-		}
-
-		const element = node as HTMLElement;
-		const tagName = element.tagName.toLowerCase();
-
-		switch (tagName) {
-			case 'br':
-				return true;
-			case 'a':
-				return this.hasOnlyAllowedPasteAttributes(element, ['href']) && !this.containsBlockPasteContent(element) && this.isSafeToFailOpenPastedHtmlNodes(Array.from(element.childNodes));
-			case 'strong':
-			case 'b':
-			case 'em':
-			case 'i':
-			case 'u':
-			case 'span':
-				return this.hasOnlyAllowedPasteAttributes(element, []) && !this.containsBlockPasteContent(element) && this.isSafeToFailOpenPastedHtmlNodes(Array.from(element.childNodes));
-			case 'p':
-			case 'div':
-			case 'h1':
-			case 'h2':
-			case 'h3':
-			case 'h4':
-			case 'h5':
-			case 'h6':
-			case 'blockquote':
-			case 'section':
-			case 'article':
-			case 'aside':
-			case 'header':
-			case 'footer':
-			case 'main':
-			case 'nav':
-			case 'figure':
-			case 'figcaption':
-				return this.hasOnlyAllowedPasteAttributes(element, []) && this.isSafeToFailOpenPastedHtmlNodes(Array.from(element.childNodes));
-			default:
-				return false;
-		}
 	}
 
 	/**
@@ -402,9 +351,9 @@ export class RichTextEditorBehavior {
 	/**
 	 * Appends sanitized clipboard nodes to a container while preserving only supported inline structure.
 	 */
-	private appendSanitizedPasteNodes(target: HTMLElement, nodes: ChildNode[]): boolean {
+	private appendSanitizedPasteNodes(target: HTMLElement, nodes: ChildNode[], state: PasteNormalizationState): boolean {
 		for (const node of nodes) {
-			if (!this.appendSanitizedPasteNode(target, node)) {
+			if (!this.appendSanitizedPasteNode(target, node, state)) {
 				return false;
 			}
 		}
@@ -415,7 +364,7 @@ export class RichTextEditorBehavior {
 	/**
 	 * Appends one sanitized clipboard node to a container or rejects the paste fragment.
 	 */
-	private appendSanitizedPasteNode(target: HTMLElement, node: ChildNode): boolean {
+	private appendSanitizedPasteNode(target: HTMLElement, node: ChildNode, state: PasteNormalizationState): boolean {
 		if (node.nodeType === Node.TEXT_NODE) {
 			target.append(node.textContent ?? '');
 			return true;
@@ -429,31 +378,47 @@ export class RichTextEditorBehavior {
 		const tagName = element.tagName.toLowerCase();
 
 		if (this.isInlinePasteWrapperTag(tagName) && this.containsBlockPasteContent(element)) {
-			return this.appendPlainTextPasteNode(target, element);
+			state.canFailOpen = false;
+			return this.appendPlainTextPasteNode(target, element, state);
 		}
 
 		if (tagName === 'blockquote') {
-			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+			if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
+				state.canFailOpen = false;
+			}
+
+			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes), state);
 		}
 
 		if (this.isLayoutPasteWrapperTag(tagName)) {
-			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+			if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
+				state.canFailOpen = false;
+			}
+
+			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes), state);
 		}
 
 		if (this.isParagraphLikePasteWrapperTag(tagName)) {
 			if (tagName === 'div' && this.hasBlockPasteChildren(element)) {
-				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+				state.canFailOpen = false;
+				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes), state);
 			}
 
 			if (this.containsBlockPasteContent(element)) {
-				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+				state.canFailOpen = false;
+				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes), state);
 			}
 
-			return this.appendWrappedPasteNode(target, 'p', element.childNodes);
+			if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
+				state.canFailOpen = false;
+			}
+
+			return this.appendWrappedPasteNode(target, 'p', element.childNodes, state);
 		}
 
 		if (this.isUnsupportedPasteStructureTag(tagName)) {
-			return this.appendReadablePasteNode(target, element);
+			state.canFailOpen = false;
+			return this.appendReadablePasteNode(target, element, state);
 		}
 
 		switch (tagName) {
@@ -462,45 +427,68 @@ export class RichTextEditorBehavior {
 				return true;
 			case 'strong':
 			case 'b':
-				return this.appendWrappedPasteNode(target, 'strong', element.childNodes);
+				if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
+					state.canFailOpen = false;
+				}
+
+				return this.appendWrappedPasteNode(target, 'strong', element.childNodes, state);
 			case 'em':
 			case 'i':
-				return this.appendWrappedPasteNode(target, 'em', element.childNodes);
+				if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
+					state.canFailOpen = false;
+				}
+
+				return this.appendWrappedPasteNode(target, 'em', element.childNodes, state);
 			case 'u':
-				return this.appendWrappedPasteNode(target, 'u', element.childNodes);
+				if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
+					state.canFailOpen = false;
+				}
+
+				return this.appendWrappedPasteNode(target, 'u', element.childNodes, state);
 			case 'a':
-				return this.appendLinkedPasteNode(target, element);
+				return this.appendLinkedPasteNode(target, element, state);
 			case 'span':
-				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+				if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
+					state.canFailOpen = false;
+				}
+
+				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes), state);
 			default:
-				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+				state.canFailOpen = false;
+				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes), state);
 		}
 	}
 
 	/**
 	 * Appends readable text for unsupported structural elements without importing their layout.
 	 */
-	private appendReadablePasteNode(target: HTMLElement, element: HTMLElement): boolean {
+	private appendReadablePasteNode(target: HTMLElement, element: HTMLElement, state: PasteNormalizationState): boolean {
 		const readable = this.normalizeReadableTextFromHtml(element.outerHTML);
 		if (!readable) {
 			return true;
 		}
 
+		state.canFailOpen = false;
 		if (this.canContainReadableBlockHtml(target)) {
 			target.insertAdjacentHTML('beforeend', readable);
 			return true;
 		}
 
-		return this.appendPlainTextPasteNode(target, element);
+		return this.appendPlainTextPasteNode(target, element, state);
 	}
 
 	/**
 	 * Appends a sanitized wrapper element around a nested clipboard fragment.
 	 */
-	private appendWrappedPasteNode(target: HTMLElement, tagName: 'p' | 'strong' | 'em' | 'u', nodes: ChildNode[]): boolean {
+	private appendWrappedPasteNode(
+		target: HTMLElement,
+		tagName: 'p' | 'strong' | 'em' | 'u',
+		nodes: ChildNode[],
+		state: PasteNormalizationState
+	): boolean {
 		const wrapper = document.createElement(tagName);
 		target.append(wrapper);
-		if (!this.appendSanitizedPasteNodes(wrapper, nodes)) {
+		if (!this.appendSanitizedPasteNodes(wrapper, nodes, state)) {
 			return false;
 		}
 		return true;
@@ -509,16 +497,21 @@ export class RichTextEditorBehavior {
 	/**
 	 * Appends a sanitized link element while preserving only its destination URL.
 	 */
-	private appendLinkedPasteNode(target: HTMLElement, element: HTMLElement): boolean {
+	private appendLinkedPasteNode(target: HTMLElement, element: HTMLElement, state: PasteNormalizationState): boolean {
 		const href = element.getAttribute('href')?.trim();
 		if (!href) {
-			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
+			state.canFailOpen = false;
+			return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes), state);
 		}
 
 		const link = document.createElement('a');
 		link.setAttribute('href', href);
+		if (!this.hasOnlyAllowedPasteAttributes(element, ['href', 'rel', 'target', 'title'])) {
+			state.canFailOpen = false;
+		}
+
 		target.append(link);
-		if (!this.appendSanitizedPasteNodes(link, Array.from(element.childNodes))) {
+		if (!this.appendSanitizedPasteNodes(link, Array.from(element.childNodes), state)) {
 			return false;
 		}
 		return true;
@@ -527,12 +520,13 @@ export class RichTextEditorBehavior {
 	/**
 	 * Appends a block fragment as plain text when the current target cannot safely host block HTML.
 	 */
-	private appendPlainTextPasteNode(target: HTMLElement, element: HTMLElement): boolean {
+	private appendPlainTextPasteNode(target: HTMLElement, element: HTMLElement, state: PasteNormalizationState): boolean {
 		const plainText = this.normalizeReadablePlainTextFromHtml(element.outerHTML);
 		if (!plainText) {
 			return true;
 		}
 
+		state.canFailOpen = false;
 		target.insertAdjacentText('beforeend', plainText);
 		return true;
 	}
