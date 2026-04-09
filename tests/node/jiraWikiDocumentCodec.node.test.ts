@@ -58,6 +58,13 @@ test('convertPlainTextToEditorHtml preserves soft breaks inside plain text paste
 	);
 });
 
+test('convertWikiToEditorHtml preserves literal backslashes inside link targets', () => {
+	assert.equal(
+		JiraWikiDocumentCodec.convertWikiToEditorHtml('[Docs|https://example.test/a\\\\b]'),
+		'<p><a href="https://example.test/a\\\\b">Docs</a></p>'
+	);
+});
+
 test('convertEditorHtmlToWiki does not throw on malformed numeric entities', () => {
 	assert.doesNotThrow(() => JiraWikiDocumentCodec.convertEditorHtmlToWiki('&#999999999;'));
 	assert.equal(JiraWikiDocumentCodec.convertEditorHtmlToWiki('&#999999999;'), '&#999999999;');
