@@ -288,6 +288,7 @@ export class RichTextEditorBehavior {
 			case 'p':
 				return this.appendWrappedPasteNode(target, 'p', element.childNodes);
 			case 'div':
+				return this.appendWrappedPasteNode(target, 'p', element.childNodes);
 			case 'span':
 				return this.appendSanitizedPasteNodes(target, Array.from(element.childNodes));
 			default:

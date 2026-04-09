@@ -408,6 +408,19 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toContain('B');
 	});
 
+	it('preserves a readable separator between sibling div blocks', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<div>One</div><div>Two</div>', '');
+
+		expect(harness.hiddenValueField.value).toBe('One\n\nTwo');
+	});
+
 	it('splits a non-empty list item when Enter is pressed', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '* Item one',
