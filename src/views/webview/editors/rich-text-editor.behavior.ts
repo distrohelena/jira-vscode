@@ -111,7 +111,8 @@ export class RichTextEditorBehavior {
 			return false;
 		}
 
-		const normalizedContent = this.normalizePasteContent(html, text);
+		const normalizedHtmlContent = html.length > 0 ? this.normalizePastedHtml(html) : undefined;
+		const normalizedContent = normalizedHtmlContent ?? this.normalizePasteContent(html, text);
 		if (normalizedContent && this.editor.chain().focus().insertContent(normalizedContent).run()) {
 			event.preventDefault();
 			return true;
@@ -130,6 +131,10 @@ export class RichTextEditorBehavior {
 		}).run()) {
 			event.preventDefault();
 			return true;
+		}
+
+		if (normalizedHtmlContent) {
+			return false;
 		}
 
 		event.preventDefault();

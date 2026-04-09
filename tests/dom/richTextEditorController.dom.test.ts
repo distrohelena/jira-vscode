@@ -728,7 +728,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(liftCalls).toBe(1);
 	});
 
-	it('consumes handled script or style HTML as a safe no-op', () => {
+	it('does not surface script or style text during fallback collection', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -786,14 +786,14 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			},
 		});
 
-		expect(handlePaste({} as never, event)).toBe(true);
-		expect(event.defaultPrevented).toBe(true);
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
 		expect(insertedContent.join('')).not.toContain('alert(1)');
 		expect(insertedContent.join('')).not.toContain('color:red');
 		expect(plainTextContent).toBe('Safe Text');
 	});
 
-	it('consumes handled normalized HTML failures as a safe no-op', () => {
+	it('does not swallow valid normalized HTML when every insert path fails', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -851,8 +851,8 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			},
 		});
 
-		expect(handlePaste({} as never, event)).toBe(true);
-		expect(event.defaultPrevented).toBe(true);
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
 		expect(insertedContent).toEqual(['<p><strong>Bold</strong>1</p>', '<p>Bold1</p>']);
 		expect(plainTextContent).toBe('Bold1');
 	});
