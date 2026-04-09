@@ -727,6 +727,56 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(insertedContent).toEqual(['<p><strong>Bold</strong>1</p>', '<p>Bold1</p>']);
 	});
 
+	it('lets the browser paste continue when both custom inserts are rejected', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		const insertedContent: string[] = [];
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: (content: string) => {
+						insertedContent.push(content);
+						return {
+							run: () => false,
+						};
+					},
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<p><strong>Bold</strong><sup>1</sup></p>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Bold1';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(insertedContent).toEqual(['<p><strong>Bold</strong>1</p>', '<p>Bold1</p>']);
+	});
+
 	it('does not change the mounted document when Ctrl+Enter is pressed', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: 'Paragraph text',

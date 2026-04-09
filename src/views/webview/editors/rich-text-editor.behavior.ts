@@ -108,15 +108,20 @@ export class RichTextEditorBehavior {
 		const html = clipboardData.getData('text/html').trim();
 		const text = clipboardData.getData('text/plain');
 		const normalizedContent = this.normalizePasteContent(html, text);
-		event.preventDefault();
 		const normalizedHandled = this.editor.chain().focus().insertContent(normalizedContent).run();
 		if (normalizedHandled) {
+			event.preventDefault();
 			return true;
 		}
 
 		const fallbackContent = this.normalizePasteFallbackContent(html, text);
-		this.editor.chain().focus().insertContent(fallbackContent).run();
-		return true;
+		const fallbackHandled = this.editor.chain().focus().insertContent(fallbackContent).run();
+		if (fallbackHandled) {
+			event.preventDefault();
+			return true;
+		}
+
+		return false;
 	}
 
 	/**
