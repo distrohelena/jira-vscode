@@ -728,53 +728,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(liftCalls).toBe(1);
 	});
 
-	it('consumes pasted HTML with no readable content as a no-op', () => {
-		const behavior = new RichTextEditorBehavior({
-			mountedSurface: document.createElement('div'),
-			isVisualMode: () => true,
-			isDisabled: () => false,
-			onInteractionStateChanged: () => undefined,
-		});
-		let insertedContent: string | undefined;
-		behavior.attach({
-			chain: () => ({
-				focus: () => ({
-					insertContent: (content: string) => {
-						insertedContent = content;
-						return {
-							run: () => true,
-						};
-					},
-				}),
-			}),
-		} as never);
-
-		const handlePaste = behavior.createEditorProps()?.handlePaste;
-		if (!handlePaste) {
-			throw new Error('The paste handler was not created.');
-		}
-
-		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
-			clipboardData: { getData: (type: string) => string };
-		};
-		Object.defineProperty(event, 'clipboardData', {
-			value: {
-				getData: (type: string) => {
-					if (type === 'text/html') {
-						return '<script>alert(1)</script>';
-					}
-
-					return '';
-				},
-			},
-		});
-
-		expect(handlePaste({} as never, event)).toBe(true);
-		expect(event.defaultPrevented).toBe(true);
-		expect(insertedContent).toBeUndefined();
-	});
-
-	it('falls back to plain-text insertion when normalized and fallback html inserts are rejected', () => {
+	it('does not surface script or style text during fallback collection', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -793,14 +747,81 @@ describe('RichTextEditorBrowserBootstrap', () => {
 						};
 					},
 					command: (fn: (args: { tr: { insertText: (content: string) => void } }) => boolean) => ({
-						run: () =>
+						run: () => {
 							fn({
 								tr: {
 									insertText: (content: string) => {
 										plainTextContent = content;
 									},
 								},
-							}),
+							});
+							return false;
+						},
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<section><p>Safe<script>alert(1)</script><style>.x{color:red}</style>Text</p></section>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Safe Text';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(insertedContent.join('')).not.toContain('alert(1)');
+		expect(insertedContent.join('')).not.toContain('color:red');
+		expect(plainTextContent).toBe('Safe Text');
+	});
+
+	it('returns false when normalized, fallback, and plain-text inserts are rejected', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		const insertedContent: string[] = [];
+		let plainTextContent: string | undefined;
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: (content: string) => {
+						insertedContent.push(content);
+						return {
+							run: () => false,
+						};
+					},
+					command: (fn: (args: { tr: { insertText: (content: string) => void } }) => boolean) => ({
+						run: () => {
+							fn({
+								tr: {
+									insertText: (content: string) => {
+										plainTextContent = content;
+									},
+								},
+							});
+							return false;
+						},
 					}),
 				}),
 			}),
@@ -830,8 +851,8 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			},
 		});
 
-		expect(handlePaste({} as never, event)).toBe(true);
-		expect(event.defaultPrevented).toBe(true);
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
 		expect(insertedContent).toEqual(['<p><strong>Bold</strong>1</p>', '<p>Bold1</p>']);
 		expect(plainTextContent).toBe('Bold1');
 	});

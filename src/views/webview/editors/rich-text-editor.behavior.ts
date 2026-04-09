@@ -111,31 +111,28 @@ export class RichTextEditorBehavior {
 			return false;
 		}
 
-		event.preventDefault();
-
 		const normalizedContent = this.normalizePasteContent(html, text);
 		if (normalizedContent && this.editor.chain().focus().insertContent(normalizedContent).run()) {
+			event.preventDefault();
 			return true;
 		}
 
 		const fallbackContent = this.normalizePasteFallbackContent(html, text);
 		if (fallbackContent && this.editor.chain().focus().insertContent(fallbackContent).run()) {
+			event.preventDefault();
 			return true;
 		}
 
 		const plainTextContent = this.normalizePastePlainText(html, text);
-		if (plainTextContent) {
-			this.editor
-				.chain()
-				.focus()
-				.command(({ tr }) => {
-					tr.insertText(plainTextContent);
-					return true;
-				})
-				.run();
+		if (plainTextContent && this.editor.chain().focus().command(({ tr }) => {
+			tr.insertText(plainTextContent);
+			return true;
+		}).run()) {
+			event.preventDefault();
+			return true;
 		}
 
-		return true;
+		return false;
 	}
 
 	/**
@@ -266,6 +263,9 @@ export class RichTextEditorBehavior {
 		switch (tagName) {
 			case 'br':
 				return '\n';
+			case 'script':
+			case 'style':
+				return '';
 			case 'td':
 			case 'th':
 				return `${children.trim()} `;
