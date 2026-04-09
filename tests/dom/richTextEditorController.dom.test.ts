@@ -1108,6 +1108,150 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(event.defaultPrevented).toBe(true);
 	});
 
+	it('fails closed for bold canonicalization when every insert path fails', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<p><b>Bold</b></p>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Bold';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('fails closed for italic canonicalization when every insert path fails', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<p><i>Italic</i></p>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Italic';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('fails closed for span unwrapping when every insert path fails', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<p><span>Docs</span></p>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
 	it('does not fail open for rewritten HTML when every insert path fails', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),

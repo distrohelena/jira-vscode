@@ -435,6 +435,10 @@ export class RichTextEditorBehavior {
 				return true;
 			case 'strong':
 			case 'b':
+				if (tagName === 'b') {
+					state.canFailOpen = false;
+				}
+
 				if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
 					state.canFailOpen = false;
 				}
@@ -442,6 +446,10 @@ export class RichTextEditorBehavior {
 				return this.appendWrappedPasteNode(target, 'strong', element.childNodes, state);
 			case 'em':
 			case 'i':
+				if (tagName === 'i') {
+					state.canFailOpen = false;
+				}
+
 				if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
 					state.canFailOpen = false;
 				}
@@ -456,6 +464,8 @@ export class RichTextEditorBehavior {
 			case 'a':
 				return this.appendLinkedPasteNode(target, element, state);
 			case 'span':
+				state.canFailOpen = false;
+
 				if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
 					state.canFailOpen = false;
 				}
