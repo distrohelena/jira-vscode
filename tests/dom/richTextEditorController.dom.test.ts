@@ -728,7 +728,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(liftCalls).toBe(1);
 	});
 
-	it('does not surface script or style text during fallback collection', () => {
+	it('consumes handled script or style HTML as a safe no-op', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -786,14 +786,14 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			},
 		});
 
-		expect(handlePaste({} as never, event)).toBe(false);
-		expect(event.defaultPrevented).toBe(false);
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
 		expect(insertedContent.join('')).not.toContain('alert(1)');
 		expect(insertedContent.join('')).not.toContain('color:red');
 		expect(plainTextContent).toBe('Safe Text');
 	});
 
-	it('returns false when normalized, fallback, and plain-text inserts are rejected', () => {
+	it('consumes handled normalized HTML failures as a safe no-op', () => {
 		const behavior = new RichTextEditorBehavior({
 			mountedSurface: document.createElement('div'),
 			isVisualMode: () => true,
@@ -851,10 +851,46 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			},
 		});
 
-		expect(handlePaste({} as never, event)).toBe(false);
-		expect(event.defaultPrevented).toBe(false);
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
 		expect(insertedContent).toEqual(['<p><strong>Bold</strong>1</p>', '<p>Bold1</p>']);
 		expect(plainTextContent).toBe('Bold1');
+	});
+
+	it('consumes handled script-only HTML as a safe no-op', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text', 4);
+
+		const beforeHtml = harness.getMountedEditor().innerHTML;
+		const beforeHiddenValue = harness.hiddenValueField.value;
+		const pasteEvent = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(pasteEvent, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<script>alert(1)</script>';
+					}
+
+					if (type === 'text/plain') {
+						return '';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(harness.getMountedEditor().dispatchEvent(pasteEvent)).toBe(false);
+		expect(pasteEvent.defaultPrevented).toBe(true);
+		expect(harness.getMountedEditor().innerHTML).toBe(beforeHtml);
+		expect(harness.hiddenValueField.value).toBe(beforeHiddenValue);
 	});
 
 	it('returns false for empty clipboard payloads', () => {

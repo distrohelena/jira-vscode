@@ -132,7 +132,8 @@ export class RichTextEditorBehavior {
 			return true;
 		}
 
-		return false;
+		event.preventDefault();
+		return true;
 	}
 
 	/**
