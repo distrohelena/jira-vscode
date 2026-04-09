@@ -134,7 +134,7 @@ export class RichTextEditorBehavior {
 		}
 
 		if (normalizedHtmlContent) {
-			if (normalizedHtmlContent === html) {
+			if (this.isSafeToFailOpenPastedHtml(html)) {
 				return false;
 			}
 
@@ -237,6 +237,96 @@ export class RichTextEditorBehavior {
 		const parsed = new DOMParser().parseFromString(normalized, 'text/html');
 		const text = this.collectReadableText(Array.from(parsed.body.childNodes)).trim();
 		return text.length > 0 ? text : undefined;
+	}
+
+	/**
+	 * Resolves whether an original clipboard HTML fragment is already within the safe subset that can fail open.
+	 */
+	private isSafeToFailOpenPastedHtml(html: string): boolean {
+		const normalized = html.trim();
+		if (!normalized) {
+			return false;
+		}
+
+		const parsed = new DOMParser().parseFromString(normalized, 'text/html');
+		return this.isSafeToFailOpenPastedHtmlNodes(Array.from(parsed.body.childNodes));
+	}
+
+	/**
+	 * Resolves whether all nodes in a clipboard fragment are safe to hand back to default paste.
+	 */
+	private isSafeToFailOpenPastedHtmlNodes(nodes: ChildNode[]): boolean {
+		for (const node of nodes) {
+			if (!this.isSafeToFailOpenPastedHtmlNode(node)) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Resolves whether one clipboard node is safe to hand back to default paste.
+	 */
+	private isSafeToFailOpenPastedHtmlNode(node: ChildNode): boolean {
+		if (node.nodeType === Node.TEXT_NODE) {
+			return true;
+		}
+
+		if (node.nodeType !== Node.ELEMENT_NODE) {
+			return false;
+		}
+
+		const element = node as HTMLElement;
+		const tagName = element.tagName.toLowerCase();
+
+		switch (tagName) {
+			case 'br':
+				return true;
+			case 'a':
+				return this.hasOnlyAllowedPasteAttributes(element, ['href']) && !this.containsBlockPasteContent(element) && this.isSafeToFailOpenPastedHtmlNodes(Array.from(element.childNodes));
+			case 'strong':
+			case 'b':
+			case 'em':
+			case 'i':
+			case 'u':
+			case 'span':
+				return this.hasOnlyAllowedPasteAttributes(element, []) && !this.containsBlockPasteContent(element) && this.isSafeToFailOpenPastedHtmlNodes(Array.from(element.childNodes));
+			case 'p':
+			case 'div':
+			case 'h1':
+			case 'h2':
+			case 'h3':
+			case 'h4':
+			case 'h5':
+			case 'h6':
+			case 'blockquote':
+			case 'section':
+			case 'article':
+			case 'aside':
+			case 'header':
+			case 'footer':
+			case 'main':
+			case 'nav':
+			case 'figure':
+			case 'figcaption':
+				return this.hasOnlyAllowedPasteAttributes(element, []) && this.isSafeToFailOpenPastedHtmlNodes(Array.from(element.childNodes));
+			default:
+				return false;
+		}
+	}
+
+	/**
+	 * Resolves whether an element only has clipboard attributes that are safe to ignore.
+	 */
+	private hasOnlyAllowedPasteAttributes(element: HTMLElement, allowedAttributeNames: string[]): boolean {
+		for (const attribute of Array.from(element.attributes)) {
+			if (!allowedAttributeNames.includes(attribute.name.toLowerCase())) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**

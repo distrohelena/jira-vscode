@@ -839,7 +839,7 @@ describe('RichTextEditorBrowserBootstrap', () => {
 			value: {
 				getData: (type: string) => {
 					if (type === 'text/html') {
-						return '<p><strong>Bold</strong></p>';
+						return '<P><STRONG>Bold</STRONG></P>';
 					}
 
 					if (type === 'text/plain') {
