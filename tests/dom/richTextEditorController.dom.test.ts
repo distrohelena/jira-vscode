@@ -281,6 +281,22 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.mountedSurface.innerHTML).toContain('Paragraph text');
 	});
 
+	it('splits a paragraph when Enter is pressed in visual mode', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text', 4);
+		harness.pressEditorKey('Enter');
+
+		expect(harness.mountedSurface.querySelectorAll('p')).toHaveLength(2);
+		expect(harness.mountedSurface.innerHTML).toContain('<p>Paragraph </p>');
+		expect(harness.mountedSurface.innerHTML).toContain('<p>text</p>');
+		expect(harness.hiddenValueField.value).toContain('\n\n');
+	});
+
 	it('rejects out-of-range caret offsets in the text helper', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: 'Paragraph text',

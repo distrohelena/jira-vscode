@@ -1895,7 +1895,7 @@ export class JiraWebviewPanel {
 \t\t\t\t</div>
 \t\t\t\t<div class="form-field">
 \t\t\t\t\t<div class="form-field-content">
-\t\t\t\t\t\t<span class="section-title">Description</span>
+\t\t\t\t\t\t<span class="section-title" id="create-description-title">Description</span>
 \t\t\t\t\t\t${RichTextEditorView.render({
 							fieldId: 'create-description-input',
 							fieldName: 'description',
@@ -1903,6 +1903,7 @@ export class JiraWebviewPanel {
 							plainValue: values.description,
 							placeholder: 'What needs to be done?',
 							disabled: !!state.submitting,
+							ariaLabelledById: 'create-description-title',
 						})}
 \t\t\t\t\t</div>
 \t\t\t\t</div>
