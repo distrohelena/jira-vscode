@@ -452,6 +452,54 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toContain('[Docs|https://example.test]');
 	});
 
+	it('fails closed when unsupported blockquote content cannot be inserted', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<blockquote><p>Docs</p></blockquote>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
 	it('preserves supported marks inside a layout section wrapper', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',
@@ -470,6 +518,54 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.getMountedEditor().innerHTML).toContain('href="https://example.test"');
 		expect(harness.hiddenValueField.value).toContain('*Bold*');
 		expect(harness.hiddenValueField.value).toContain('[Docs|https://example.test]');
+	});
+
+	it('fails closed when a layout wrapper rewrite cannot be inserted', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<section><p>Docs</p></section>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
 	});
 
 	it('preserves readable block boundaries for headings and paragraphs', () => {
@@ -500,6 +596,54 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.getMountedEditor().innerHTML).not.toContain('<p><p>');
 		expect(harness.getMountedEditor().innerHTML).not.toContain('<p></p>');
 		expect(harness.hiddenValueField.value).toBe('One\n\nTwo');
+	});
+
+	it('fails closed when a link with unsupported attributes cannot be inserted', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<a href="https://example.test" title="Docs">Docs</a>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
 	});
 
 	it('leaves empty clipboard pastes unhandled', () => {

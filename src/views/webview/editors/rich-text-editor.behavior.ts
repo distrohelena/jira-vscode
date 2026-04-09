@@ -383,6 +383,8 @@ export class RichTextEditorBehavior {
 		}
 
 		if (tagName === 'blockquote') {
+			state.canFailOpen = false;
+
 			if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
 				state.canFailOpen = false;
 			}
@@ -391,6 +393,8 @@ export class RichTextEditorBehavior {
 		}
 
 		if (this.isLayoutPasteWrapperTag(tagName)) {
+			state.canFailOpen = false;
+
 			if (!this.hasOnlyAllowedPasteAttributes(element, [])) {
 				state.canFailOpen = false;
 			}
