@@ -60,11 +60,11 @@ describe('RichTextMentionController', () => {
 
 		expect(requestedQueries).toEqual(['He']);
 		expect(harness.queryMentionPopup()).toBeTruthy();
-		expect(harness.getMentionOptions()).toHaveLength(2);
-		expect(harness.getMentionOptions()[0]?.textContent).toContain('@Helena');
+		expect(harness.getMentionOptions()).toHaveLength(3);
+		expect(harness.getMentionOptions()[0]?.textContent).toBe('Search...');
+		expect(harness.getMentionOptions()[1]?.textContent).toContain('@Helena');
 
 		harness.pressEditorKey('ArrowDown');
-		harness.pressEditorKey('ArrowUp');
 		harness.pressEditorKey('Enter');
 		await harness.flushAsyncWork();
 
@@ -116,5 +116,113 @@ describe('RichTextMentionController', () => {
 		expect(harness.queryMentionPopup()).toBeNull();
 		expect(harness.getAdfValueField().value).not.toContain('"type":"mention"');
 		expect(harness.getMountedEditor().textContent).toContain('@He');
+	});
+
+	/**
+	 * Renders Search first and opens the larger people-search modal with the active @query.
+	 */
+	it('renders Search as the first mention option and opens mention search with the active query', async () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			adfValue: '',
+			plainValue: '',
+		});
+		const requestedQueries: string[] = [];
+		let searchRequest:
+			| {
+					editorId?: string;
+					query?: string;
+			  }
+			| undefined;
+
+		harness.host.addEventListener('jira-rich-editor-mention-query', ((event: Event) => {
+			const customEvent = event as CustomEvent<{ editorId: string; query: string; requestId: string }>;
+			requestedQueries.push(customEvent.detail.query);
+			harness.host.dispatchEvent(
+				new CustomEvent('jira-rich-editor-mention-results', {
+					detail: {
+						requestId: customEvent.detail.requestId,
+						candidates: [
+							{
+								accountId: 'acct-123',
+								displayName: 'Helena',
+								mentionText: '@Helena',
+								userType: 'DEFAULT',
+								source: 'participant',
+							},
+						] satisfies RichTextMentionCandidate[],
+					},
+				})
+			);
+		}) as EventListener);
+		harness.host.addEventListener('jira-rich-editor-mention-search-open', ((event: Event) => {
+			const customEvent = event as CustomEvent<{ editorId?: string; query?: string }>;
+			searchRequest = customEvent.detail;
+		}) as EventListener);
+
+		harness.initialize();
+		harness.typeInEditor('@He');
+		await harness.flushAsyncWork();
+
+		expect(requestedQueries).toEqual(['He']);
+		expect(harness.queryMentionPopup()).toBeTruthy();
+		expect(harness.getMentionOptions()).toHaveLength(2);
+		expect(harness.getMentionOptions()[0]?.textContent).toBe('Search...');
+		expect(harness.getMentionOptions()[1]?.textContent).toContain('@Helena');
+
+		harness.click(harness.getMentionOptions()[0]!);
+
+		expect(searchRequest).toEqual({
+			editorId: harness.host.getAttribute('data-editor-id') ?? undefined,
+			query: 'He',
+		});
+	});
+
+	/**
+	 * Inserts a real mention after Search opens the modal and the host returns the selected person.
+	 */
+	it('inserts a real mention when mention search returns a selected person', async () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			adfValue: '',
+			plainValue: '',
+		});
+
+		harness.host.addEventListener('jira-rich-editor-mention-query', ((event: Event) => {
+			const customEvent = event as CustomEvent<{ requestId: string }>;
+			harness.host.dispatchEvent(
+				new CustomEvent('jira-rich-editor-mention-results', {
+					detail: {
+						requestId: customEvent.detail.requestId,
+						candidates: [] satisfies RichTextMentionCandidate[],
+					},
+				})
+			);
+		}) as EventListener);
+
+		harness.initialize();
+		harness.typeInEditor('@He');
+		await harness.flushAsyncWork();
+
+		expect(harness.getMentionOptions()).toHaveLength(1);
+		expect(harness.getMentionOptions()[0]?.textContent).toBe('Search...');
+
+		harness.click(harness.getMentionOptions()[0]!);
+		harness.host.dispatchEvent(
+			new CustomEvent('jira-rich-editor-mention-search-selected', {
+				detail: {
+					accountId: 'acct-123',
+					displayName: 'Helena',
+					mentionText: '@Helena',
+					userType: 'DEFAULT',
+					source: 'assignable',
+				} satisfies RichTextMentionCandidate,
+			})
+		);
+		await harness.flushAsyncWork();
+
+		expect(harness.getMountedEditor().textContent).toBe('@Helena ');
+		expect(harness.getAdfValueField().value).toContain('"type":"mention"');
+		expect(harness.getAdfValueField().value).toContain('"id":"acct-123"');
 	});
 });

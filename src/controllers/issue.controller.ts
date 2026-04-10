@@ -13,6 +13,7 @@ import {
 	JiraIssueComment,
 	JiraAuthInfo,
 	JiraRelatedIssue,
+	RichTextMentionCandidate,
 } from '../model/jira.type';
 import { ProjectStatusStore } from '../model/project-status.store';
 import { IssueTransitionStore } from '../model/issue-transition.store';
@@ -198,6 +199,8 @@ export class IssueControllerFactory {
 				}
 				if (message?.type === 'queryMentionCandidates' && typeof message.requestId === 'string') {
 					await handleQueryMentionCandidates(message);
+				} else if (message?.type === 'openRichTextMentionSearch' && typeof message.editorId === 'string') {
+					await handleOpenRichTextMentionSearch(message);
 				} else if (message?.type === 'changeStatus' && typeof message.transitionId === 'string') {
 					await handleStatusChange(message.transitionId);
 				} else if (message?.type === 'changeAssignee' && typeof message.accountId === 'string') {
@@ -814,6 +817,54 @@ export class IssueControllerFactory {
 				editorId: typeof message.editorId === 'string' ? message.editorId : undefined,
 				requestId: message.requestId,
 				candidates,
+			});
+		}
+
+		async function handleOpenRichTextMentionSearch(message: {
+			editorId: string;
+			query?: unknown;
+		}): Promise<void> {
+			if (disposed || assigneePickerSession) {
+				return;
+			}
+
+			const authInfo = await authManager.getAuthInfo();
+			const token = await authManager.getToken();
+			if (!authInfo || !token) {
+				await vscode.window.showInformationMessage('Log in to Jira to mention people.');
+				return;
+			}
+
+			const editorId = typeof message.editorId === 'string' ? message.editorId : '';
+			assigneePickerSession = assigneePicker.pickAssignee({
+				mode: 'mention',
+				panel,
+				scopeLabel: `Issue ${resolvedIssueKey}`,
+				authInfo,
+				token,
+				scopeOrIssueKey: resolvedIssueKey,
+				initialSearchQuery: typeof message.query === 'string' ? message.query : '',
+				editorId,
+			});
+			void assigneePickerSession.promise.then(async (selection) => {
+				assigneePickerSession = undefined;
+				if (disposed || !selection || selection.kind !== 'user') {
+					return;
+				}
+
+				const candidate: RichTextMentionCandidate = {
+					accountId: selection.user.accountId,
+					displayName: selection.user.displayName,
+					mentionText: `@${selection.user.displayName}`,
+					avatarUrl: selection.user.avatarUrl,
+					userType: 'DEFAULT',
+					source: 'assignable',
+				};
+				await panel.webview.postMessage({
+					type: 'richTextMentionSearchSelectionApplied',
+					editorId,
+					candidate,
+				});
 			});
 		}
 

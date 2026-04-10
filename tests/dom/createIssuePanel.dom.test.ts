@@ -417,6 +417,60 @@ describe('Create issue panel', () => {
 		]);
 	});
 
+	it('forwards mention search requests from the create description editor and routes selections back to that host', () => {
+		const { dom, messages, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const descriptionEditor = dom.window.document.querySelector(
+			'#create-issue-form [data-jira-rich-editor]'
+		) as HTMLElement | null;
+		const routedSelections: any[] = [];
+		expect(descriptionEditor).toBeTruthy();
+
+		descriptionEditor!.addEventListener('jira-rich-editor-mention-search-selected', ((event: Event) => {
+			routedSelections.push((event as CustomEvent).detail);
+		}) as EventListener);
+
+		descriptionEditor!.dispatchEvent(
+			new dom.window.CustomEvent('jira-rich-editor-mention-search-open', {
+				bubbles: true,
+				detail: {
+					editorId: 'create-description-input',
+					query: 'he',
+				},
+			})
+		);
+
+		const searchMessage = messages.find((entry) => entry?.type === 'openRichTextMentionSearch');
+		expect(searchMessage).toBeTruthy();
+		expect(searchMessage.editorId).toBe('create-description-input');
+		expect(searchMessage.query).toBe('he');
+
+		dom.window.dispatchEvent(
+			new dom.window.MessageEvent('message', {
+				data: {
+					type: 'richTextMentionSearchSelectionApplied',
+					editorId: 'create-description-input',
+					candidate: {
+						accountId: 'acct-123',
+						displayName: 'Helena',
+						mentionText: '@Helena',
+						source: 'assignable',
+					},
+				},
+			})
+		);
+
+		expect(routedSelections).toEqual([
+			{
+				accountId: 'acct-123',
+				displayName: 'Helena',
+				mentionText: '@Helena',
+				source: 'assignable',
+			},
+		]);
+	});
+
 	it('renders the shared parent ticket card when a parent issue is already selected', () => {
 		const { dom, scriptErrors } = renderCreateIssuePanelDom({
 			selectedParentIssue: {

@@ -333,4 +333,58 @@ describe('Rich text editor WYSIWYG behavior', () => {
 			},
 		]);
 	});
+
+	it('forwards mention search requests from the shared comment editor and routes selections back to that editor', () => {
+		const { dom, messages, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
+			comments: [RichTextEditorHarness.createComment()],
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const host = dom.window.document.querySelector('.comment-form [data-jira-rich-editor]') as HTMLElement | null;
+		const routedSelections: any[] = [];
+		expect(host).toBeTruthy();
+
+		host!.addEventListener('jira-rich-editor-mention-search-selected', ((event: Event) => {
+			routedSelections.push((event as CustomEvent).detail);
+		}) as EventListener);
+
+		host!.dispatchEvent(
+			new dom.window.CustomEvent('jira-rich-editor-mention-search-open', {
+				bubbles: true,
+				detail: {
+					editorId: 'comment-input',
+					query: 'he',
+				},
+			})
+		);
+
+		const searchMessage = messages.find((message) => message?.type === 'openRichTextMentionSearch');
+		expect(searchMessage).toBeTruthy();
+		expect(searchMessage.editorId).toBe('comment-input');
+		expect(searchMessage.query).toBe('he');
+
+		dom.window.dispatchEvent(
+			new dom.window.MessageEvent('message', {
+				data: {
+					type: 'richTextMentionSearchSelectionApplied',
+					editorId: 'comment-input',
+					candidate: {
+						accountId: 'acct-123',
+						displayName: 'Helena',
+						mentionText: '@Helena',
+						source: 'assignable',
+					},
+				},
+			})
+		);
+
+		expect(routedSelections).toEqual([
+			{
+				accountId: 'acct-123',
+				displayName: 'Helena',
+				mentionText: '@Helena',
+				source: 'assignable',
+			},
+		]);
+	});
 });

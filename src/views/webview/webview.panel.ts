@@ -1117,13 +1117,27 @@ export class JiraWebviewPanel {
 							requestId: detail.requestId,
 						});
 					};
+					const forwardMentionSearchOpen = (event) => {
+						const detail = event?.detail;
+						if (!detail) {
+							return;
+						}
+						vscode.postMessage({
+							type: 'openRichTextMentionSearch',
+							editorId: typeof detail.editorId === 'string' ? detail.editorId : undefined,
+							query: typeof detail.query === 'string' ? detail.query : '',
+						});
+					};
+					const resolveMentionHost = (editorId) => {
+						const resolvedEditorId = typeof editorId === 'string' ? editorId : '';
+						const hosts = Array.from(document.querySelectorAll('[data-jira-rich-editor]'));
+						return hosts.find((host) => host.getAttribute('data-editor-id') === resolvedEditorId);
+					};
 					const dispatchMentionResults = (message) => {
 						if (!message || message.type !== 'richTextMentionCandidatesLoaded') {
 							return;
 						}
-						const editorId = typeof message.editorId === 'string' ? message.editorId : '';
-						const hosts = Array.from(document.querySelectorAll('[data-jira-rich-editor]'));
-						const targetHost = hosts.find((host) => host.getAttribute('data-editor-id') === editorId);
+						const targetHost = resolveMentionHost(message.editorId);
 						if (!(targetHost instanceof HTMLElement)) {
 							return;
 						}
@@ -1134,9 +1148,23 @@ export class JiraWebviewPanel {
 							},
 						}));
 					};
+					const dispatchMentionSearchSelection = (message) => {
+						if (!message || message.type !== 'richTextMentionSearchSelectionApplied') {
+							return;
+						}
+						const targetHost = resolveMentionHost(message.editorId);
+						if (!(targetHost instanceof HTMLElement)) {
+							return;
+						}
+						targetHost.dispatchEvent(new CustomEvent('jira-rich-editor-mention-search-selected', {
+							detail: message.candidate,
+						}));
+					};
 					document.addEventListener('jira-rich-editor-mention-query', forwardMentionQuery);
+					document.addEventListener('jira-rich-editor-mention-search-open', forwardMentionSearchOpen);
 					window.addEventListener('message', (event) => {
 						dispatchMentionResults(event.data);
+						dispatchMentionSearchSelection(event.data);
 					});
 					const applyIssueHeaderIconFallback = (image) => {
 						if (!(image instanceof HTMLImageElement)) {
@@ -2103,13 +2131,27 @@ export class JiraWebviewPanel {
 \t\t\t\t\trequestId: detail.requestId,
 \t\t\t\t});
 \t\t\t};
+\t\t\tconst forwardMentionSearchOpen = (event) => {
+\t\t\t\tconst detail = event?.detail;
+\t\t\t\tif (!detail) {
+\t\t\t\t\treturn;
+\t\t\t\t}
+\t\t\t\tvscode.postMessage({
+\t\t\t\t\ttype: 'openRichTextMentionSearch',
+\t\t\t\t\teditorId: typeof detail.editorId === 'string' ? detail.editorId : undefined,
+\t\t\t\t\tquery: typeof detail.query === 'string' ? detail.query : '',
+\t\t\t\t});
+\t\t\t};
+\t\t\tconst resolveMentionHost = (editorId) => {
+\t\t\t\tconst resolvedEditorId = typeof editorId === 'string' ? editorId : '';
+\t\t\t\tconst hosts = Array.from(document.querySelectorAll('[data-jira-rich-editor]'));
+\t\t\t\treturn hosts.find((host) => host.getAttribute('data-editor-id') === resolvedEditorId);
+\t\t\t};
 \t\t\tconst dispatchMentionResults = (message) => {
 \t\t\t\tif (!message || message.type !== 'richTextMentionCandidatesLoaded') {
 \t\t\t\t\treturn;
 \t\t\t\t}
-\t\t\t\tconst editorId = typeof message.editorId === 'string' ? message.editorId : '';
-\t\t\t\tconst hosts = Array.from(document.querySelectorAll('[data-jira-rich-editor]'));
-\t\t\t\tconst targetHost = hosts.find((host) => host.getAttribute('data-editor-id') === editorId);
+\t\t\t\tconst targetHost = resolveMentionHost(message.editorId);
 \t\t\t\tif (!(targetHost instanceof HTMLElement)) {
 \t\t\t\t\treturn;
 \t\t\t\t}
@@ -2120,9 +2162,23 @@ export class JiraWebviewPanel {
 \t\t\t\t\t},
 \t\t\t\t}));
 \t\t\t};
+\t\t\tconst dispatchMentionSearchSelection = (message) => {
+\t\t\t\tif (!message || message.type !== 'richTextMentionSearchSelectionApplied') {
+\t\t\t\t\treturn;
+\t\t\t\t}
+\t\t\t\tconst targetHost = resolveMentionHost(message.editorId);
+\t\t\t\tif (!(targetHost instanceof HTMLElement)) {
+\t\t\t\t\treturn;
+\t\t\t\t}
+\t\t\t\ttargetHost.dispatchEvent(new CustomEvent('jira-rich-editor-mention-search-selected', {
+\t\t\t\t\tdetail: message.candidate,
+\t\t\t\t}));
+\t\t\t};
 \t\t\tdocument.addEventListener('jira-rich-editor-mention-query', forwardMentionQuery);
+\t\t\tdocument.addEventListener('jira-rich-editor-mention-search-open', forwardMentionSearchOpen);
 \t\t\twindow.addEventListener('message', (event) => {
 \t\t\t\tdispatchMentionResults(event.data);
+\t\t\t\tdispatchMentionSearchSelection(event.data);
 \t\t\t});
 
 \t\t\tconst buildFormPayload = () => {

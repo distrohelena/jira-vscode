@@ -7,6 +7,11 @@ import { HtmlHelper } from '../../shared/html.helper';
 export const AssigneePickerNoneSelectionKey = '__ASSIGNEE_PICKER_NONE__';
 
 /**
+ * Describes the picker presentation mode shown inside the shared people-search modal.
+ */
+export type AssigneePickerMode = 'assignee' | 'mention';
+
+/**
  * Describes the search filters submitted from the assignee picker form.
  */
 export type AssigneePickerFilters = {
@@ -20,6 +25,11 @@ export type AssigneePickerFilters = {
  * Describes the inline assignee picker state rendered inside the active webview.
  */
 export type AssigneePickerOverlayState = AssigneePickerFilters & {
+	/**
+	 * Identifies whether the modal is selecting an assignee or inserting a mention.
+	 */
+	mode: AssigneePickerMode;
+
 	/**
 	 * The human-readable label shown in the picker header for the search scope.
 	 */
@@ -523,20 +533,26 @@ export class AssigneePickerOverlay {
 		const searchQueryValue = HtmlHelper.escapeAttribute(state.searchQuery ?? '');
 		const selectedAccountId = (state.selectedAccountId ?? '').trim();
 		const isNoneSelected = selectedAccountId.toUpperCase() === AssigneePickerNoneSelectionKey.toUpperCase();
+		const isMentionMode = state.mode === 'mention';
 		const searchDisabledAttr = state.loading ? 'disabled' : '';
 		const confirmDisabledAttr = selectedAccountId ? '' : 'disabled';
-		const confirmLabel = isNoneSelected ? 'Clear Assignee' : 'Use Assignee';
+		const confirmLabel = isMentionMode ? 'Insert Mention' : isNoneSelected ? 'Clear Assignee' : 'Use Assignee';
+		const title = isMentionMode ? 'Search People' : 'Select Assignee';
 		const messageMarkup = state.error
 			? `<div class="message error">${HtmlHelper.escapeHtml(state.error)}</div>`
-			: '<div class="message muted">Search assignable users and pick the right assignee.</div>';
+			: `<div class="message muted">${HtmlHelper.escapeHtml(
+				isMentionMode
+					? 'Search assignable users and choose the right person to mention.'
+					: 'Search assignable users and pick the right assignee.'
+			)}</div>`;
 		const resultCount = Array.isArray(state.users) ? state.users.length : 0;
 		const resultLabel = state.loading ? 'Loading...' : `${resultCount} result${resultCount === 1 ? '' : 's'}`;
 		const previewUser = state.users.find((user) => user?.accountId?.trim() === selectedAccountId);
 		return `<div class="assignee-picker-overlay-backdrop" data-assignee-picker-overlay>
-			<div class="assignee-picker-shell" role="dialog" aria-modal="true" aria-label="Select assignee">
+			<div class="assignee-picker-shell" role="dialog" aria-modal="true" aria-label="${HtmlHelper.escapeAttribute(title)}">
 				<div class="assignee-picker-header">
 					<div>
-						<h2 class="assignee-picker-title">Select Assignee</h2>
+						<h2 class="assignee-picker-title">${HtmlHelper.escapeHtml(title)}</h2>
 						<p class="assignee-picker-subtitle">${HtmlHelper.escapeHtml(state.scopeLabel)}</p>
 					</div>
 					<div class="assignee-picker-header-right">
@@ -559,11 +575,11 @@ export class AssigneePickerOverlay {
 								<div class="assignee-picker-results-title">Results</div>
 								<div class="muted">${HtmlHelper.escapeHtml(state.scopeLabel)}</div>
 							</div>
-							${AssigneePickerOverlay.renderResults(state.users, selectedAccountId)}
+							${AssigneePickerOverlay.renderResults(state.users, selectedAccountId, !isMentionMode)}
 						</div>
 					</div>
 					<div class="assignee-picker-right">
-						<div class="assignee-picker-preview">${AssigneePickerOverlay.renderPreview(previewUser, isNoneSelected)}</div>
+						<div class="assignee-picker-preview">${AssigneePickerOverlay.renderPreview(previewUser, isNoneSelected, state.mode)}</div>
 					</div>
 				</div>
 				<div class="assignee-picker-actions">
@@ -577,9 +593,9 @@ export class AssigneePickerOverlay {
 	/**
 	 * Renders the result list, including the top-level "None" option.
 	 */
-	private static renderResults(users: IssueAssignableUser[], selectedAccountId: string): string {
+	private static renderResults(users: IssueAssignableUser[], selectedAccountId: string, includeNoneOption: boolean): string {
 		const noneSelected = selectedAccountId.toUpperCase() === AssigneePickerNoneSelectionKey.toUpperCase();
-		const noneResult = `<li class="assignee-picker-result">
+		const noneResult = includeNoneOption ? `<li class="assignee-picker-result">
 			<button type="button" class="assignee-picker-result-button ${noneSelected ? 'selected' : ''}" data-assignee-picker-result data-assignee-account-id="${HtmlHelper.escapeAttribute(
 				AssigneePickerNoneSelectionKey
 			)}">
@@ -589,7 +605,7 @@ export class AssigneePickerOverlay {
 					<div class="assignee-picker-result-detail">Leave the ticket unassigned.</div>
 				</div>
 			</button>
-		</li>`;
+		</li>` : '';
 		const items = (users ?? [])
 			.filter((user) => !!user?.accountId)
 			.map((user) => {
@@ -623,7 +639,12 @@ export class AssigneePickerOverlay {
 	/**
 	 * Renders the preview panel for the selected user or the explicit none selection.
 	 */
-	private static renderPreview(user: IssueAssignableUser | undefined, isNoneSelected: boolean): string {
+	private static renderPreview(
+		user: IssueAssignableUser | undefined,
+		isNoneSelected: boolean,
+		mode: AssigneePickerMode
+	): string {
+		const isMentionMode = mode === 'mention';
 		if (isNoneSelected) {
 			return `<div>
 				<p class="preview-title">No Assignee</p>
@@ -633,7 +654,11 @@ export class AssigneePickerOverlay {
 		if (!user) {
 			return `<div>
 				<p class="preview-title">Preview</p>
-				<div class="preview-body">Select a person from the results to preview the assignee here.</div>
+				<div class="preview-body">${HtmlHelper.escapeHtml(
+					isMentionMode
+						? 'Select a person from the results to insert a real Jira mention.'
+						: 'Select a person from the results to preview the assignee here.'
+				)}</div>
 			</div>`;
 		}
 		return `<div>
@@ -644,7 +669,9 @@ export class AssigneePickerOverlay {
 					<div class="muted">${HtmlHelper.escapeHtml(user.accountId)}</div>
 				</div>
 			</div>
-			<div class="preview-body">Use this assignee for the current ticket.</div>
+			<div class="preview-body">${HtmlHelper.escapeHtml(
+				isMentionMode ? 'Insert this person as a real Jira mention.' : 'Use this assignee for the current ticket.'
+			)}</div>
 		</div>`;
 	}
 

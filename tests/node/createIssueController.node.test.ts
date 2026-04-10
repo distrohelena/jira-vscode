@@ -222,3 +222,124 @@ test('create issue controller responds to queryMentionCandidates with assignable
 		jiraApiClient.fetchAssignableUsers = originalFetchAssignableUsers;
 	}
 });
+
+test('create issue controller opens mention search with the typed query and posts the selected user back to the editor', async () => {
+	const modules = loadCreateIssueControllerModules() as CreateIssueControllerTestModules & {
+		jiraApiClient: typeof import('../../src/jira-api').jiraApiClient & {
+			__getOnMessage?: () => ((message: unknown) => Promise<void>) | undefined;
+		};
+	};
+	const { CreateIssueControllerFactory, JiraWebviewPanel, jiraApiClient } = modules;
+	const postedMessages: any[] = [];
+	const pickerRequests: any[] = [];
+	let resolveSelection: ((value: unknown) => void) | undefined;
+	const originalShowCreateIssuePanel = JiraWebviewPanel.showCreateIssuePanel;
+	const originalRenderCreateIssuePanel = JiraWebviewPanel.renderCreateIssuePanel;
+	const originalFetchCreateIssueFields = jiraApiClient.fetchCreateIssueFields;
+
+	JiraWebviewPanel.showCreateIssuePanel = (() => ({
+		webview: {
+			cspSource: 'vscode-resource://test',
+			html: '',
+			asWebviewUri: (value: unknown) => ({ toString: () => String(value) }),
+			postMessage: async (message: unknown) => {
+				postedMessages.push(message);
+				return true;
+			},
+			onDidReceiveMessage: (handler: (message: unknown) => Promise<void>) => {
+				jiraApiClient.__getOnMessage = () => handler;
+				return { dispose() {} };
+			},
+		},
+		onDidDispose: () => ({ dispose() {} }),
+	})) as typeof JiraWebviewPanel.showCreateIssuePanel;
+	JiraWebviewPanel.renderCreateIssuePanel = (() => undefined) as typeof JiraWebviewPanel.renderCreateIssuePanel;
+	jiraApiClient.fetchCreateIssueFields = (async () => []) as typeof jiraApiClient.fetchCreateIssueFields;
+
+	try {
+		const controller = CreateIssueControllerFactory.create({
+			authManager: {
+				async getAuthInfo(): Promise<any> {
+					return {
+						baseUrl: 'https://example.atlassian.net',
+						username: 'helena@example.com',
+						displayName: 'Helena',
+						accountId: 'acct-current',
+						serverLabel: 'cloud',
+					};
+				},
+				async getToken(): Promise<string> {
+					return 'token-123';
+				},
+			} as any,
+			focusManager: {
+				getSelectedProject: () => ({ key: 'PROJ', name: 'Project' }),
+			} as any,
+			assigneePicker: {
+				pickAssignee: (request: unknown) => {
+					pickerRequests.push(request);
+					return {
+						handleMessage: async () => false,
+						dispose: () => undefined,
+						promise: new Promise((resolve) => {
+							resolveSelection = resolve;
+						}),
+					};
+				},
+			} as any,
+			parentIssuePicker: {
+				pickParentIssue: () => {
+					throw new Error('parent picker should not be used in this test');
+				},
+			} as any,
+			projectStatusStore: {
+				get: () => undefined,
+				ensure: async () => [],
+			} as any,
+			webviewIconService: {
+				async createStatusOptionsWithResolvedIconSources(_webview: unknown, options?: unknown) {
+					return options as any;
+				},
+			} as any,
+			revealIssueInItemsView: async () => undefined,
+			openIssueDetails: async () => undefined,
+		});
+
+		await controller.createIssue();
+		await flushAsyncWork();
+
+		const onMessage = jiraApiClient.__getOnMessage?.();
+		assert.equal(typeof onMessage, 'function');
+
+		await onMessage?.({
+			type: 'openRichTextMentionSearch',
+			editorId: 'create-description-input',
+			query: 'hel',
+		});
+		await flushAsyncWork();
+
+		assert.equal(pickerRequests.length, 1);
+		assert.equal(pickerRequests[0]?.mode, 'mention');
+		assert.equal(pickerRequests[0]?.editorId, 'create-description-input');
+		assert.equal(pickerRequests[0]?.initialSearchQuery, 'hel');
+
+		resolveSelection?.({
+			kind: 'user',
+			user: {
+				accountId: 'acct-remote',
+				displayName: 'Remote User',
+				avatarUrl: 'https://example.test/avatar.png',
+			},
+		});
+		await flushAsyncWork();
+
+		assert.equal(postedMessages.at(-1)?.type, 'richTextMentionSearchSelectionApplied');
+		assert.equal(postedMessages.at(-1)?.editorId, 'create-description-input');
+		assert.equal(postedMessages.at(-1)?.candidate?.accountId, 'acct-remote');
+		assert.equal(postedMessages.at(-1)?.candidate?.mentionText, '@Remote User');
+	} finally {
+		JiraWebviewPanel.showCreateIssuePanel = originalShowCreateIssuePanel;
+		JiraWebviewPanel.renderCreateIssuePanel = originalRenderCreateIssuePanel;
+		jiraApiClient.fetchCreateIssueFields = originalFetchCreateIssueFields;
+	}
+});

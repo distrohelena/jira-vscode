@@ -278,6 +278,44 @@ export class CreateIssueControllerFactory {
 				return;
 			}
 
+			if (message.type === 'openRichTextMentionSearch' && typeof message.editorId === 'string') {
+				if (assigneePickerSession) {
+					return;
+				}
+				const editorId = message.editorId;
+				assigneePickerSession = assigneePicker.pickAssignee({
+					mode: 'mention',
+					panel,
+					scopeLabel: `${selectedProject.name ?? selectedProject.key} (${selectedProject.key})`,
+					authInfo: authenticatedInfo,
+					token: authenticatedToken,
+					scopeOrIssueKey: { projectKey: selectedProject.key },
+					initialSearchQuery: typeof message.query === 'string' ? message.query : '',
+					editorId,
+				});
+				void assigneePickerSession.promise.then((selection) => {
+					assigneePickerSession = undefined;
+					if (disposed || !selection || selection.kind !== 'user') {
+						return;
+					}
+
+					const candidate: RichTextMentionCandidate = {
+						accountId: selection.user.accountId,
+						displayName: selection.user.displayName,
+						mentionText: `@${selection.user.displayName}`,
+						avatarUrl: selection.user.avatarUrl,
+						userType: 'DEFAULT',
+						source: 'assignable',
+					};
+					void panel.webview.postMessage({
+						type: 'richTextMentionSearchSelectionApplied',
+						editorId,
+						candidate,
+					});
+				});
+				return;
+			}
+
 			if (message.type === 'queryMentionCandidates' && typeof message.requestId === 'string') {
 				let candidates: RichTextMentionCandidate[] = [];
 				try {

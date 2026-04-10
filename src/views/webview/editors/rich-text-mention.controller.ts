@@ -24,6 +24,28 @@ type ActiveMentionQuery = {
 };
 
 /**
+ * Describes one rendered mention popup option.
+ */
+type RichTextMentionPopupOption =
+	| {
+			/**
+			 * Identifies the synthetic search action row.
+			 */
+			kind: 'search';
+	  }
+	| {
+			/**
+			 * Identifies one real mention candidate row.
+			 */
+			kind: 'candidate';
+
+			/**
+			 * Carries the real mention candidate inserted when selected.
+			 */
+			candidate: RichTextMentionCandidate;
+	  };
+
+/**
  * Manages the shared @mention popup lifecycle for one rich text editor host.
  */
 export class RichTextMentionController {
@@ -53,9 +75,19 @@ export class RichTextMentionController {
 	private readonly editorId: string;
 
 	/**
+	 * Stores the bound mention-search selection listener so it can be removed on destroy.
+	 */
+	private readonly handleMentionSearchSelectedListener: EventListener;
+
+	/**
 	 * Stores the active mention query when the caret is inside one.
 	 */
 	private activeQuery: ActiveMentionQuery | undefined;
+
+	/**
+	 * Stores the query that opened the larger mention-search modal while the popup itself is closed.
+	 */
+	private pendingSearchQuery: ActiveMentionQuery | undefined;
 
 	/**
 	 * Stores the last query signature requested from the host so duplicate requests are avoided.
@@ -96,15 +128,24 @@ export class RichTextMentionController {
 		this.hostBridge = hostBridge;
 		this.isVisualMode = isVisualMode;
 		this.editorId = this.hostElement.getAttribute('data-editor-id') ?? 'rich-text-editor';
+		this.handleMentionSearchSelectedListener = this.handleMentionSearchSelected.bind(this) as EventListener;
 		this.candidates = [];
 		this.highlightedIndex = 0;
 		this.requestSerial = 0;
+		this.hostElement.addEventListener(
+			'jira-rich-editor-mention-search-selected',
+			this.handleMentionSearchSelectedListener
+		);
 	}
 
 	/**
 	 * Tears down the popup DOM and host bridge when the surrounding editor host is destroyed.
 	 */
 	destroy(): void {
+		this.hostElement.removeEventListener(
+			'jira-rich-editor-mention-search-selected',
+			this.handleMentionSearchSelectedListener
+		);
 		this.closePopup();
 		this.hostBridge.destroy();
 	}
@@ -172,13 +213,18 @@ export class RichTextMentionController {
 		}
 
 		if (event.key === 'Enter' || event.key === 'Tab') {
-			const candidate = this.candidates[this.highlightedIndex];
-			if (!candidate) {
+			const option = this.getPopupOptions()[this.highlightedIndex];
+			if (!option) {
 				return false;
 			}
 
 			event.preventDefault();
-			this.selectCandidate(candidate);
+			if (option.kind === 'search') {
+				this.openMentionSearch();
+				return true;
+			}
+
+			this.selectCandidate(option.candidate);
 			return true;
 		}
 
@@ -221,35 +267,54 @@ export class RichTextMentionController {
 	private renderPopup(): void {
 		const popup = this.ensurePopupElement();
 		popup.innerHTML = '';
+		const popupOptions = this.getPopupOptions();
+
+		for (let index = 0; index < popupOptions.length; index += 1) {
+			const option = popupOptions[index];
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.className = 'jira-rich-editor-mention-option';
+			button.setAttribute('data-index', index.toString());
+			button.setAttribute('aria-selected', index === this.highlightedIndex ? 'true' : 'false');
+			button.textContent = option.kind === 'search' ? 'Search...' : option.candidate.mentionText;
+			button.addEventListener('mousedown', (event) => {
+				event.preventDefault();
+			});
+			button.addEventListener('click', () => {
+				if (option.kind === 'search') {
+					this.openMentionSearch();
+					return;
+				}
+
+				this.selectCandidate(option.candidate);
+			});
+			popup.append(button);
+		}
 
 		if (this.candidates.length === 0) {
 			const emptyState = document.createElement('div');
 			emptyState.className = 'jira-rich-editor-mention-empty';
 			emptyState.textContent = 'No people found';
 			popup.append(emptyState);
-			this.repositionPopup();
-			return;
-		}
-
-		for (let index = 0; index < this.candidates.length; index += 1) {
-			const candidate = this.candidates[index];
-			const button = document.createElement('button');
-			button.type = 'button';
-			button.className = 'jira-rich-editor-mention-option';
-			button.setAttribute('data-index', index.toString());
-			button.setAttribute('aria-selected', index === this.highlightedIndex ? 'true' : 'false');
-			button.textContent = candidate.mentionText;
-			button.addEventListener('mousedown', (event) => {
-				event.preventDefault();
-			});
-			button.addEventListener('click', () => {
-				this.selectCandidate(candidate);
-			});
-			popup.append(button);
 		}
 
 		this.refreshHighlightState();
 		this.repositionPopup();
+	}
+
+	/**
+	 * Returns the popup options with the synthetic Search row pinned to the top.
+	 */
+	private getPopupOptions(): RichTextMentionPopupOption[] {
+		return [
+			{
+				kind: 'search',
+			},
+			...this.candidates.map((candidate) => ({
+				kind: 'candidate' as const,
+				candidate,
+			})),
+		];
 	}
 
 	/**
@@ -291,12 +356,12 @@ export class RichTextMentionController {
 	 * Moves the highlighted candidate selection by one step while keeping the index in range.
 	 */
 	private moveHighlight(delta: number): void {
-		if (this.candidates.length === 0) {
+		const optionCount = this.getPopupOptions().length;
+		if (optionCount === 0) {
 			return;
 		}
 
-		const candidateCount = this.candidates.length;
-		this.highlightedIndex = (this.highlightedIndex + delta + candidateCount) % candidateCount;
+		this.highlightedIndex = (this.highlightedIndex + delta + optionCount) % optionCount;
 		this.refreshHighlightState();
 	}
 
@@ -323,7 +388,8 @@ export class RichTextMentionController {
 	 * Replaces the active @query token with one atomic mention node and a trailing space.
 	 */
 	private selectCandidate(candidate: RichTextMentionCandidate): void {
-		if (!this.activeQuery) {
+		const targetQuery = this.pendingSearchQuery ?? this.activeQuery;
+		if (!targetQuery) {
 			return;
 		}
 
@@ -332,8 +398,8 @@ export class RichTextMentionController {
 			.focus()
 			.insertContentAt(
 				{
-					from: this.activeQuery.from,
-					to: this.activeQuery.to,
+					from: targetQuery.from,
+					to: targetQuery.to,
 				},
 				[
 					{
@@ -352,14 +418,43 @@ export class RichTextMentionController {
 				]
 			)
 			.run();
+		this.pendingSearchQuery = undefined;
 		this.closePopup();
+	}
+
+	/**
+	 * Opens the larger people-search modal using the active @query as the initial search text.
+	 */
+	private openMentionSearch(): void {
+		if (!this.activeQuery) {
+			return;
+		}
+
+		this.pendingSearchQuery = { ...this.activeQuery };
+		this.hostBridge.openMentionSearch(this.editorId, this.activeQuery.query);
+		this.closePopup(true);
+	}
+
+	/**
+	 * Inserts a selected person returned from the larger mention-search modal.
+	 */
+	private handleMentionSearchSelected(event: Event): void {
+		const customEvent = event as CustomEvent<RichTextMentionCandidate | undefined>;
+		const candidate = customEvent.detail;
+		if (!candidate) {
+			return;
+		}
+
+		this.selectCandidate(candidate);
 	}
 
 	/**
 	 * Closes the popup and clears the active-query bookkeeping.
 	 */
-	private closePopup(): void {
-		this.activeQuery = undefined;
+	private closePopup(preserveActiveQuery = false): void {
+		if (!preserveActiveQuery) {
+			this.activeQuery = undefined;
+		}
 		this.activeQuerySignature = undefined;
 		this.candidates = [];
 		this.highlightedIndex = 0;

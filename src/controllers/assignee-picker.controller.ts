@@ -5,6 +5,7 @@ import { JiraAuthInfo, IssueAssignableUser } from '../model/jira.type';
 import { ErrorHelper } from '../shared/error.helper';
 import {
 	AssigneePickerFilters,
+	AssigneePickerMode,
 	AssigneePickerNoneSelectionKey,
 	AssigneePickerOverlay,
 	AssigneePickerOverlayState,
@@ -14,6 +15,11 @@ import {
  * Describes the inputs required to open the assignee picker for a create or edit screen.
  */
 export type AssigneePickerRequest = {
+	/**
+	 * Selects the picker presentation mode.
+	 */
+	mode?: AssigneePickerMode;
+
 	/**
 	 * The active webview panel that will host the inline assignee picker overlay.
 	 */
@@ -38,6 +44,16 @@ export type AssigneePickerRequest = {
 	 * The assignable-user search scope accepted by the Jira API client.
 	 */
 	scopeOrIssueKey: string | { projectKey: string };
+
+	/**
+	 * Carries the initial search query prefilled into the modal.
+	 */
+	initialSearchQuery?: string;
+
+	/**
+	 * Carries the originating rich text editor id when the picker is opened for mentions.
+	 */
+	editorId?: string;
 
 	/**
 	 * The initially selected account identifier, when one already exists.
@@ -102,14 +118,16 @@ export class AssigneePickerController {
 	 */
 	pickAssignee(request: AssigneePickerRequest): AssigneePickerSession {
 		const { panel, authInfo, token, scopeLabel, scopeOrIssueKey } = request;
+		const mode = request.mode ?? 'assignee';
 		const initialSelectedUser = request.initialSelectedUser;
 		const initialUsers = initialSelectedUser?.accountId ? [initialSelectedUser] : [];
 		let disposed = false;
 		let resolved = false;
 		let resolver: ((value: AssigneePickerSelection | undefined) => void) | undefined;
 		let state: AssigneePickerOverlayState = {
+			mode,
 			scopeLabel,
-			searchQuery: '',
+			searchQuery: request.initialSearchQuery ?? '',
 			loading: false,
 			error: undefined,
 			users: initialUsers,
@@ -224,7 +242,10 @@ export class AssigneePickerController {
 				const requestedAccountId =
 					typeof message.accountId === 'string' ? message.accountId.trim() : '';
 				const accountId = requestedAccountId || state.selectedAccountId?.trim() || '';
-				if (accountId.toUpperCase() === AssigneePickerNoneSelectionKey.toUpperCase()) {
+				if (
+					mode !== 'mention' &&
+					accountId.toUpperCase() === AssigneePickerNoneSelectionKey.toUpperCase()
+				) {
 					void hideOverlay();
 					resolve({
 						kind: 'none',
@@ -234,7 +255,9 @@ export class AssigneePickerController {
 				const user = state.users.find((candidate) => candidate?.accountId?.trim() === accountId);
 				if (!user) {
 					updateState({
-						error: 'Select a loaded assignee before confirming.',
+						error: mode === 'mention'
+							? 'Select a loaded person before confirming.'
+							: 'Select a loaded assignee before confirming.',
 					});
 					return true;
 				}
@@ -255,7 +278,7 @@ export class AssigneePickerController {
 		});
 
 		void postOverlay();
-		void loadUsers({ searchQuery: '' });
+		void loadUsers({ searchQuery: state.searchQuery });
 
 		return {
 			promise,

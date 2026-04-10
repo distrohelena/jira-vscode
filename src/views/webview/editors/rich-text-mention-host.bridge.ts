@@ -61,6 +61,21 @@ export class RichTextMentionHostBridge {
 	}
 
 	/**
+	 * Requests the host to open the larger people-search modal for the active mention query.
+	 */
+	openMentionSearch(editorId: string, query: string): void {
+		this.hostElement.dispatchEvent(
+			new CustomEvent('jira-rich-editor-mention-search-open', {
+				bubbles: true,
+				detail: {
+					editorId,
+					query,
+				},
+			})
+		);
+	}
+
+	/**
 	 * Resolves one pending mention request when the host reports loaded candidates.
 	 */
 	private handleMentionResults(event: Event): void {
