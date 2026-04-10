@@ -94,6 +94,11 @@ export type ParentIssuePickerSelection =
  */
 export class ParentIssuePickerController {
 	/**
+	 * Stores the fixed Jira issue type name used by the parent picker search contract.
+	 */
+	private static readonly parentEpicIssueTypeName = 'Epic';
+
+	/**
 	 * Stores the optional webview icon resolver used to convert Jira icon URLs into local webview-safe sources.
 	 */
 	private readonly webviewIconService?: JiraWebviewIconService;
@@ -124,7 +129,7 @@ export class ParentIssuePickerController {
 			projectKey: project.key,
 			projectLabel: project.name ? `${project.name} (${project.key})` : project.key,
 			searchQuery: '',
-			issueTypeName: '',
+			issueTypeName: ParentIssuePickerController.parentEpicIssueTypeName,
 			statusName: '',
 			availableStatusNames: ParentIssuePickerController.deriveStatusNameList(cachedStatuses),
 			loading: false,
@@ -182,6 +187,7 @@ export class ParentIssuePickerController {
 		};
 
 		const loadFirstPage = async (filters: ParentIssuePickerFilters): Promise<void> => {
+			const enforcedIssueTypeName = ParentIssuePickerController.parentEpicIssueTypeName;
 			nextStartAt = undefined;
 			nextPageToken = undefined;
 			updateState({
@@ -191,14 +197,14 @@ export class ParentIssuePickerController {
 				issues: [],
 				hasMore: false,
 				searchQuery: filters.searchQuery,
-				issueTypeName: filters.issueTypeName,
+				issueTypeName: enforcedIssueTypeName,
 				statusName: filters.statusName,
 			});
 
 			try {
 				const page = await jiraApiClient.fetchProjectIssuesPage(authInfo, token, project.key, {
 					searchQuery: filters.searchQuery,
-					issueTypeName: filters.issueTypeName || undefined,
+					issueTypeName: enforcedIssueTypeName,
 					statusName: filters.statusName || undefined,
 					excludeIssueKey,
 					maxResults: 25,
@@ -221,6 +227,7 @@ export class ParentIssuePickerController {
 		};
 
 		const loadMore = async (filters: ParentIssuePickerFilters): Promise<void> => {
+			const enforcedIssueTypeName = ParentIssuePickerController.parentEpicIssueTypeName;
 			if (state.loading || state.loadingMore || !state.hasMore) {
 				return;
 			}
@@ -231,7 +238,7 @@ export class ParentIssuePickerController {
 			try {
 				const page = await jiraApiClient.fetchProjectIssuesPage(authInfo, token, project.key, {
 					searchQuery: filters.searchQuery,
-					issueTypeName: filters.issueTypeName || undefined,
+					issueTypeName: enforcedIssueTypeName,
 					statusName: filters.statusName || undefined,
 					excludeIssueKey,
 					maxResults: 25,
@@ -358,11 +365,10 @@ export class ParentIssuePickerController {
 	 */
 	private static sanitizeFilters(raw: any, fallback: ParentIssuePickerFilters): ParentIssuePickerFilters {
 		const searchQuery = typeof raw?.searchQuery === 'string' ? raw.searchQuery : fallback.searchQuery;
-		const issueTypeName = typeof raw?.issueTypeName === 'string' ? raw.issueTypeName : fallback.issueTypeName;
 		const statusName = typeof raw?.statusName === 'string' ? raw.statusName : fallback.statusName;
 		return {
 			searchQuery: searchQuery ?? '',
-			issueTypeName: issueTypeName ?? '',
+			issueTypeName: ParentIssuePickerController.parentEpicIssueTypeName,
 			statusName: statusName ?? '',
 		};
 	}

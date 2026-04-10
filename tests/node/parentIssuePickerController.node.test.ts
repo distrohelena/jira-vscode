@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ParentIssuePickerController } from '../../src/controllers/parent-issue-picker.controller';
+import { jiraApiClient } from '../../src/jira-api';
 import { ParentIssuePickerNoneSelectionKey } from '../../src/views/webview/parent-issue-picker.overlay';
 
 test('pickParentIssue resolves a none selection when the modal confirms the None option', async () => {
@@ -163,4 +164,63 @@ test('pickParentIssue loads dynamic project status options into the overlay', as
 	assert.equal(latestHtml.includes('>Blocked<'), true);
 	assert.equal(latestHtml.includes('>To Do<'), false);
 	assert.equal(latestHtml.includes('>In Progress<'), false);
+});
+
+test('pickParentIssue always searches for Epic parents', async () => {
+	const originalFetchProjectIssuesPage = jiraApiClient.fetchProjectIssuesPage;
+	const capturedOptions: any[] = [];
+	jiraApiClient.fetchProjectIssuesPage = (async (_authInfo, _token, _projectKey, options) => {
+		capturedOptions.push(options);
+		return {
+			issues: [],
+			hasMore: capturedOptions.length === 1,
+			nextStartAt: capturedOptions.length === 1 ? 25 : undefined,
+		};
+	}) as typeof jiraApiClient.fetchProjectIssuesPage;
+
+	try {
+		const controller = new ParentIssuePickerController();
+		const panel: any = {
+			webview: {
+				postMessage: async () => true,
+			},
+			onDidDispose: () => ({ dispose() {} }),
+		};
+
+		const session = controller.pickParentIssue({
+			panel,
+			project: {
+				key: 'PROJ',
+				name: 'Project',
+			},
+			authInfo: {
+				baseUrl: 'https://example.atlassian.net',
+				username: 'helena',
+				serverLabel: 'cloud',
+			},
+			token: 'token-123',
+		});
+
+		await session.handleMessage({
+			type: 'loadParentIssues',
+			filters: {
+				searchQuery: 'backend',
+				issueTypeName: 'Bug',
+				statusName: 'Closed',
+			},
+		});
+		await session.handleMessage({
+			type: 'loadMoreParentIssues',
+			filters: {
+				searchQuery: 'backend',
+				issueTypeName: 'Task',
+				statusName: 'Closed',
+			},
+		});
+
+		assert.equal(capturedOptions[0]?.issueTypeName, 'Epic');
+		assert.equal(capturedOptions[1]?.issueTypeName, 'Epic');
+	} finally {
+		jiraApiClient.fetchProjectIssuesPage = originalFetchProjectIssuesPage;
+	}
 });
