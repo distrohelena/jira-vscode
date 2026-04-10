@@ -30,6 +30,31 @@ type CreateIssueControllerTestModules = {
 };
 
 /**
+ * Captures the create-issue controller state updates and API calls for required-field validation tests.
+ */
+type CreateIssueValidationHarness = {
+	/**
+	 * The webview message handler registered by the create controller.
+	 */
+	onMessage: (message: unknown) => Promise<void>;
+
+	/**
+	 * The create panel states rendered during the test run.
+	 */
+	renderedStates: any[];
+
+	/**
+	 * The Jira create-issue API calls triggered during the test run.
+	 */
+	createIssueCalls: any[];
+
+	/**
+	 * Restores the patched module methods used by the harness.
+	 */
+	restore: () => void;
+};
+
+/**
  * Waits for queued asynchronous work to settle across a few microtask and macrotask turns.
  */
 async function flushAsyncWork(): Promise<void> {
@@ -113,6 +138,105 @@ function loadCreateIssueControllerModules(): CreateIssueControllerTestModules {
 	} finally {
 		moduleLoader._load = originalLoad;
 	}
+}
+
+/**
+ * Creates a focused create-issue harness for required-field validation scenarios.
+ */
+async function createValidationHarness(createFields: any[]): Promise<CreateIssueValidationHarness> {
+	const modules = loadCreateIssueControllerModules() as CreateIssueControllerTestModules & {
+		jiraApiClient: typeof import('../../src/jira-api').jiraApiClient & {
+			__getOnMessage?: () => ((message: unknown) => Promise<void>) | undefined;
+		};
+	};
+	const { CreateIssueControllerFactory, JiraWebviewPanel, jiraApiClient } = modules;
+	const renderedStates: any[] = [];
+	const createIssueCalls: any[] = [];
+	const originalShowCreateIssuePanel = JiraWebviewPanel.showCreateIssuePanel;
+	const originalRenderCreateIssuePanel = JiraWebviewPanel.renderCreateIssuePanel;
+	const originalFetchCreateIssueFields = jiraApiClient.fetchCreateIssueFields;
+	const originalCreateIssue = jiraApiClient.createIssue;
+
+	JiraWebviewPanel.showCreateIssuePanel = (() => ({
+		webview: {
+			cspSource: 'vscode-resource://test',
+			html: '',
+			asWebviewUri: (value: unknown) => ({ toString: () => String(value) }),
+			postMessage: async () => true,
+			onDidReceiveMessage: (handler: (message: unknown) => Promise<void>) => {
+				jiraApiClient.__getOnMessage = () => handler;
+				return { dispose() {} };
+			},
+		},
+		onDidDispose: () => ({ dispose() {} }),
+	})) as typeof JiraWebviewPanel.showCreateIssuePanel;
+	JiraWebviewPanel.renderCreateIssuePanel = ((_panel, _project, state) => {
+		renderedStates.push(structuredClone(state));
+	}) as typeof JiraWebviewPanel.renderCreateIssuePanel;
+	jiraApiClient.fetchCreateIssueFields = (async () => createFields) as typeof jiraApiClient.fetchCreateIssueFields;
+	jiraApiClient.createIssue = (async (...args: unknown[]) => {
+		createIssueCalls.push(args);
+		return { key: 'PROJ-1' } as any;
+	}) as typeof jiraApiClient.createIssue;
+
+	const controller = CreateIssueControllerFactory.create({
+		authManager: {
+			async getAuthInfo(): Promise<any> {
+				return {
+					baseUrl: 'https://example.atlassian.net',
+					username: 'helena@example.com',
+					displayName: 'Helena',
+					accountId: 'acct-current',
+					serverLabel: 'cloud',
+				};
+			},
+			async getToken(): Promise<string> {
+				return 'token-123';
+			},
+		} as any,
+		focusManager: {
+			getSelectedProject: () => ({ key: 'PROJ', name: 'Project' }),
+		} as any,
+		assigneePicker: {
+			pickAssignee: () => {
+				throw new Error('assignee picker should not be used in this test');
+			},
+		} as any,
+		parentIssuePicker: {
+			pickParentIssue: () => {
+				throw new Error('parent picker should not be used in this test');
+			},
+		} as any,
+		projectStatusStore: {
+			get: () => undefined,
+			ensure: async () => [],
+		} as any,
+		webviewIconService: {
+			async createStatusOptionsWithResolvedIconSources(_webview: unknown, options?: unknown) {
+				return options as any;
+			},
+		} as any,
+		revealIssueInItemsView: async () => undefined,
+		openIssueDetails: async () => undefined,
+	});
+
+	await controller.createIssue();
+	await flushAsyncWork();
+
+	const onMessage = jiraApiClient.__getOnMessage?.();
+	assert.equal(typeof onMessage, 'function');
+
+	return {
+		onMessage: onMessage as (message: unknown) => Promise<void>,
+		renderedStates,
+		createIssueCalls,
+		restore: () => {
+			JiraWebviewPanel.showCreateIssuePanel = originalShowCreateIssuePanel;
+			JiraWebviewPanel.renderCreateIssuePanel = originalRenderCreateIssuePanel;
+			jiraApiClient.fetchCreateIssueFields = originalFetchCreateIssueFields;
+			jiraApiClient.createIssue = originalCreateIssue;
+		},
+	};
 }
 
 test('create issue controller responds to queryMentionCandidates with assignable users for the selected project', async () => {
@@ -341,5 +465,86 @@ test('create issue controller opens mention search with the typed query and post
 		JiraWebviewPanel.showCreateIssuePanel = originalShowCreateIssuePanel;
 		JiraWebviewPanel.renderCreateIssuePanel = originalRenderCreateIssuePanel;
 		jiraApiClient.fetchCreateIssueFields = originalFetchCreateIssueFields;
+	}
+});
+
+test('create issue controller blocks submit when a required parent field is empty', async () => {
+	const harness = await createValidationHarness([
+		{ id: 'parent', name: 'Parent Epic', required: true, multiline: false, isParentField: true },
+	]);
+
+	try {
+		await harness.onMessage({
+			type: 'createIssue',
+			values: {
+				summary: 'Child ticket',
+				description: '',
+				issueType: 'Task',
+				status: 'To Do',
+				customFields: {
+					parent: '',
+				},
+			},
+		});
+		await flushAsyncWork();
+
+		assert.equal(harness.createIssueCalls.length, 0);
+		assert.equal(harness.renderedStates.at(-1)?.error, 'Parent Epic is required.');
+	} finally {
+		harness.restore();
+	}
+});
+
+test('create issue controller keeps summary validation ahead of required parent validation', async () => {
+	const harness = await createValidationHarness([
+		{ id: 'parent', name: 'Parent Epic', required: true, multiline: false, isParentField: true },
+	]);
+
+	try {
+		await harness.onMessage({
+			type: 'createIssue',
+			values: {
+				summary: '',
+				description: '',
+				issueType: 'Task',
+				status: 'To Do',
+				customFields: {
+					parent: '',
+				},
+			},
+		});
+		await flushAsyncWork();
+
+		assert.equal(harness.createIssueCalls.length, 0);
+		assert.equal(harness.renderedStates.at(-1)?.error, 'Summary is required.');
+	} finally {
+		harness.restore();
+	}
+});
+
+test('create issue controller allows submit when the parent field is optional', async () => {
+	const harness = await createValidationHarness([
+		{ id: 'parent', name: 'Parent Epic', required: false, multiline: false, isParentField: true },
+	]);
+
+	try {
+		await harness.onMessage({
+			type: 'createIssue',
+			values: {
+				summary: 'Child ticket',
+				description: '',
+				issueType: 'Task',
+				status: 'To Do',
+				customFields: {
+					parent: '',
+				},
+			},
+		});
+		await flushAsyncWork();
+
+		assert.equal(harness.createIssueCalls.length, 1);
+		assert.equal(harness.renderedStates.at(-1)?.error, undefined);
+	} finally {
+		harness.restore();
 	}
 });
