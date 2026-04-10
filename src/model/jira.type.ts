@@ -108,6 +108,131 @@ export type JiraIssueComment = {
 export type JiraCommentFormat = 'plain' | 'wiki';
 
 /**
+ * Represents one supported inline mark inside a Jira Atlassian Document Format text node.
+ */
+export type JiraAdfMark = {
+	/**
+	 * Identifies the supported inline formatting mark.
+	 */
+	type: 'strong' | 'em' | 'underline' | 'link';
+
+	/**
+	 * Carries optional mark attributes such as a link target.
+	 */
+	attrs?: Record<string, string>;
+};
+
+/**
+ * Represents one plain text inline node inside a Jira Atlassian Document Format document.
+ */
+export type JiraAdfTextNode = {
+	/**
+	 * Identifies the node as a plain text inline run.
+	 */
+	type: 'text';
+
+	/**
+	 * Carries the literal text content reported by Jira.
+	 */
+	text: string;
+
+	/**
+	 * Carries the supported formatting marks applied to the text run.
+	 */
+	marks?: JiraAdfMark[];
+};
+
+/**
+ * Represents one Jira user mention inline node inside a Jira Atlassian Document Format document.
+ */
+export type JiraAdfMentionNode = {
+	/**
+	 * Identifies the node as a Jira mention.
+	 */
+	type: 'mention';
+
+	/**
+	 * Carries the Jira mention metadata needed to identify and render the mentioned user.
+	 */
+	attrs: {
+		/**
+		 * Carries the stable Atlassian account identifier for the mentioned user.
+		 */
+		id: string;
+
+		/**
+		 * Carries the rendered mention text when Jira provides it.
+		 */
+		text?: string;
+
+		/**
+		 * Carries the Jira user type reported by the mention node.
+		 */
+		userType?: string;
+
+		/**
+		 * Carries the Jira access-level metadata when Jira provides it.
+		 */
+		accessLevel?: string;
+	};
+};
+
+/**
+ * Represents one hard line-break inline node inside a Jira Atlassian Document Format document.
+ */
+export type JiraAdfHardBreakNode = {
+	/**
+	 * Identifies the node as a hard line break.
+	 */
+	type: 'hardBreak';
+};
+
+/**
+ * Represents the supported inline nodes that can appear inside a paragraph.
+ */
+export type JiraAdfInlineNode = JiraAdfTextNode | JiraAdfMentionNode | JiraAdfHardBreakNode;
+
+/**
+ * Represents one paragraph block inside a Jira Atlassian Document Format document.
+ */
+export type JiraAdfParagraphNode = {
+	/**
+	 * Identifies the node as a paragraph block.
+	 */
+	type: 'paragraph';
+
+	/**
+	 * Carries the inline nodes rendered inside the paragraph.
+	 */
+	content?: JiraAdfInlineNode[];
+};
+
+/**
+ * Represents the supported block nodes currently handled by the shared rich text editor.
+ */
+export type JiraAdfBlockNode = JiraAdfParagraphNode;
+
+/**
+ * Represents a Jira Atlassian Document Format document.
+ */
+export type JiraAdfDocument = {
+	/**
+	 * Identifies the root node as an Atlassian document.
+	 */
+	type: 'doc';
+
+	/**
+	 * Carries the documented ADF version.
+	 */
+	version: 1;
+
+	/**
+	 * Carries the top-level block nodes contained in the document.
+	 */
+	content: JiraAdfBlockNode[];
+};
+
+/**
  * Represents a parsed user mention found inside a Jira comment body.
  */
 export type JiraCommentMention = {
