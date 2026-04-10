@@ -46,18 +46,11 @@ test('buildCommentBody returns plain body when no reply context exists', () => {
 	assert.equal(IssueCommentReplyService.buildCommentBody('  Thanks, fixed.  '), 'Thanks, fixed.');
 });
 
-test('buildCommentBody prefixes reply metadata when reply context exists', () => {
+test('buildCommentBody keeps threaded replies as the trimmed body when reply context exists', () => {
 	const body = IssueCommentReplyService.buildCommentBody(
 		'Thanks, I will check.',
 		IssueCommentReplyServiceTestData.createReplyContext()
 	);
 
-	assert.equal(
-		body,
-		[
-			'Replying to Helena on 2026-02-23 12:30',
-			'Original comment:\nOriginal comment body',
-			'Thanks, I will check.',
-		].join('\n\n')
-	);
+	assert.equal(body, 'Thanks, I will check.');
 });

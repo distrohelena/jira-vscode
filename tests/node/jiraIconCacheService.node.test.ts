@@ -169,6 +169,20 @@ function createExtensionContextStub(): any {
 }
 
 /**
+ * Creates a minimal project status store stub for tree-node tests that only need fallback grouping behavior.
+ */
+function createProjectStatusStoreStub(): any {
+	return {
+		get(): undefined {
+			return undefined;
+		},
+		getIssueTypeStatusGroups(): undefined {
+			return undefined;
+		},
+	};
+}
+
+/**
  * Instantiates the Items tree provider with minimal collaborators for isolated node-building tests.
  */
 function createItemsProvider(
@@ -183,7 +197,8 @@ function createItemsProvider(
 		{} as any,
 		{} as any,
 		{} as any,
-		iconCacheService as any
+		iconCacheService as any,
+		createProjectStatusStoreStub()
 	) as InstanceType<TreeTestModules['JiraItemsTreeDataProvider']>;
 }
 
@@ -689,7 +704,9 @@ test('buildIssueNodes falls back to theme icons when no icon cache service is su
 		createExtensionContextStub(),
 		{} as any,
 		{} as any,
-		{} as any
+		{} as any,
+		undefined,
+		createProjectStatusStoreStub()
 	);
 	(provider as any).groupMode = 'none';
 	const issue = createIssueFixture();
@@ -980,7 +997,9 @@ test('loadItems skips icon warming when no icon cache service is supplied', asyn
 		} as any,
 		{
 			prefetchIssues(): void {}
-		} as any
+		} as any,
+		undefined,
+		createProjectStatusStoreStub()
 	);
 	(provider as any).viewMode = 'all';
 	(provider as any).groupMode = 'none';
