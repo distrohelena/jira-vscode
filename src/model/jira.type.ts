@@ -67,6 +67,7 @@ export type JiraIssue = {
 	reporterAvatarUrl?: string;
 	description?: string;
 	descriptionHtml?: string;
+	descriptionDocument?: JiraAdfDocument;
 	url: string;
 	updated: string;
 	parent?: JiraRelatedIssue;
@@ -108,6 +109,180 @@ export type JiraIssueComment = {
 export type JiraCommentFormat = 'plain' | 'wiki';
 
 /**
+ * Represents one supported inline mark inside a Jira Atlassian Document Format text node.
+ */
+export type JiraAdfMark = {
+	/**
+	 * Identifies the supported inline formatting mark.
+	 */
+	type: 'strong' | 'em' | 'underline' | 'link';
+
+	/**
+	 * Carries optional mark attributes such as a link target.
+	 */
+	attrs?: Record<string, string>;
+};
+
+/**
+ * Represents one plain text inline node inside a Jira Atlassian Document Format document.
+ */
+export type JiraAdfTextNode = {
+	/**
+	 * Identifies the node as a plain text inline run.
+	 */
+	type: 'text';
+
+	/**
+	 * Carries the literal text content reported by Jira.
+	 */
+	text: string;
+
+	/**
+	 * Carries the supported formatting marks applied to the text run.
+	 */
+	marks?: JiraAdfMark[];
+};
+
+/**
+ * Represents one Jira user mention inline node inside a Jira Atlassian Document Format document.
+ */
+export type JiraAdfMentionNode = {
+	/**
+	 * Identifies the node as a Jira mention.
+	 */
+	type: 'mention';
+
+	/**
+	 * Carries the Jira mention metadata needed to identify and render the mentioned user.
+	 */
+	attrs: {
+		/**
+		 * Carries the stable Atlassian account identifier for the mentioned user.
+		 */
+		id: string;
+
+		/**
+		 * Carries the rendered mention text when Jira provides it.
+		 */
+		text?: string;
+
+		/**
+		 * Carries the Jira user type reported by the mention node.
+		 */
+		userType?: string;
+
+		/**
+		 * Carries the Jira access-level metadata when Jira provides it.
+		 */
+		accessLevel?: string;
+	};
+};
+
+/**
+ * Represents one hard line-break inline node inside a Jira Atlassian Document Format document.
+ */
+export type JiraAdfHardBreakNode = {
+	/**
+	 * Identifies the node as a hard line break.
+	 */
+	type: 'hardBreak';
+};
+
+/**
+ * Represents the supported inline nodes that can appear inside a paragraph.
+ */
+export type JiraAdfInlineNode = JiraAdfTextNode | JiraAdfMentionNode | JiraAdfHardBreakNode;
+
+/**
+ * Represents one paragraph block inside a Jira Atlassian Document Format document.
+ */
+export type JiraAdfParagraphNode = {
+	/**
+	 * Identifies the node as a paragraph block.
+	 */
+	type: 'paragraph';
+
+	/**
+	 * Carries the inline nodes rendered inside the paragraph.
+	 */
+	content?: JiraAdfInlineNode[];
+};
+
+/**
+ * Represents one list item block inside a Jira Atlassian Document Format list.
+ */
+export type JiraAdfListItemNode = {
+	/**
+	 * Identifies the node as a list item block.
+	 */
+	type: 'listItem';
+
+	/**
+	 * Carries the block content rendered inside the list item.
+	 */
+	content: JiraAdfBlockNode[];
+};
+
+/**
+ * Represents one bullet-list block inside a Jira Atlassian Document Format document.
+ */
+export type JiraAdfBulletListNode = {
+	/**
+	 * Identifies the node as a bullet list block.
+	 */
+	type: 'bulletList';
+
+	/**
+	 * Carries the ordered list item blocks inside the bullet list.
+	 */
+	content: JiraAdfListItemNode[];
+};
+
+/**
+ * Represents one ordered-list block inside a Jira Atlassian Document Format document.
+ */
+export type JiraAdfOrderedListNode = {
+	/**
+	 * Identifies the node as an ordered list block.
+	 */
+	type: 'orderedList';
+
+	/**
+	 * Carries the ordered list item blocks inside the ordered list.
+	 */
+	content: JiraAdfListItemNode[];
+};
+
+/**
+ * Represents the supported block nodes currently handled by the shared rich text editor.
+ */
+export type JiraAdfBlockNode =
+	| JiraAdfParagraphNode
+	| JiraAdfBulletListNode
+	| JiraAdfOrderedListNode
+	| JiraAdfListItemNode;
+
+/**
+ * Represents a Jira Atlassian Document Format document.
+ */
+export type JiraAdfDocument = {
+	/**
+	 * Identifies the root node as an Atlassian document.
+	 */
+	type: 'doc';
+
+	/**
+	 * Carries the documented ADF version.
+	 */
+	version: 1;
+
+	/**
+	 * Carries the top-level block nodes contained in the document.
+	 */
+	content: JiraAdfBlockNode[];
+};
+
+/**
  * Represents a parsed user mention found inside a Jira comment body.
  */
 export type JiraCommentMention = {
@@ -125,6 +300,41 @@ export type JiraCommentMention = {
 	 * The Jira user type metadata reported by the mention node.
 	 */
 	userType?: string;
+};
+
+/**
+ * Represents one user shown in the shared rich text mention popup.
+ */
+export type RichTextMentionCandidate = {
+	/**
+	 * Carries the Atlassian account identifier that will be serialized into the mention node.
+	 */
+	accountId: string;
+
+	/**
+	 * Carries the display name shown in the mention picker.
+	 */
+	displayName: string;
+
+	/**
+	 * Carries the visible mention text inserted into the editor.
+	 */
+	mentionText: string;
+
+	/**
+	 * Carries the optional avatar URL shown beside the candidate when available.
+	 */
+	avatarUrl?: string;
+
+	/**
+	 * Carries the Jira user type reported for the candidate when available.
+	 */
+	userType?: 'DEFAULT' | 'SPECIAL' | 'APP';
+
+	/**
+	 * Carries the source that produced the candidate for ranking and debugging.
+	 */
+	source: 'participant' | 'assignable';
 };
 
 /**
@@ -277,6 +487,14 @@ export type IssuePanelOptions = {
 	summaryEditError?: string;
 	descriptionEditPending?: boolean;
 	descriptionEditError?: string;
+	/**
+	 * Carries the unsaved description draft text currently shown in the shared editor.
+	 */
+	descriptionEditDraft?: string;
+	/**
+	 * Carries the canonical unsaved ADF description draft shown in the shared editor.
+	 */
+	descriptionEditDraftDocument?: JiraAdfDocument;
 	statusOptions?: IssueStatusOption[];
 	statusPending?: boolean;
 	statusError?: string;
@@ -295,8 +513,16 @@ export type IssuePanelOptions = {
 	commentDeletingId?: string;
 	commentEditingId?: string;
 	commentEditDraft?: string;
+	/**
+	 * Carries the canonical unsaved ADF comment-edit draft shown in the shared editor.
+	 */
+	commentEditDraftDocument?: JiraAdfDocument;
 	commentFormat?: JiraCommentFormat;
 	commentDraft?: string;
+	/**
+	 * Carries the canonical unsaved ADF comment draft shown in the shared editor.
+	 */
+	commentDraftDocument?: JiraAdfDocument;
 
 	/**
 	 * The currently selected comment reply target for the issue panel composer.
@@ -305,13 +531,41 @@ export type IssuePanelOptions = {
 };
 
 export type CreateIssueFormValues = {
+	/**
+	 * Carries the Jira issue summary entered in the create form.
+	 */
 	summary: string;
+	/**
+	 * Carries the readable wiki-preview text generated from the shared editor document.
+	 */
 	description: string;
+	/**
+	 * Carries the canonical ADF description document generated by the shared rich text editor.
+	 */
+	descriptionDocument?: JiraAdfDocument;
+	/**
+	 * Carries the issue type name selected for issue creation.
+	 */
 	issueType: string;
+	/**
+	 * Carries the initial workflow status selected for the new issue.
+	 */
 	status: string;
+	/**
+	 * Carries additional Jira field values keyed by their field identifiers.
+	 */
 	customFields?: Record<string, string>;
+	/**
+	 * Carries the Jira account identifier of the selected assignee.
+	 */
 	assigneeAccountId?: string;
+	/**
+	 * Carries the display name of the selected assignee.
+	 */
 	assigneeDisplayName?: string;
+	/**
+	 * Carries the avatar URL of the selected assignee.
+	 */
 	assigneeAvatarUrl?: string;
 };
 

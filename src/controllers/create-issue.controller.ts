@@ -9,14 +9,17 @@ import {
 	CreateIssueFieldDefinition,
 	CreateIssueFormValues,
 	CreateIssuePanelState,
+	JiraAdfDocument,
 	IssueAssignableUser,
 	IssueStatusOption,
 	JiraIssue,
 	JiraRelatedIssue,
+	RichTextMentionCandidate,
 	SelectedProjectInfo,
 } from '../model/jira.type';
 import { ErrorHelper } from '../shared/error.helper';
 import { JiraWebviewIconService } from '../services/jira-webview-icon.service';
+import { ProjectAssignableMentionService } from '../services/project-assignable-mention.service';
 import {
 	ParentIssuePickerController,
 	ParentIssuePickerSession,
@@ -275,6 +278,27 @@ export class CreateIssueControllerFactory {
 				return;
 			}
 
+			if (message.type === 'queryMentionCandidates' && typeof message.requestId === 'string') {
+				let candidates: RichTextMentionCandidate[] = [];
+				try {
+					candidates = await ProjectAssignableMentionService.search(
+						authenticatedInfo,
+						authenticatedToken,
+						{ projectKey: selectedProject.key },
+						typeof message.query === 'string' ? message.query : ''
+					);
+				} catch {
+					candidates = [];
+				}
+				await panel.webview.postMessage({
+					type: 'richTextMentionCandidatesLoaded',
+					editorId: typeof message.editorId === 'string' ? message.editorId : undefined,
+					requestId: message.requestId,
+					candidates,
+				});
+				return;
+			}
+
 			if (message.type === 'openParentPicker') {
 				if (parentPickerSession) {
 					return;
@@ -435,6 +459,9 @@ export class CreateIssueControllerFactory {
 ): CreateIssueFormValues {
 	const summary = typeof raw?.summary === 'string' ? raw.summary : fallback.summary;
 	const description = typeof raw?.description === 'string' ? raw.description : fallback.description;
+	const descriptionDocument =
+		CreateIssueControllerFactory.tryGetAdfDocument(raw?.descriptionDocument) ??
+		fallback.descriptionDocument;
 	const issueTypeRaw = typeof raw?.issueType === 'string' ? raw.issueType : fallback.issueType;
 	const normalizedType = issueTypeRaw?.trim() || fallback.issueType;
 	const issueType = ISSUE_TYPE_OPTIONS.includes(normalizedType) ? normalizedType : fallback.issueType;
@@ -465,6 +492,7 @@ export class CreateIssueControllerFactory {
 	return {
 		summary,
 		description,
+		descriptionDocument,
 		issueType,
 		status,
 		customFields,
@@ -560,5 +588,21 @@ export class CreateIssueControllerFactory {
 		return false;
 	}
 	return options.some((name) => name.toLowerCase() === normalized);
+	}
+
+	/**
+	 * Returns the provided value when it matches the shared Jira ADF document contract.
+	 */
+	private static tryGetAdfDocument(value: unknown): JiraAdfDocument | undefined {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			return undefined;
+		}
+
+		const record = value as { type?: unknown; version?: unknown; content?: unknown };
+		if (record.type !== 'doc' || record.version !== 1 || !Array.isArray(record.content)) {
+			return undefined;
+		}
+
+		return value as JiraAdfDocument;
 	}
 }

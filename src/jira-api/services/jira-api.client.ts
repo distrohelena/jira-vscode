@@ -10,6 +10,7 @@ import {
 	CreateIssueFormValues,
 	FetchProjectIssuesOptions,
 	FetchProjectIssuesPage,
+	JiraAdfDocument,
 	IssueAssignableUser,
 	IssueStatusOption,
 	JiraAuthInfo,
@@ -168,7 +169,7 @@ export class JiraApiClient implements IJiraApiClient {
 		authInfo: JiraAuthInfo,
 		token: string,
 		issueKey: string,
-		description: string
+		description: string | JiraAdfDocument | undefined
 	): Promise<void> {
 		return JiraApiTransport.updateIssueDescription(authInfo, token, issueKey, description);
 	}
@@ -227,8 +228,8 @@ export class JiraApiClient implements IJiraApiClient {
 		authInfo: JiraAuthInfo,
 		token: string,
 		issueKey: string,
-		body: string,
-		format: JiraCommentFormat,
+		body: string | JiraAdfDocument,
+		format?: JiraCommentFormat | 'adf',
 		parentId?: string
 	): Promise<JiraIssueComment> {
 		return JiraApiTransport.addIssueComment(authInfo, token, issueKey, body, format, parentId);
@@ -254,8 +255,8 @@ export class JiraApiClient implements IJiraApiClient {
 		token: string,
 		issueKey: string,
 		commentId: string,
-		body: string,
-		format: JiraCommentFormat
+		body: string | JiraAdfDocument,
+		format?: JiraCommentFormat | 'adf'
 	): Promise<JiraIssueComment> {
 		return JiraApiTransport.updateIssueComment(authInfo, token, issueKey, commentId, body, format);
 	}

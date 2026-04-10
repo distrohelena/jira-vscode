@@ -64,23 +64,60 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.mountedSurface.getAttribute('data-editor-disabled')).toBe('true');
 	});
 
-	it('round-trips wiki mode changes back into the hidden value field', () => {
+	it('updates the read-only wiki preview when visual-mode formatting changes', () => {
 		const harness = new RichTextEditorDomTestHarness({
-			value: '',
-			plainValue: '',
+			value: '*bold* _italic_',
+			plainValue: '*bold* _italic_',
 		});
 
 		harness.initialize();
 		harness.click(harness.getModeToggleButton());
+
 		expect(harness.host.getAttribute('data-mode')).toBe('wiki');
 		expect(harness.getModeToggleButton().textContent?.trim()).toBe('Visual');
-		harness.setWikiValue('*bold* _italic_');
+		expect(harness.hiddenValueField.value).toBe('*bold* _italic_');
+		expect(harness.plainTextarea.value).toBe('*bold* _italic_');
+	});
+
+	it('switches to wiki mode as a read-only preview without reparsing preview edits back into the visual document', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Hello @Helena',
+			adfValue: JSON.stringify({
+				type: 'doc',
+				version: 1,
+				content: [
+					{
+						type: 'paragraph',
+						content: [
+							{
+								type: 'mention',
+								attrs: {
+									id: 'acct-123',
+									text: '@Helena',
+									userType: 'DEFAULT',
+								},
+							},
+						],
+					},
+				],
+			}),
+			plainValue: 'Hello @Helena',
+		});
+
+		harness.initialize();
+		harness.click(harness.getModeToggleButton());
+
+		expect(harness.host.getAttribute('data-mode')).toBe('wiki');
+		expect(harness.plainTextarea.readOnly).toBe(true);
+		expect(harness.plainTextarea.getAttribute('aria-readonly')).toBe('true');
+
+		harness.plainTextarea.value = 'Changed preview only';
 		harness.click(harness.getModeToggleButton());
 
 		expect(harness.host.getAttribute('data-mode')).toBe('visual');
-		expect(harness.mountedSurface.innerHTML).toContain('<strong>bold</strong>');
-		expect(harness.mountedSurface.innerHTML).toContain('<em>italic</em>');
-		expect(harness.hiddenValueField.value).toBe('*bold* _italic_');
+		expect(harness.getAdfValueField().value).toContain('"mention"');
+		expect(harness.getPreviewValueField().value).toBe('@Helena');
+		expect(harness.mountedSurface.textContent).toContain('@Helena');
 	});
 
 	it('moves focus to the wiki textarea when switching away from the visual editor', () => {

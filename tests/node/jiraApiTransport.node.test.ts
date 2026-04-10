@@ -3,6 +3,7 @@ import test from 'node:test';
 import axios from 'axios';
 
 import { JiraApiTransport } from '../../src/model/jira-api.client';
+import type { JiraAdfDocument } from '../../src/model/jira.type';
 
 test('mapCreateIssueFieldDefinitionInternal includes Jira parent metadata', () => {
 	const field = JiraApiTransport.mapCreateIssueFieldDefinitionInternal('parent', {
@@ -115,6 +116,41 @@ test('mapIssueInternal keeps related issue status icon URLs for parent and subta
 
 	assert.equal(issue.parent?.statusIconUrl, 'https://example.atlassian.net/images/icons/done.gif');
 	assert.equal(issue.children?.[0]?.statusIconUrl, 'https://example.atlassian.net/images/icons/open.gif');
+});
+
+test('mapIssueInternal preserves ADF description payloads and extracts readable text', () => {
+	const issue = (JiraApiTransport as any).mapIssueInternal(
+		{
+			id: '10001',
+			key: 'PROJ-1',
+			fields: {
+				summary: 'ADF issue',
+				status: { name: 'In Progress' },
+				description: {
+					type: 'doc',
+					version: 1,
+					content: [
+						{
+							type: 'paragraph',
+							content: [
+								{ type: 'text', text: 'Hello ' },
+								{
+									type: 'mention',
+									attrs: { id: 'acct-123', text: '@Helena', userType: 'DEFAULT' },
+								},
+							],
+						},
+					],
+				},
+				updated: '2026-04-10T12:00:00.000Z',
+			},
+		},
+		'https://example.atlassian.net'
+	);
+
+	assert.equal(issue.description, 'Hello @Helena');
+	assert.equal(issue.descriptionDocument?.type, 'doc');
+	assert.equal(issue.descriptionHtml?.includes('@Helena'), true);
 });
 
 test('mapTransitionToStatusOptionInternal includes the Jira status icon URL', () => {
@@ -236,6 +272,52 @@ test('updateIssueParentInternal sends the parent key through the Jira issue upda
 	});
 });
 
+test('updateIssueDescriptionInternal sends ADF instead of plain text for cloud rich text fields', async () => {
+	const originalPut = axios.put;
+	let capturedBody: any;
+	const descriptionDocument: JiraAdfDocument = {
+		type: 'doc',
+		version: 1,
+		content: [
+			{
+				type: 'paragraph',
+				content: [
+					{
+						type: 'mention',
+						attrs: { id: 'acct-123', text: '@Helena', userType: 'DEFAULT' },
+					},
+				],
+			},
+		],
+	};
+
+	axios.put = (async (_url: string, body: any) => {
+		capturedBody = body;
+		return { data: {} };
+	}) as typeof axios.put;
+
+	try {
+		await (JiraApiTransport as any).updateIssueDescriptionInternal(
+			{
+				baseUrl: 'https://example.atlassian.net',
+				username: 'helena',
+				serverLabel: 'cloud',
+			},
+			'token-123',
+			'PROJ-1',
+			descriptionDocument
+		);
+	} finally {
+		axios.put = originalPut;
+	}
+
+	assert.deepEqual(capturedBody, {
+		fields: {
+			description: descriptionDocument,
+		},
+	});
+});
+
 test('assignIssueInternal clears the assignee by sending a null Jira account id', async () => {
 	const originalPut = axios.put;
 	let capturedUrl: string | undefined;
@@ -304,4 +386,55 @@ test('updateIssueParentInternal clears the parent through the documented Jira up
 			],
 		},
 	});
+});
+
+test('addIssueCommentInternal sends ADF mention nodes through the comment body', async () => {
+	const originalPost = axios.post;
+	let capturedBody: any;
+	const commentDocument: JiraAdfDocument = {
+		type: 'doc',
+		version: 1,
+		content: [
+			{
+				type: 'paragraph',
+				content: [
+					{
+						type: 'mention',
+						attrs: { id: 'acct-123', text: '@Helena', userType: 'DEFAULT' },
+					},
+				],
+			},
+		],
+	};
+
+	axios.post = (async (_url: string, body: any) => {
+		capturedBody = body;
+		return {
+			data: {
+				id: '10000',
+				body: body.body,
+				author: { displayName: 'Helena', accountId: 'acct-123' },
+			},
+		};
+	}) as typeof axios.post;
+
+	try {
+		await (JiraApiTransport as any).addIssueCommentInternal(
+			{
+				baseUrl: 'https://example.atlassian.net',
+				username: 'helena',
+				serverLabel: 'cloud',
+			},
+			'token-123',
+			'PROJ-1',
+			commentDocument,
+			'adf',
+			undefined
+		);
+	} finally {
+		axios.post = originalPost;
+	}
+
+	assert.equal(capturedBody.body.content[0].content[0].type, 'mention');
+	assert.equal(capturedBody.body.content[0].content[0].attrs.id, 'acct-123');
 });
