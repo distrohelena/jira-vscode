@@ -4,6 +4,12 @@
 coverage/**
 node_modules/**
 src/**
+tests/**
+docs/**
+scripts/**
+.artifacts/**
+.worktrees/**
+.github/**
 tsconfig.json
 package-lock.json
 **/*.ts
@@ -12,3 +18,4 @@ package-lock.json
 prettier.config.*
 vscode/**
 *.vsix
+AGENTS.md
