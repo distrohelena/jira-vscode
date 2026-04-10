@@ -220,8 +220,8 @@ describe('Create issue panel', () => {
 		expect(parentInput).toBeTruthy();
 		expect(parentButton).toBeTruthy();
 		const parentButtonText = parentButton?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-		expect(parentButtonText).toContain('Choose a parent ticket');
-		expect(parentButtonText).toContain('No parent selected');
+		expect(parentButtonText).toContain('Choose a parent epic');
+		expect(parentButtonText).toContain('No parent epic selected');
 		expect(parentButtonText).toContain('Unassigned');
 		expect(assigneeButton).toBeTruthy();
 		expect(form).toBeTruthy();
@@ -488,7 +488,7 @@ describe('Create issue panel', () => {
 			'.issue-sidebar .parent-picker-card-detail'
 		) as HTMLSpanElement | null;
 		expect(parentCard).toBeTruthy();
-		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent epic');
 		expect(parentCardDetail?.textContent).toContain('PROJ-123 - Parent issue summary');
 	});
 
@@ -516,8 +516,8 @@ describe('Create issue panel', () => {
 		const parentCardDetail = parentCard?.querySelector('.parent-picker-card-detail') as HTMLSpanElement | null;
 
 		expect(parentInput?.value).toBe('PROJ-321');
-		expect(parentCard?.getAttribute('aria-label')).toBe('Parent Ticket');
-		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCard?.getAttribute('aria-label')).toBe('Parent Epic');
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent epic');
 		expect(parentCardDetail?.textContent).toContain('PROJ-321 - Existing parent issue');
 	});
 
@@ -539,13 +539,13 @@ describe('Create issue panel', () => {
 		expect(markup).toContain('data-parent-picker-open');
 		expect(markup).toContain('class="parent-picker-trigger parent-picker-card"');
 		expect(markup).toContain('aria-label="Parent"');
-		expect(markup).toContain('Choose a parent ticket');
+		expect(markup).toContain('Choose a parent epic');
 		expect(markup).toContain('PROJ-999 - Shared renderer parent');
 	});
 
 	it('renders neutral shared parent picker markup when no create field is supplied', () => {
 		const markup = SharedParentPicker.renderCard({
-			ariaLabel: 'Parent Ticket',
+			ariaLabel: 'Parent Epic',
 			selectedParent: {
 				key: 'PROJ-777',
 				summary: 'Neutral shared renderer parent',
@@ -564,17 +564,17 @@ describe('Create issue panel', () => {
 		expect(rootElement?.classList.contains('parent-field')).toBe(false);
 		expect(rootElement?.hasAttribute('data-parent-picker-open')).toBe(true);
 		expect(rootElement?.hasAttribute('data-create-parent-field')).toBe(false);
-		expect(rootElement?.getAttribute('aria-label')).toBe('Parent Ticket');
+		expect(rootElement?.getAttribute('aria-label')).toBe('Parent Epic');
 		expect(hiddenInput).toBeNull();
 		expect(markup).not.toContain('create-custom-field-label');
 		expect(markup).not.toContain('data-create-custom-field');
-		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent epic');
 		expect(parentCardDetail?.textContent).toContain('PROJ-777 - Neutral shared renderer parent');
 	});
 
 	it('omits the detail separator when the shared parent picker summary is empty', () => {
 		const markup = SharedParentPicker.renderCard({
-			ariaLabel: 'Parent Ticket',
+			ariaLabel: 'Parent Epic',
 			selectedParent: {
 				key: 'PROJ-777',
 				summary: '   ',

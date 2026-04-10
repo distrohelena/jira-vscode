@@ -548,7 +548,7 @@ describe('Issue panel editor interactions', () => {
 
 		const parentButton = dom.window.document.querySelector('.issue-sidebar [data-parent-picker-open]');
 		const sidebarSections = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')) as HTMLElement[];
-		const parentSectionIndex = sidebarSections.findIndex((section) => section.textContent?.includes('Parent Ticket'));
+		const parentSectionIndex = sidebarSections.findIndex((section) => section.textContent?.includes('Parent Epic'));
 		const assigneeSectionIndex = sidebarSections.findIndex((section) => section.textContent?.includes('Assignee'));
 		expect(parentButton).toBeTruthy();
 		expect(parentButton?.classList.contains('parent-picker-card')).toBe(true);
@@ -562,7 +562,7 @@ describe('Issue panel editor interactions', () => {
 		expect(openMessage).toBeTruthy();
 	});
 
-	it('renders the shared parent ticket card for an existing parent issue', () => {
+	it('renders the shared parent epic card for an existing parent issue', () => {
 		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
 			parent: {
 				key: 'PROJ-123',
@@ -574,7 +574,7 @@ describe('Issue panel editor interactions', () => {
 		expect(scriptErrors).toEqual([]);
 
 		const parentSection = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')).find(
-			(section) => section.textContent?.includes('Parent Ticket')
+			(section) => section.textContent?.includes('Parent Epic')
 		) as HTMLElement | undefined;
 		const parentCard = parentSection?.querySelector('.parent-picker-card');
 		const parentCardTitle = parentSection?.querySelector('.parent-picker-card-title') as HTMLSpanElement | null;
@@ -582,7 +582,7 @@ describe('Issue panel editor interactions', () => {
 		const parentSectionBody = parentSection?.querySelector('.parent-section-body');
 		expect(parentSection).toBeTruthy();
 		expect(parentCard).toBeTruthy();
-		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent epic');
 		expect(parentCardDetail?.textContent).toContain('PROJ-123 - Parent issue summary');
 		expect(parentSectionBody).toBeNull();
 	});
@@ -599,7 +599,7 @@ describe('Issue panel editor interactions', () => {
 		expect(scriptErrors).toEqual([]);
 
 		const parentSection = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')).find(
-			(section) => section.textContent?.includes('Parent Ticket')
+			(section) => section.textContent?.includes('Parent Epic')
 		) as HTMLElement | undefined;
 		const parentCard = parentSection?.querySelector('.parent-picker-card');
 		const parentIssueLink = parentSection?.querySelector('.issue-link') as HTMLButtonElement | null;
@@ -634,7 +634,7 @@ describe('Issue panel editor interactions', () => {
 		expect(scriptErrors).toEqual([]);
 
 		const parentSection = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')).find(
-			(section) => section.textContent?.includes('Parent Ticket')
+			(section) => section.textContent?.includes('Parent Epic')
 		) as HTMLElement | undefined;
 		const parentStatusIcon = parentSection?.querySelector('.issue-link .status-icon') as HTMLImageElement | null;
 		const subtaskStatusIcon = dom.window.document.querySelector('.issue-list .issue-link .status-icon') as HTMLImageElement | null;
@@ -650,7 +650,7 @@ describe('Issue panel editor interactions', () => {
 		expect(scriptErrors).toEqual([]);
 
 		const parentSection = Array.from(dom.window.document.querySelectorAll('.issue-sidebar .meta-section')).find(
-			(section) => section.textContent?.includes('Parent Ticket')
+			(section) => section.textContent?.includes('Parent Epic')
 		) as HTMLElement | undefined;
 		const parentCard = parentSection?.querySelector('.parent-picker-card');
 		const parentCardTitle = parentSection?.querySelector('.parent-picker-card-title') as HTMLSpanElement | null;
@@ -659,9 +659,9 @@ describe('Issue panel editor interactions', () => {
 		const parentDetailText = parentCardDetail?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 		expect(parentSection).toBeTruthy();
 		expect(parentCard).toBeTruthy();
-		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent epic');
 		expect(parentCardDetail).toBeTruthy();
-		expect(parentDetailText).toContain('No parent selected');
+		expect(parentDetailText).toContain('No parent epic selected');
 		expect(parentDetailText).toContain('Unassigned');
 		expect(parentSectionBody).toBeNull();
 	});
