@@ -3700,6 +3700,12 @@ static renderStatusSelectOption(option: IssueStatusOption, value: string, select
 		if (!parentField) {
 			return '';
 		}
+		const requiredSuffix = parentField.required ? ' <span class="field-required">*</span>' : '';
+		const sectionTitle = `Parent Epic${requiredSuffix}`;
+		const ariaLabel = parentField.required ? 'Parent Epic (required)' : 'Parent Epic';
+		const cardTitleHtml = parentField.required
+			? 'Choose a parent epic <span class="field-required">*</span>'
+			: 'Choose a parent epic';
 		const parentValue = state.values.customFields?.[parentField.id] ?? '';
 		const disabledAttr = disabled ? 'disabled' : '';
 		const content = renderCreateParentFieldInput(
@@ -3707,10 +3713,11 @@ static renderStatusSelectOption(option: IssueStatusOption, value: string, select
 			parentField,
 			parentValue,
 			disabledAttr,
-			'Parent Epic'
+			ariaLabel,
+			cardTitleHtml
 		);
 		return `<div class="meta-section">
-			<div class="section-title">Parent Epic</div>
+			<div class="section-title">${sectionTitle}</div>
 			${content}
 		</div>`;
 	}
@@ -3724,7 +3731,14 @@ static renderStatusSelectOption(option: IssueStatusOption, value: string, select
 	const requiredSuffix = field.required ? ' <span class="field-required">*</span>' : '';
 	const label = `${HtmlHelper.escapeHtml(field.name)}${requiredSuffix}`;
 	if (field.isParentField) {
-		return renderCreateParentFieldInput(state, field, value, disabledAttr, label);
+		return renderCreateParentFieldInput(
+			state,
+			field,
+			value,
+			disabledAttr,
+			field.required ? `${field.name} (required)` : field.name,
+			field.required ? 'Choose a parent epic <span class="field-required">*</span>' : 'Choose a parent epic'
+		);
 	}
 	if (field.multiline) {
 		return `<label class="create-custom-field-label" for="${HtmlHelper.escapeAttribute(field.id)}">
@@ -3750,12 +3764,14 @@ static renderStatusSelectOption(option: IssueStatusOption, value: string, select
 		field: CreateIssueFieldDefinition,
 		value: string,
 		disabledAttr: string,
-		label: string
+		ariaLabel: string,
+		titleLabelHtml: string
 	): string {
 		return SharedParentPicker.renderCard({
-			ariaLabel: label,
+			ariaLabel,
 			fieldId: field.id,
 			fieldValue: value,
+			titleLabelHtml,
 			selectedParent: state.selectedParentIssue
 				? {
 					key: state.selectedParentIssue.key,

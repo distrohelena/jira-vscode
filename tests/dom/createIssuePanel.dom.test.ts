@@ -491,8 +491,68 @@ describe('Create issue panel', () => {
 			'.issue-sidebar .parent-picker-card-detail'
 		) as HTMLSpanElement | null;
 		expect(parentCard).toBeTruthy();
-		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent epic');
+		expect(parentCardTitle?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Choose a parent epic *');
 		expect(parentCardDetail?.textContent).toContain('PROJ-123 - Parent issue summary');
+	});
+
+	it('marks the create Parent Epic section and card title as required when Jira metadata requires it', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom({
+			createFields: [
+				{
+					id: 'parent',
+					name: 'Parent Epic',
+					required: true,
+					multiline: false,
+					isParentField: true,
+				},
+			],
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const cardTrigger = dom.window.document.querySelector(
+			'.issue-sidebar [data-parent-picker-open]'
+		) as HTMLButtonElement | null;
+		const parentSection = cardTrigger?.closest('.meta-section') as HTMLDivElement | null;
+		const sectionTitle = parentSection?.querySelector('.section-title') as HTMLDivElement | null;
+		const cardTitle = dom.window.document.querySelector(
+			'.issue-sidebar .parent-picker-card-title'
+		) as HTMLSpanElement | null;
+
+		expect(sectionTitle?.innerHTML).toContain('field-required');
+		expect(sectionTitle?.textContent?.replace(/\s+/g, ' ').trim()).toContain('Parent Epic *');
+		expect(cardTitle?.innerHTML).toContain('field-required');
+		expect(cardTitle?.textContent?.replace(/\s+/g, ' ').trim()).toContain('Choose a parent epic *');
+		expect(cardTrigger?.getAttribute('aria-label')).toBe('Parent Epic (required)');
+	});
+
+	it('keeps the create Parent Epic section optional when Jira metadata does not require it', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom({
+			createFields: [
+				{
+					id: 'parent',
+					name: 'Parent Epic',
+					required: false,
+					multiline: false,
+					isParentField: true,
+				},
+			],
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const cardTrigger = dom.window.document.querySelector(
+			'.issue-sidebar [data-parent-picker-open]'
+		) as HTMLButtonElement | null;
+		const parentSection = cardTrigger?.closest('.meta-section') as HTMLDivElement | null;
+		const sectionTitle = parentSection?.querySelector('.section-title') as HTMLDivElement | null;
+		const cardTitle = dom.window.document.querySelector(
+			'.issue-sidebar .parent-picker-card-title'
+		) as HTMLSpanElement | null;
+
+		expect(sectionTitle?.innerHTML).not.toContain('field-required');
+		expect(sectionTitle?.textContent?.trim()).toBe('Parent Epic');
+		expect(cardTitle?.innerHTML).not.toContain('field-required');
+		expect(cardTitle?.textContent?.trim()).toBe('Choose a parent epic');
+		expect(cardTrigger?.getAttribute('aria-label')).toBe('Parent Epic');
 	});
 
 	it('keeps the create parent field wired to the shared card contract', () => {
@@ -519,8 +579,8 @@ describe('Create issue panel', () => {
 		const parentCardDetail = parentCard?.querySelector('.parent-picker-card-detail') as HTMLSpanElement | null;
 
 		expect(parentInput?.value).toBe('PROJ-321');
-		expect(parentCard?.getAttribute('aria-label')).toBe('Parent Epic');
-		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent epic');
+		expect(parentCard?.getAttribute('aria-label')).toBe('Parent Epic (required)');
+		expect(parentCardTitle?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Choose a parent epic *');
 		expect(parentCardDetail?.textContent).toContain('PROJ-321 - Existing parent issue');
 	});
 

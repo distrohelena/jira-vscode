@@ -43,6 +43,11 @@ export type SharedParentPickerRenderOptions = {
 	 * Indicates whether the card trigger should render in a disabled state.
 	 */
 	disabled?: boolean;
+
+	/**
+	 * The optional pre-rendered HTML label shown in the card title area.
+	 */
+	titleLabelHtml?: string;
 };
 
 /**
@@ -53,7 +58,7 @@ export class SharedParentPicker {
 	 * Renders the parent Epic picker card and optional hidden create-form input.
 	 */
 	static renderCard(options: SharedParentPickerRenderOptions): string {
-		const titleLabel = 'Choose a parent epic';
+		const titleLabelHtml = options.titleLabelHtml ?? HtmlHelper.escapeHtml('Choose a parent epic');
 		const detailLabel = options.selectedParent
 			? HtmlHelper.escapeHtml(SharedParentPicker.formatDetailLabel(options.selectedParent))
 			: 'No parent epic selected &bull; Unassigned';
@@ -68,7 +73,7 @@ export class SharedParentPicker {
 			${disabledAttribute}
 			style="align-self: stretch; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; width: 100%; min-height: 72px; padding: 10px 12px; text-align: left; border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.1)); border-radius: 6px; background: var(--vscode-editorWidget-background, rgba(255,255,255,0.03)); color: var(--vscode-foreground);"
 		>
-			<span class="parent-picker-card-title">${HtmlHelper.escapeHtml(titleLabel)}</span>
+			<span class="parent-picker-card-title">${titleLabelHtml}</span>
 			<span class="parent-picker-card-detail">${detailLabel}</span>
 		</button>`;
 
