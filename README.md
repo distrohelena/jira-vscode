@@ -4,6 +4,32 @@ Jira VS Code is an open-source Visual Studio Code extension for working with Jir
 
 See [CHANGELOG.md](CHANGELOG.md) for release history.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="media/readme/01-jira-sidebar-items.png" alt="Jira sidebar with focused project, grouped items, notifications, and settings views in Visual Studio Code." />
+    </td>
+    <td width="50%">
+      <img src="media/readme/02-jira-issue-details.png" alt="Issue details panel for SCRUM-7 in the Jira VS Code extension." />
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <img src="media/readme/03-jira-create-issue.png" alt="Create issue panel for a Scrum project in the Jira VS Code extension." />
+    </td>
+    <td width="50%">
+      <img src="media/readme/04-jira-create-issue-followup.png" alt="Create issue panel showing the richer Jira ticket creation flow in Visual Studio Code." />
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <img src="media/readme/05-jira-create-issue-followup-2.png" alt="Create issue panel with the Jira sidebar still visible in Visual Studio Code." />
+    </td>
+  </tr>
+</table>
+
 ## Current Feature Set
 
 ### Projects view
