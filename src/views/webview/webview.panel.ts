@@ -2781,12 +2781,12 @@ static renderParentMetadataSection(webview: vscode.Webview, issue: JiraIssue): s
 			}
 			: undefined;
 		const parentPickerCard = SharedParentPicker.renderCard({
-			ariaLabel: 'Choose a parent ticket',
+			ariaLabel: 'Parent Epic',
 			selectedParent,
 		});
 		const parentIssueLink = parent ? `<div style="margin-top: 8px;">${renderRelatedIssueButton(webview, parent)}</div>` : '';
 		return `<div class="meta-section">
-			<div class="section-title">Parent Ticket</div>
+			<div class="section-title">Parent Epic</div>
 			${parentPickerCard}
 			${parentIssueLink}
 		</div>`;
@@ -3707,10 +3707,10 @@ static renderStatusSelectOption(option: IssueStatusOption, value: string, select
 			parentField,
 			parentValue,
 			disabledAttr,
-			'Parent Ticket'
+			'Parent Epic'
 		);
 		return `<div class="meta-section">
-			<div class="section-title">Parent Ticket</div>
+			<div class="section-title">Parent Epic</div>
 			${content}
 		</div>`;
 	}

@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { EnvironmentRuntime } from '../../src/environment.runtime';
 import { CreateIssuePanelState } from '../../src/model/jira.type';
-import { ParentIssuePickerOverlay } from '../../src/views/webview/parent-issue-picker.overlay';
+import {
+	ParentIssuePickerNoneSelectionKey,
+	ParentIssuePickerOverlay,
+} from '../../src/views/webview/parent-issue-picker.overlay';
 import { SharedParentPicker } from '../../src/views/webview/shared-parent-picker';
 import { JiraWebviewPanel } from '../../src/views/webview/webview.panel';
 import { RichTextEditorDomTestHarness } from './support/richTextEditorDomTestHarness';
@@ -220,8 +223,8 @@ describe('Create issue panel', () => {
 		expect(parentInput).toBeTruthy();
 		expect(parentButton).toBeTruthy();
 		const parentButtonText = parentButton?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-		expect(parentButtonText).toContain('Choose a parent ticket');
-		expect(parentButtonText).toContain('No parent selected');
+		expect(parentButtonText).toContain('Choose a parent epic');
+		expect(parentButtonText).toContain('No parent epic selected');
 		expect(parentButtonText).toContain('Unassigned');
 		expect(assigneeButton).toBeTruthy();
 		expect(form).toBeTruthy();
@@ -488,7 +491,7 @@ describe('Create issue panel', () => {
 			'.issue-sidebar .parent-picker-card-detail'
 		) as HTMLSpanElement | null;
 		expect(parentCard).toBeTruthy();
-		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent epic');
 		expect(parentCardDetail?.textContent).toContain('PROJ-123 - Parent issue summary');
 	});
 
@@ -516,8 +519,8 @@ describe('Create issue panel', () => {
 		const parentCardDetail = parentCard?.querySelector('.parent-picker-card-detail') as HTMLSpanElement | null;
 
 		expect(parentInput?.value).toBe('PROJ-321');
-		expect(parentCard?.getAttribute('aria-label')).toBe('Parent Ticket');
-		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCard?.getAttribute('aria-label')).toBe('Parent Epic');
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent epic');
 		expect(parentCardDetail?.textContent).toContain('PROJ-321 - Existing parent issue');
 	});
 
@@ -539,13 +542,13 @@ describe('Create issue panel', () => {
 		expect(markup).toContain('data-parent-picker-open');
 		expect(markup).toContain('class="parent-picker-trigger parent-picker-card"');
 		expect(markup).toContain('aria-label="Parent"');
-		expect(markup).toContain('Choose a parent ticket');
+		expect(markup).toContain('Choose a parent epic');
 		expect(markup).toContain('PROJ-999 - Shared renderer parent');
 	});
 
 	it('renders neutral shared parent picker markup when no create field is supplied', () => {
 		const markup = SharedParentPicker.renderCard({
-			ariaLabel: 'Parent Ticket',
+			ariaLabel: 'Parent Epic',
 			selectedParent: {
 				key: 'PROJ-777',
 				summary: 'Neutral shared renderer parent',
@@ -564,17 +567,17 @@ describe('Create issue panel', () => {
 		expect(rootElement?.classList.contains('parent-field')).toBe(false);
 		expect(rootElement?.hasAttribute('data-parent-picker-open')).toBe(true);
 		expect(rootElement?.hasAttribute('data-create-parent-field')).toBe(false);
-		expect(rootElement?.getAttribute('aria-label')).toBe('Parent Ticket');
+		expect(rootElement?.getAttribute('aria-label')).toBe('Parent Epic');
 		expect(hiddenInput).toBeNull();
 		expect(markup).not.toContain('create-custom-field-label');
 		expect(markup).not.toContain('data-create-custom-field');
-		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent ticket');
+		expect(parentCardTitle?.textContent?.trim()).toBe('Choose a parent epic');
 		expect(parentCardDetail?.textContent).toContain('PROJ-777 - Neutral shared renderer parent');
 	});
 
 	it('omits the detail separator when the shared parent picker summary is empty', () => {
 		const markup = SharedParentPicker.renderCard({
-			ariaLabel: 'Parent Ticket',
+			ariaLabel: 'Parent Epic',
 			selectedParent: {
 				key: 'PROJ-777',
 				summary: '   ',
@@ -657,13 +660,38 @@ describe('Create issue panel', () => {
 			new dom.window.MessageEvent('message', {
 				data: {
 					type: 'parentPickerRender',
-					html: '<div class="parent-picker-shell"><div class="parent-picker-title">Select Parent Ticket</div></div>',
+					html: '<div class="parent-picker-shell"><div class="parent-picker-title">Select Parent Epic</div></div>',
 				},
 			})
 		);
 
 		expect(host?.classList.contains('active')).toBe(true);
-		expect(host?.innerHTML).toContain('Select Parent Ticket');
+		expect(host?.innerHTML).toContain('Select Parent Epic');
+	});
+
+	it('renders the inline parent picker overlay as an Epic-only modal contract', () => {
+		const html = ParentIssuePickerOverlay.renderOverlayHtml({
+			projectKey: 'PROJ',
+			projectLabel: 'Project',
+			searchQuery: '',
+			issueTypeName: '',
+			statusName: '',
+			loading: false,
+			loadingMore: false,
+			issues: [],
+			hasMore: false,
+			selectedIssueKey: ParentIssuePickerNoneSelectionKey,
+		});
+		const overlayDom = new JSDOM(html);
+		const title = overlayDom.window.document.querySelector('.parent-picker-title');
+		const issueTypeInput = overlayDom.window.document.querySelector('[name="issueTypeName"]');
+		const statusSelect = overlayDom.window.document.querySelector('select[name="statusName"]');
+
+		expect(title?.textContent?.trim()).toBe('Select Parent Epic');
+		expect(html).toContain('Search the current project to choose a parent epic.');
+		expect(issueTypeInput).toBeNull();
+		expect(statusSelect).toBeTruthy();
+		expect(html).toContain('No Parent Epic');
 	});
 
 	it('does not include the issue-details-only cursor rule in the create stylesheet', () => {
@@ -719,7 +747,7 @@ describe('Create issue panel', () => {
 
 		const selectedText = parentButton?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 		expect(parentInput?.value).toBe('PROJ-123');
-		expect(selectedText).toContain('Choose a parent ticket');
+		expect(selectedText).toContain('Choose a parent epic');
 		expect(selectedText).toContain('PROJ-123 - Selected parent ticket');
 
 		dom.window.dispatchEvent(
@@ -732,8 +760,8 @@ describe('Create issue panel', () => {
 
 		const clearedText = parentButton?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 		expect(parentInput?.value).toBe('');
-		expect(clearedText).toContain('Choose a parent ticket');
-		expect(clearedText).toContain('No parent selected');
+		expect(clearedText).toContain('Choose a parent epic');
+		expect(clearedText).toContain('No parent epic selected');
 		expect(clearedText).toContain('Unassigned');
 	});
 

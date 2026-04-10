@@ -16,7 +16,7 @@ export type SharedParentPickerSelection = {
 };
 
 /**
- * Describes the markup options required by the shared parent ticket card renderer.
+ * Describes the markup options required by the shared parent Epic card renderer.
  */
 export type SharedParentPickerRenderOptions = {
 	/**
@@ -46,17 +46,17 @@ export type SharedParentPickerRenderOptions = {
 };
 
 /**
- * Renders the shared parent ticket picker card used by webview sidebars.
+ * Renders the shared parent Epic picker card used by webview sidebars.
  */
 export class SharedParentPicker {
 	/**
-	 * Renders the parent ticket picker card and optional hidden create-form input.
+	 * Renders the parent Epic picker card and optional hidden create-form input.
 	 */
 	static renderCard(options: SharedParentPickerRenderOptions): string {
-		const titleLabel = 'Choose a parent ticket';
+		const titleLabel = 'Choose a parent epic';
 		const detailLabel = options.selectedParent
 			? HtmlHelper.escapeHtml(SharedParentPicker.formatDetailLabel(options.selectedParent))
-			: 'No parent selected &bull; Unassigned';
+			: 'No parent epic selected &bull; Unassigned';
 		const hasCreateField = Boolean(options.fieldId);
 		const escapedAriaLabel = HtmlHelper.escapeAttribute(options.ariaLabel);
 		const disabledAttribute = options.disabled ? 'disabled' : '';

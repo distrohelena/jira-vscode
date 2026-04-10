@@ -378,6 +378,7 @@
         "compile": "npm run bundle",
         "watch": "node scripts/esbuild.mjs --watch",
         "test": "npm run test:node && npm run test:dom && npm run test:smoke",
+        "pretest:node": "npm run bundle",
         "test:node": "node --import tsx --test \"tests/node/**/*.test.ts\"",
         "test:dom": "vitest run --config vitest.config.ts",
         "test:dom:watch": "vitest --config vitest.config.ts",

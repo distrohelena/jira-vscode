@@ -215,7 +215,7 @@ export class ParentIssuePickerOverlay {
 		}
 		.parent-picker-host .parent-picker-filters {
 			display: grid;
-			grid-template-columns: 1.2fr 0.9fr 0.9fr auto;
+			grid-template-columns: minmax(0, 1.4fr) minmax(180px, 1fr) auto;
 			gap: 10px;
 			align-items: end;
 		}
@@ -478,12 +478,12 @@ export class ParentIssuePickerOverlay {
 			const parentPickerReadFilters = () => {
 				const form = parentPickerHost ? parentPickerHost.querySelector('[data-parent-picker-form]') : null;
 				if (!form) {
-					return { searchQuery: '', issueTypeName: '', statusName: '' };
+					return { searchQuery: '', issueTypeName: 'Epic', statusName: '' };
 				}
 				const data = new FormData(form);
 				return {
 					searchQuery: typeof data.get('searchQuery') === 'string' ? data.get('searchQuery').trim() : '',
-					issueTypeName: typeof data.get('issueTypeName') === 'string' ? data.get('issueTypeName').trim() : '',
+					issueTypeName: 'Epic',
 					statusName: typeof data.get('statusName') === 'string' ? data.get('statusName').trim() : '',
 				};
 			};
@@ -507,10 +507,10 @@ export class ParentIssuePickerOverlay {
 						hiddenInput.value = '';
 					}
 					if (titleEl) {
-						titleEl.textContent = 'Choose a parent ticket';
+						titleEl.textContent = 'Choose a parent epic';
 					}
 					if (detailEl) {
-						detailEl.textContent = 'No parent selected • Unassigned';
+						detailEl.textContent = 'No parent epic selected - Unassigned';
 					}
 					return;
 				}
@@ -518,7 +518,7 @@ export class ParentIssuePickerOverlay {
 					hiddenInput.value = issue.key || '';
 				}
 				if (titleEl) {
-					titleEl.textContent = 'Choose a parent ticket';
+					titleEl.textContent = 'Choose a parent epic';
 				}
 				if (detailEl) {
 					const summaryText = typeof issue.summary === 'string' ? issue.summary.trim() : '';
@@ -653,7 +653,6 @@ export class ParentIssuePickerOverlay {
 	 */
 	static renderOverlayHtml(state: ParentIssuePickerOverlayState): string {
 		const searchQueryValue = HtmlHelper.escapeAttribute(state.searchQuery ?? '');
-		const issueTypeValue = HtmlHelper.escapeAttribute(state.issueTypeName ?? '');
 		const statusValue = (state.statusName ?? '').trim();
 		const selectedKey = (state.selectedIssueKey ?? '').trim();
 		const isNoneSelected = selectedKey.toUpperCase() === ParentIssuePickerNoneSelectionKey.toUpperCase();
@@ -664,7 +663,7 @@ export class ParentIssuePickerOverlay {
 		const loadMoreDisabledAttr = state.loadingMore || !state.hasMore ? 'disabled' : '';
 		const errorMarkup = state.error
 			? `<div class="message error">${HtmlHelper.escapeHtml(state.error)}</div>`
-			: '<div class="message muted">Search the current project to choose a parent issue.</div>';
+			: '<div class="message muted">Search the current project to choose a parent epic.</div>';
 		const resultsMarkup = ParentIssuePickerOverlay.renderIssueResultsList(
 			state.issues,
 			selectedKey,
@@ -680,10 +679,10 @@ export class ParentIssuePickerOverlay {
 		const resultCount = Array.isArray(state.issues) ? state.issues.length : 0;
 		const resultLabel = isBusy ? 'Loading...' : `${resultCount} result${resultCount === 1 ? '' : 's'}`;
 		return `<div class="parent-picker-overlay-backdrop" data-parent-picker-overlay>
-			<div class="parent-picker-shell" role="dialog" aria-modal="true" aria-label="Select parent issue">
+			<div class="parent-picker-shell" role="dialog" aria-modal="true" aria-label="Select parent epic">
 				<div class="parent-picker-header">
 					<div>
-						<h2 class="parent-picker-title">Select Parent Ticket</h2>
+						<h2 class="parent-picker-title">Select Parent Epic</h2>
 						<p class="parent-picker-subtitle">${HtmlHelper.escapeHtml(state.projectLabel)}</p>
 					</div>
 					<div class="parent-picker-header-right">
@@ -697,11 +696,7 @@ export class ParentIssuePickerOverlay {
 						<form class="parent-picker-filters" data-parent-picker-form>
 							<label class="field">
 								<span>Search</span>
-								<input type="text" name="searchQuery" value="${searchQueryValue}" placeholder="Search key or text" ${searchDisabledAttr} />
-							</label>
-							<label class="field">
-								<span>Issue Type</span>
-								<input type="text" name="issueTypeName" value="${issueTypeValue}" placeholder="Bug, Task, Story" ${searchDisabledAttr} />
+								<input type="text" name="searchQuery" value="${searchQueryValue}" placeholder="Search epic key or text" ${searchDisabledAttr} />
 							</label>
 							<label class="field">
 								<span>Status</span>
@@ -757,9 +752,9 @@ export class ParentIssuePickerOverlay {
 			>
 				<div class="result-top">
 					<div class="result-key">None</div>
-					<div class="result-summary">Leave this issue without a parent ticket</div>
+					<div class="result-summary">Leave this issue without a parent epic</div>
 				</div>
-				<div class="result-meta">Use this when the ticket should not have a parent relationship.</div>
+				<div class="result-meta">Use this when the issue should not have a parent epic relationship.</div>
 			</button>
 		</li>`;
 		if (!issues || issues.length === 0) {
@@ -768,7 +763,7 @@ export class ParentIssuePickerOverlay {
 				<li class="parent-picker-result">
 					<div class="parent-picker-result-button muted" style="cursor: default;">
 						<div class="result-top">
-							<div class="result-summary">No results yet. Search to load issues.</div>
+							<div class="result-summary">No results yet. Search to load epics.</div>
 						</div>
 						<div class="result-meta">Try a key like PROJ-123, search by text, or choose None.</div>
 					</div>
@@ -823,14 +818,14 @@ export class ParentIssuePickerOverlay {
 	): string {
 		if (isNoneSelected) {
 			return `<div>
-				<div class="preview-title">No Parent Ticket</div>
-				<div class="preview-body">Confirm this selection to leave the issue without a parent ticket.</div>
+				<div class="preview-title">No Parent Epic</div>
+				<div class="preview-body">Confirm this selection to leave the issue without a parent epic.</div>
 			</div>`;
 		}
 		if (!issue) {
 			return `<div>
 				<div class="preview-title">Preview</div>
-				<div class="preview-body">Select an issue from the results to preview it here.</div>
+				<div class="preview-body">Select an epic from the results to preview it here.</div>
 			</div>`;
 		}
 
