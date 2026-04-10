@@ -25,6 +25,7 @@ import {
 	JiraProject,
 	CreateIssueFormValues,
 	CreateIssueFieldDefinition,
+	JiraAdfDocument,
 	JiraRelatedIssue,
 	JiraCommentFormat,
 	ProjectStatusesResponse,
@@ -656,18 +657,19 @@ static async assignIssueInternal(
 	throw lastError ?? new Error('Unable to update issue title.');
 }
 
-	static async updateIssueDescriptionInternal(
+static async updateIssueDescriptionInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
-	description: string
+	description: string | JiraAdfDocument | undefined
 ): Promise<void> {
 	const sanitizedKey = issueKey?.trim();
 	if (!sanitizedKey) {
 		throw new Error('Issue key is required.');
 	}
-	const nextDescription = typeof description === 'string' ? description : '';
-	const descriptionValue = nextDescription.trim().length > 0 ? nextDescription : null;
+	const descriptionValue = JiraApiTransport.isAdfDocumentInternal(description)
+		? description
+		: (typeof description === 'string' && description.trim().length > 0 ? description : null);
 
 	const urlRoot = UrlHelper.normalizeBaseUrl(authInfo.baseUrl);
 	const resource = `issue/${encodeURIComponent(sanitizedKey)}`;
@@ -831,16 +833,17 @@ static async fetchIssueCommentsInternal(
 	}
 }
 
-	static async addIssueCommentInternal(
+static async addIssueCommentInternal(
 	authInfo: JiraAuthInfo,
 	token: string,
 	issueKey: string,
-	body: string,
-	format: JiraCommentFormat,
+	body: string | JiraAdfDocument,
+	format: JiraCommentFormat | 'adf',
 	parentId?: string
 ): Promise<JiraIssueComment> {
-	const trimmedBody = body?.trim();
-	if (!trimmedBody) {
+	const trimmedBody = typeof body === 'string' ? body.trim() : undefined;
+	const isAdfBody = JiraApiTransport.isAdfDocumentInternal(body);
+	if (!isAdfBody && !trimmedBody) {
 		throw new Error('Comment text is required.');
 	}
 	const sanitizedKey = issueKey?.trim();
@@ -860,12 +863,13 @@ static async fetchIssueCommentsInternal(
 		if (shouldSkip) {
 			continue;
 		}
-		const payload: Record<string, unknown> =
-			format === 'wiki'
-				? { body: trimmedBody }
-				: apiVersion === '2'
-				? { body: trimmedBody }
-				: { body: buildAdfDocumentFromPlainText(trimmedBody) };
+		const payload: Record<string, unknown> = isAdfBody
+			? { body }
+			: format === 'wiki'
+			? { body: trimmedBody }
+			: apiVersion === '2'
+			? { body: trimmedBody }
+			: { body: buildAdfDocumentFromPlainText(trimmedBody ?? '') };
 		if (parentId) {
 			payload.parentId = parentId;
 		}
@@ -1055,6 +1059,17 @@ static async fetchIssueCommentsInternal(
 			if (n.type === 'text' && typeof n.text === 'string' && n.text.length > 0) {
 				parts.push(n.text);
 			}
+			if (n.type === 'mention' && n.attrs && typeof n.attrs === 'object') {
+				const mentionText = typeof (n.attrs as Record<string, unknown>).text === 'string'
+					? (n.attrs as Record<string, unknown>).text
+					: undefined;
+				if (mentionText && mentionText.length > 0) {
+					parts.push(mentionText);
+				}
+			}
+			if (n.type === 'hardBreak') {
+				parts.push('\n');
+			}
 			// Recurse into child content arrays
 			const children = n.content as unknown[];
 			if (Array.isArray(children)) {
@@ -1062,8 +1077,20 @@ static async fetchIssueCommentsInternal(
 			}
 		};
 		for (const block of content) { walk(block); }
-		const result = parts.join('\n').trim();
+		const result = parts.join('').replace(/\n{3,}/g, '\n\n').trim();
 		return result;
+	}
+
+	/**
+	 * Returns whether a value matches the supported Jira Atlassian Document Format root shape.
+	 */
+	static isAdfDocumentInternal(value: unknown): value is JiraAdfDocument {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			return false;
+		}
+
+		const record = value as Record<string, unknown>;
+		return record.type === 'doc' && record.version === 1 && Array.isArray(record.content);
 	}
 
 	static mapIssueChangelogEntryInternal(entry: any): JiraIssueChangelogEntry | undefined {
@@ -1540,14 +1567,22 @@ static async fetchIssueCommentsInternal(
 	const reporterAvatarUrls = fields?.reporter?.avatarUrls ?? issue?.reporter?.avatarUrls ?? {};
 	const renderedFields = issue?.renderedFields ?? {};
 	const rawDescription = fields?.description;
+	const descriptionDocument = JiraApiTransport.isAdfDocumentInternal(rawDescription)
+		? rawDescription
+		: undefined;
 	const renderedDescription = typeof renderedFields?.description === 'string' ? renderedFields.description : undefined;
+	const descriptionTextFromDocument = descriptionDocument
+		? JiraApiTransport.extractTextFromAdf(descriptionDocument)
+		: undefined;
 	let descriptionHtml: string | undefined;
 	if (renderedDescription) {
 		descriptionHtml = HtmlHelper.sanitizeRenderedHtml(renderedDescription);
+	} else if (descriptionTextFromDocument) {
+		descriptionHtml = `<p>${HtmlHelper.escapeHtml(descriptionTextFromDocument).replace(/\r?\n/g, '<br />')}</p>`;
 	} else if (typeof rawDescription === 'string') {
 		descriptionHtml = `<p>${HtmlHelper.escapeHtml(rawDescription).replace(/\r?\n/g, '<br />')}</p>`;
 	}
-	const descriptionText = typeof rawDescription === 'string' ? rawDescription : undefined;
+	const descriptionText = descriptionTextFromDocument ?? (typeof rawDescription === 'string' ? rawDescription : undefined);
 	const assigneeAvatarUrl =
 		avatarUrls['128x128'] ??
 		avatarUrls['96x96'] ??
@@ -1593,6 +1628,7 @@ static async fetchIssueCommentsInternal(
 		reporterAvatarUrl,
 		description: descriptionText,
 		descriptionHtml,
+		...(descriptionDocument ? { descriptionDocument } : {}),
 		url: `${urlRoot}/browse/${issue?.key}`,
 		updated: fields?.updated ?? '',
 		parent: mapRelatedIssue(fields?.parent, urlRoot),

@@ -67,6 +67,7 @@ export type JiraIssue = {
 	reporterAvatarUrl?: string;
 	description?: string;
 	descriptionHtml?: string;
+	descriptionDocument?: JiraAdfDocument;
 	url: string;
 	updated: string;
 	parent?: JiraRelatedIssue;
