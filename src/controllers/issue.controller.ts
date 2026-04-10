@@ -7,6 +7,7 @@ import {
 	IssuePanelOptions,
 	IssueStatusOption,
 	CommentReplyContext,
+	JiraAdfDocument,
 	JiraCommentFormat,
 	JiraIssue,
 	JiraIssueComment,
@@ -19,7 +20,9 @@ import { ProjectTransitionPrefetcher } from '../model/project-transition.prefetc
 import { IssueModel } from '../model/issue.model';
 import { ErrorHelper } from '../shared/error.helper';
 import { IssueCommentReplyService } from '../services/issue-comment-reply.service';
+import { IssueMentionCandidateService } from '../services/issue-mention-candidate.service';
 import { JiraWebviewIconService } from '../services/jira-webview-icon.service';
+import { ProjectAssignableMentionService } from '../services/project-assignable-mention.service';
 import { AssigneePickerController, AssigneePickerSession } from './assignee-picker.controller';
 import { ParentIssuePickerController, ParentIssuePickerSession } from './parent-issue-picker.controller';
 import { JiraWebviewPanel } from '../views/webview/webview.panel';
@@ -90,6 +93,7 @@ export class IssueControllerFactory {
 			void projectStatusStore.ensureAllIssueTypeStatuses(issueProjectKey);
 			transitionPrefetcher.prefetch(issueProjectKey);
 		}
+		const initialIssueState = initialIssue ?? IssueModel.createPlaceholderIssue(resolvedIssueKey);
 		const panelState: {
 			issue: JiraIssue;
 			transitions?: IssueStatusOption[];
@@ -103,18 +107,22 @@ export class IssueControllerFactory {
 			commentSubmitError?: string;
 			commentFormat: JiraCommentFormat;
 			commentDraft: string;
+			commentDraftDocument?: JiraAdfDocument;
 			commentDeletingId?: string;
 			commentEditingId?: string;
 			commentEditDraft?: string;
+			commentEditDraftDocument?: JiraAdfDocument;
 			commentReplyContext?: CommentReplyContext;
 			summaryEditPending: boolean;
 			summaryEditError?: string;
 			descriptionEditPending: boolean;
 			descriptionEditError?: string;
+			descriptionEditDraft: string;
+			descriptionEditDraftDocument?: JiraAdfDocument;
 			loadingIssue: boolean;
 			currentUser?: IssuePanelOptions['currentUser'];
 		} = {
-			issue: initialIssue ?? IssueModel.createPlaceholderIssue(resolvedIssueKey),
+			issue: initialIssueState,
 			transitions: cachedTransitions,
 			statusPrefill: cachedStatuses,
 			assignableUsers: undefined,
@@ -126,14 +134,18 @@ export class IssueControllerFactory {
 			commentSubmitError: undefined,
 			commentFormat: 'wiki',
 			commentDraft: '',
+			commentDraftDocument: undefined,
 			commentDeletingId: undefined,
 			commentEditingId: undefined,
 			commentEditDraft: undefined,
+			commentEditDraftDocument: undefined,
 			commentReplyContext: undefined,
 			summaryEditPending: false,
 			summaryEditError: undefined,
 			descriptionEditPending: false,
 			descriptionEditError: undefined,
+			descriptionEditDraft: initialIssueState.description ?? '',
+			descriptionEditDraftDocument: initialIssueState.descriptionDocument,
 			loadingIssue: true,
 			currentUser: undefined,
 		};
@@ -151,8 +163,12 @@ export class IssueControllerFactory {
 			commentDeletingId: panelState.commentDeletingId,
 			commentEditingId: panelState.commentEditingId,
 			commentEditDraft: panelState.commentEditDraft,
+			commentEditDraftDocument: panelState.commentEditDraftDocument,
 			commentFormat: panelState.commentFormat,
 			commentDraft: panelState.commentDraft,
+			commentDraftDocument: panelState.commentDraftDocument,
+			descriptionEditDraft: panelState.descriptionEditDraft,
+			descriptionEditDraftDocument: panelState.descriptionEditDraftDocument,
 			commentReplyContext: panelState.commentReplyContext,
 			currentUser: panelState.currentUser,
 		});
@@ -180,7 +196,9 @@ export class IssueControllerFactory {
 				if (parentPickerSession && (await parentPickerSession.handleMessage(message))) {
 					return;
 				}
-				if (message?.type === 'changeStatus' && typeof message.transitionId === 'string') {
+				if (message?.type === 'queryMentionCandidates' && typeof message.requestId === 'string') {
+					await handleQueryMentionCandidates(message);
+				} else if (message?.type === 'changeStatus' && typeof message.transitionId === 'string') {
 					await handleStatusChange(message.transitionId);
 				} else if (message?.type === 'changeAssignee' && typeof message.accountId === 'string') {
 					await handleAssigneeChange(message.accountId);
@@ -196,16 +214,25 @@ export class IssueControllerFactory {
 					await vscode.commands.executeCommand('jira.searchCommitHistory', {
 						issue: panelState.issue ?? { key: resolvedIssueKey },
 					});
-				} else if (message?.type === 'addComment' && typeof message.body === 'string') {
-					await handleAddComment(message.body, message.parentId);
+				} else if (message?.type === 'addComment') {
+					await handleAddComment(
+						typeof message.body === 'string' ? message.body : '',
+						message.parentId,
+						IssueControllerFactory.tryGetAdfDocument(message.bodyDocument)
+					);
 				} else if (message?.type === 'deleteComment' && typeof message.commentId === 'string') {
 					await handleDeleteComment(message.commentId);
 				} else if (message?.type === 'startEditComment' && typeof message.commentId === 'string') {
 					handleStartEditComment(message.commentId);
 				} else if (message?.type === 'cancelEditComment') {
 					handleCancelEditComment();
-				} else if (message?.type === 'saveEditComment' && typeof message.commentId === 'string' && typeof message.body === 'string') {
-					await handleSaveEditComment(message.commentId, message.body, message.format);
+				} else if (message?.type === 'saveEditComment' && typeof message.commentId === 'string') {
+					await handleSaveEditComment(
+						message.commentId,
+						typeof message.body === 'string' ? message.body : '',
+						message.format,
+						IssueControllerFactory.tryGetAdfDocument(message.bodyDocument)
+					);
 				} else if (message?.type === 'refreshComments') {
 					await refreshComments(true);
 				} else if (message?.type === 'startCommentReply' && typeof message.commentId === 'string') {
@@ -215,9 +242,13 @@ export class IssueControllerFactory {
 				} else if (message?.type === 'updateSummary' && typeof message.summary === 'string') {
 					await handleSummaryUpdate(message.summary);
 				} else if (message?.type === 'updateDescription' && typeof message.description === 'string') {
-					await handleDescriptionUpdate(message.description);
+					await handleDescriptionUpdate(
+						message.description,
+						IssueControllerFactory.tryGetAdfDocument(message.descriptionDocument)
+					);
 				} else if (message?.type === 'commentDraftChanged' && typeof message.value === 'string') {
 					panelState.commentDraft = message.value;
+					panelState.commentDraftDocument = IssueControllerFactory.tryGetAdfDocument(message.bodyDocument);
 					if (panelState.commentSubmitError) {
 						panelState.commentSubmitError = undefined;
 					}
@@ -372,6 +403,8 @@ export class IssueControllerFactory {
 							projectStatusStore.get(issueProjectKeyResolved)
 					);
 				}
+				panelState.descriptionEditDraft = issue.description ?? '';
+				panelState.descriptionEditDraftDocument = issue.descriptionDocument;
 				panelState.loadingIssue = false;
 				panelState.summaryEditPending = false;
 				panelState.summaryEditError = undefined;
@@ -450,6 +483,8 @@ export class IssueControllerFactory {
 							projectStatusStore.get(updatedProjectKey)
 					);
 				}
+				panelState.descriptionEditDraft = updatedIssue.description ?? '';
+				panelState.descriptionEditDraftDocument = updatedIssue.descriptionDocument;
 				renderPanel({
 					statusOptions: panelState.transitions ?? panelState.statusPrefill,
 					statusPending: false,
@@ -741,14 +776,64 @@ export class IssueControllerFactory {
 			}
 		}
 
-		async function handleDescriptionUpdate(description: string): Promise<void> {
+		async function handleQueryMentionCandidates(message: {
+			editorId?: unknown;
+			query?: unknown;
+			requestId: string;
+		}): Promise<void> {
+			if (disposed) {
+				return;
+			}
+
+			const localCandidates = IssueMentionCandidateService.buildIssueCandidates(
+				panelState.issue,
+				panelState.comments,
+				panelState.commentReplyContext,
+				panelState.currentUser
+			);
+			const authInfo = await authManager.getAuthInfo();
+			const token = await authManager.getToken();
+			let candidates = localCandidates;
+
+			if (authInfo && token) {
+				try {
+					const remoteCandidates = await ProjectAssignableMentionService.search(
+						authInfo,
+						token,
+						resolvedIssueKey,
+						typeof message.query === 'string' ? message.query : ''
+					);
+					candidates = IssueMentionCandidateService.mergeCandidates(localCandidates, remoteCandidates);
+				} catch {
+					candidates = localCandidates;
+				}
+			}
+
+			await panel.webview.postMessage({
+				type: 'richTextMentionCandidatesLoaded',
+				editorId: typeof message.editorId === 'string' ? message.editorId : undefined,
+				requestId: message.requestId,
+				candidates,
+			});
+		}
+
+		async function handleDescriptionUpdate(
+			description: string,
+			descriptionDocument?: JiraAdfDocument
+		): Promise<void> {
 			if (disposed) {
 				return;
 			}
 
 			const currentDescription = panelState.issue.description ?? '';
-			if (description === currentDescription) {
+			const hasSameDocument = IssueControllerFactory.areAdfDocumentsEqual(
+				descriptionDocument,
+				panelState.issue.descriptionDocument
+			);
+			if (description === currentDescription && hasSameDocument) {
 				panelState.descriptionEditError = undefined;
+				panelState.descriptionEditDraft = description;
+				panelState.descriptionEditDraftDocument = descriptionDocument;
 				renderPanel();
 				return;
 			}
@@ -762,10 +847,17 @@ export class IssueControllerFactory {
 
 			panelState.descriptionEditPending = true;
 			panelState.descriptionEditError = undefined;
+			panelState.descriptionEditDraft = description;
+			panelState.descriptionEditDraftDocument = descriptionDocument;
 			renderPanel();
 
 			try {
-				await jiraApiClient.updateIssueDescription(authInfo, token, resolvedIssueKey, description);
+				await jiraApiClient.updateIssueDescription(
+					authInfo,
+					token,
+					resolvedIssueKey,
+					descriptionDocument ?? description
+				);
 				const fetchedUpdatedIssue = await jiraApiClient.fetchIssueDetails(authInfo, token, resolvedIssueKey);
 				const updatedIssue = await resolveIssueForWebview(fetchedUpdatedIssue);
 				if (disposed) {
@@ -774,6 +866,8 @@ export class IssueControllerFactory {
 				panelState.issue = updatedIssue;
 				panelState.descriptionEditPending = false;
 				panelState.descriptionEditError = undefined;
+				panelState.descriptionEditDraft = updatedIssue.description ?? '';
+				panelState.descriptionEditDraftDocument = updatedIssue.descriptionDocument;
 				renderPanel({
 					statusOptions: panelState.transitions ?? panelState.statusPrefill,
 					assigneeOptions: panelState.assignableUsers,
@@ -835,12 +929,16 @@ export class IssueControllerFactory {
 			}
 		}
 
-		async function handleAddComment(body: string, parentId?: string): Promise<void> {
+		async function handleAddComment(
+			body: string,
+			parentId?: string,
+			bodyDocument?: JiraAdfDocument
+		): Promise<void> {
 			if (disposed) {
 				return;
 			}
 			const trimmedBody = body?.trim() ?? '';
-			if (!trimmedBody) {
+			if (!trimmedBody && !bodyDocument) {
 				panelState.commentSubmitError = 'Comment cannot be empty.';
 				renderPanel();
 				return;
@@ -854,6 +952,7 @@ export class IssueControllerFactory {
 			}
 
 			panelState.commentDraft = trimmedBody;
+			panelState.commentDraftDocument = bodyDocument;
 			panelState.commentFormat = 'wiki';
 			panelState.commentSubmitPending = true;
 			panelState.commentSubmitError = undefined;
@@ -861,8 +960,16 @@ export class IssueControllerFactory {
 
 			try {
 				const commentBody = IssueCommentReplyService.buildCommentBody(trimmedBody, panelState.commentReplyContext);
-				await jiraApiClient.addIssueComment(authInfo, token, resolvedIssueKey, commentBody, 'wiki', parentId);
+				await jiraApiClient.addIssueComment(
+					authInfo,
+					token,
+					resolvedIssueKey,
+					bodyDocument ?? commentBody,
+					bodyDocument ? 'adf' : 'wiki',
+					parentId
+				);
 				panelState.commentDraft = '';
+				panelState.commentDraftDocument = undefined;
 				panelState.commentSubmitPending = false;
 				panelState.commentSubmitError = undefined;
 				panelState.commentReplyContext = undefined;
@@ -950,21 +1057,27 @@ export class IssueControllerFactory {
 			const draft = wikiBody ?? comment.bodyText ?? '';
 			panelState.commentEditingId = commentId;
 			panelState.commentEditDraft = draft;
+			panelState.commentEditDraftDocument = IssueControllerFactory.tryGetAdfDocument(comment.bodyDocument);
 			panelState.commentSubmitError = undefined;
 			renderPanel();
 		}
-
 		function handleCancelEditComment(): void {
 			if (disposed) {
 				return;
 			}
 			panelState.commentEditingId = undefined;
 			panelState.commentEditDraft = undefined;
+			panelState.commentEditDraftDocument = undefined;
 			panelState.commentSubmitError = undefined;
 			renderPanel();
 		}
 
-		async function handleSaveEditComment(commentId: string, body: string, format: string): Promise<void> {
+		async function handleSaveEditComment(
+			commentId: string,
+			body: string,
+			format: string,
+			bodyDocument?: JiraAdfDocument
+		): Promise<void> {
 			if (disposed || !commentId) {
 				return;
 			}
@@ -975,6 +1088,8 @@ export class IssueControllerFactory {
 				return;
 			}
 
+			panelState.commentEditDraft = body;
+			panelState.commentEditDraftDocument = bodyDocument;
 			panelState.commentSubmitPending = true;
 			panelState.commentSubmitError = undefined;
 			renderPanel();
@@ -984,11 +1099,12 @@ export class IssueControllerFactory {
 					token,
 					resolvedIssueKey,
 					commentId,
-					body,
-					'wiki'
+					bodyDocument ?? body,
+					bodyDocument ? 'adf' : format === 'wiki' ? 'wiki' : 'plain'
 				);
 				panelState.commentEditingId = undefined;
 				panelState.commentEditDraft = undefined;
+				panelState.commentEditDraftDocument = undefined;
 				panelState.commentSubmitPending = false;
 				renderPanel();
 				await refreshComments(true);
@@ -1048,5 +1164,38 @@ export class IssueControllerFactory {
 		const projectPart = separatorIndex === -1 ? issueKey : issueKey.slice(0, separatorIndex);
 		const trimmed = projectPart.trim();
 		return trimmed.length > 0 ? trimmed : undefined;
+	}
+
+	/**
+	 * Returns the provided value when it matches the shared Jira ADF document contract.
+	 */
+	private static tryGetAdfDocument(value: unknown): JiraAdfDocument | undefined {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			return undefined;
+		}
+
+		const record = value as { type?: unknown; version?: unknown; content?: unknown };
+		if (record.type !== 'doc' || record.version !== 1 || !Array.isArray(record.content)) {
+			return undefined;
+		}
+
+		return value as JiraAdfDocument;
+	}
+
+	/**
+	 * Compares two optional ADF documents using their serialized JSON representation.
+	 */
+	private static areAdfDocumentsEqual(
+		left: JiraAdfDocument | undefined,
+		right: JiraAdfDocument | undefined
+	): boolean {
+		if (!left && !right) {
+			return true;
+		}
+		if (!left || !right) {
+			return false;
+		}
+
+		return JSON.stringify(left) === JSON.stringify(right);
 	}
 }

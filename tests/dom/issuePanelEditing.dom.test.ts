@@ -313,6 +313,9 @@ describe('Issue panel editor interactions', () => {
 		const descriptionHiddenValue = dom.window.document.querySelector(
 			'.jira-description-editor .jira-rich-editor-value'
 		) as HTMLTextAreaElement | null;
+		const descriptionAdfField = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-adf'
+		) as HTMLTextAreaElement | null;
 		const descriptionSurface = dom.window.document.querySelector(
 			'.jira-description-editor .jira-rich-editor-surface'
 		) as HTMLElement | null;
@@ -321,8 +324,28 @@ describe('Issue panel editor interactions', () => {
 
 		IssuePanelTestHarness.click(descriptionDisplay, dom.window);
 		expect(descriptionHiddenValue).toBeTruthy();
+		expect(descriptionAdfField).toBeTruthy();
 		expect(descriptionSurface).toBeTruthy();
 		descriptionHiddenValue!.value = '*Updated description body*';
+		descriptionAdfField!.value = JSON.stringify({
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'paragraph',
+					content: [
+						{
+							type: 'mention',
+							attrs: {
+								id: 'acct-123',
+								text: '@Helena',
+								userType: 'DEFAULT',
+							},
+						},
+					],
+				},
+			],
+		});
 		descriptionSurface!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 		descriptionForm.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
 
@@ -330,9 +353,10 @@ describe('Issue panel editor interactions', () => {
 		expect(updateMessage).toBeTruthy();
 		expect(updateMessage.issueKey).toBe('PROJ-1000');
 		expect(updateMessage.description).toBe('*Updated description body*');
+		expect(updateMessage.descriptionDocument?.content?.[0]?.content?.[0]?.type).toBe('mention');
 	});
 
-	it('restores the original description when cancel is pressed after switching to wiki mode', () => {
+	it('keeps wiki mode as read-only preview and restores the original description on cancel', () => {
 		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
 			description: 'Original wiki body',
 			descriptionHtml: '<p>Original <strong>rich</strong> body</p>',
@@ -369,10 +393,11 @@ describe('Issue panel editor interactions', () => {
 
 		IssuePanelTestHarness.click(toggleModeButton as Element, dom.window);
 		expect(descriptionHost?.getAttribute('data-mode')).toBe('wiki');
+		expect(descriptionPlain?.readOnly).toBe(true);
 
 		descriptionPlain!.value = 'Changed wiki body';
 		descriptionPlain!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-		expect(descriptionValue?.value).toBe('Changed wiki body');
+		expect(descriptionValue?.value).toBe('Original wiki body');
 
 		IssuePanelTestHarness.click(cancelButton as Element, dom.window);
 
@@ -442,6 +467,7 @@ describe('Issue panel editor interactions', () => {
 		const editForm = dom.window.document.querySelector('.comment-edit-form') as HTMLFormElement | null;
 		const editEditor = editForm?.querySelector('[data-jira-rich-editor]') as HTMLElement | null;
 		const hiddenValueField = editForm?.querySelector('.jira-rich-editor-value') as HTMLTextAreaElement | null;
+		const hiddenAdfField = editForm?.querySelector('.jira-rich-editor-adf') as HTMLTextAreaElement | null;
 		const visualSurface = editForm?.querySelector('.jira-rich-editor-surface') as HTMLElement | null;
 		expect(editForm).toBeTruthy();
 		expect(editEditor).toBeTruthy();
@@ -454,9 +480,29 @@ describe('Issue panel editor interactions', () => {
 			editForm?.querySelector('.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]')
 		).toBeTruthy();
 		expect(hiddenValueField).toBeTruthy();
+		expect(hiddenAdfField).toBeTruthy();
 		expect(visualSurface).toBeTruthy();
 
 		hiddenValueField!.value = '*Edited comment body*';
+		hiddenAdfField!.value = JSON.stringify({
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'paragraph',
+					content: [
+						{
+							type: 'mention',
+							attrs: {
+								id: 'acct-456',
+								text: '@Remote User',
+								userType: 'DEFAULT',
+							},
+						},
+					],
+				},
+			],
+		});
 		visualSurface!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 		editForm!.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
 
@@ -464,7 +510,8 @@ describe('Issue panel editor interactions', () => {
 		expect(saveMessage).toBeTruthy();
 		expect(saveMessage.commentId).toBe('comment-42');
 		expect(saveMessage.body).toBe('*Edited comment body*');
-		expect(saveMessage.format).toBe('wiki');
+		expect(saveMessage.bodyDocument?.content?.[0]?.content?.[0]?.type).toBe('mention');
+		expect(saveMessage.format).toBeUndefined();
 	});
 
 	it('labels the mounted comment edit editor surface from a field-specific label', () => {

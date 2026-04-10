@@ -53,6 +53,7 @@ export class RichTextEditorDomTestHarness {
 			fieldId: 'description',
 			fieldName: 'description',
 			value: options?.value ?? '',
+			adfValue: options?.adfValue ?? '',
 			plainValue: options?.plainValue ?? '',
 			placeholder: options?.placeholder ?? 'Describe the issue',
 			disabled: options?.disabled,
@@ -248,6 +249,25 @@ export class RichTextEditorDomTestHarness {
 	}
 
 	/**
+	 * Returns the hidden preview textarea that carries the readable serialized editor value.
+	 */
+	getPreviewValueField(): HTMLTextAreaElement {
+		return this.hiddenValueField;
+	}
+
+	/**
+	 * Returns the hidden ADF textarea that carries the canonical serialized document payload.
+	 */
+	getAdfValueField(): HTMLTextAreaElement {
+		const field = this.host.querySelector('.jira-rich-editor-adf');
+		if (!(field instanceof HTMLTextAreaElement)) {
+			throw new Error('The hidden ADF value field was not rendered.');
+		}
+
+		return field;
+	}
+
+	/**
 	 * Dispatches a click event against a toolbar button.
 	 */
 	click(element: HTMLElement): void {
@@ -374,6 +394,44 @@ export class RichTextEditorDomTestHarness {
 		});
 		editor.dispatchEvent(event);
 		return event;
+	}
+
+	/**
+	 * Inserts plain text content through the mounted Tiptap editor so runtime update hooks execute.
+	 */
+	typeInEditor(text: string): void {
+		const editorElement = this.getMountedEditor() as HTMLElement & { editor?: any };
+		const editor = editorElement.editor;
+		if (!editor || typeof editor.chain !== 'function') {
+			throw new Error('The mounted editor does not expose the Tiptap command chain required by the test harness.');
+		}
+
+		editor.commands.focus('end');
+		editorElement.focus();
+		editor.chain().focus().insertContent(text).run();
+	}
+
+	/**
+	 * Returns the currently rendered mention popup, if one is active.
+	 */
+	queryMentionPopup(): HTMLElement | null {
+		return this.host.querySelector('.jira-rich-editor-mention-popup');
+	}
+
+	/**
+	 * Returns the mention option buttons rendered inside the active popup.
+	 */
+	getMentionOptions(): HTMLButtonElement[] {
+		return Array.from(this.host.querySelectorAll('.jira-rich-editor-mention-option')).filter(
+			(element): element is HTMLButtonElement => element instanceof HTMLButtonElement
+		);
+	}
+
+	/**
+	 * Waits one macrotask so asynchronous DOM updates triggered by the editor can settle.
+	 */
+	async flushAsyncWork(): Promise<void> {
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
 	}
 
 	/**

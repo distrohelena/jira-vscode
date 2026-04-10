@@ -9,6 +9,7 @@ describe('RichTextEditorView', () => {
 			fieldId: 'issue-description-input',
 			fieldName: 'description',
 			value: 'Existing description',
+			adfValue: '{"type":"doc","version":1,"content":[]}',
 			plainValue: 'Existing description',
 			placeholder: 'Describe the issue',
 		});
@@ -22,6 +23,8 @@ describe('RichTextEditorView', () => {
 			'.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]'
 		) as HTMLButtonElement | null;
 		const hiddenMirror = host.querySelector('.jira-rich-editor-value') as HTMLTextAreaElement | null;
+		const hiddenAdf = host.querySelector('.jira-rich-editor-adf') as HTMLTextAreaElement | null;
+		const wikiPreview = host.querySelector('.jira-rich-editor-plain') as HTMLTextAreaElement | null;
 		const styles = RichTextEditorView.renderStyles();
 
 		expect(editor).toBeTruthy();
@@ -45,6 +48,12 @@ describe('RichTextEditorView', () => {
 		expect(hiddenMirror?.value).toBe('Existing description');
 		expect(hiddenMirror?.hidden).toBe(true);
 		expect(hiddenMirror?.getAttribute('aria-hidden')).toBe('true');
+		expect(hiddenAdf).toBeTruthy();
+		expect(hiddenAdf?.value).toBe('{"type":"doc","version":1,"content":[]}');
+		expect(hiddenAdf?.hidden).toBe(true);
+		expect(hiddenAdf?.getAttribute('aria-hidden')).toBe('true');
+		expect(wikiPreview?.readOnly).toBe(true);
+		expect(wikiPreview?.getAttribute('aria-readonly')).toBe('true');
 		expect(styles).toMatch(/\.jira-rich-editor-surface,\s*\.jira-rich-editor-plain[\s\S]*border:\s*none;/);
 		expect(styles).toMatch(/\.jira-rich-editor-secondary-button[\s\S]*background:\s*transparent;/);
 		expect(styles).toMatch(/\.jira-rich-editor-plain[\s\S]*font-family:\s*monospace;/);
@@ -56,6 +65,7 @@ describe('RichTextEditorView', () => {
 			fieldId: 'comment-input',
 			fieldName: 'commentDraft',
 			value: 'Comment value',
+			adfValue: '{"type":"doc","version":1,"content":[]}',
 			plainValue: 'Comment plain',
 			placeholder: 'Add a comment',
 		});
@@ -65,6 +75,7 @@ describe('RichTextEditorView', () => {
 			fieldId: 'issue-description-input',
 			fieldName: 'description',
 			value: 'Description value',
+			adfValue: '{"type":"doc","version":1,"content":[]}',
 			plainValue: 'Description plain',
 			placeholder: 'Describe the issue',
 		});
@@ -78,6 +89,7 @@ describe('RichTextEditorView', () => {
 			const surface = host.querySelector('.jira-rich-editor-surface') as HTMLElement | null;
 			const plain = host.querySelector('.jira-rich-editor-plain') as HTMLTextAreaElement | null;
 			const hidden = host.querySelector('.jira-rich-editor-value') as HTMLTextAreaElement | null;
+			const hiddenAdf = host.querySelector('.jira-rich-editor-adf') as HTMLTextAreaElement | null;
 			const commands = Array.from(
 				host.querySelectorAll('.jira-rich-editor-button[data-command]'),
 				(button) => (button as HTMLButtonElement).dataset.command
@@ -95,6 +107,7 @@ describe('RichTextEditorView', () => {
 				surfaceExists: !!surface,
 				plainExists: !!plain,
 				hiddenExists: !!hidden,
+				hiddenAdfExists: !!hiddenAdf,
 				commandCount: commands.length,
 				commands,
 				toggleText: toggle?.textContent?.trim(),
@@ -102,6 +115,8 @@ describe('RichTextEditorView', () => {
 				hiddenId: hidden?.id,
 				hiddenName: hidden?.name,
 				hiddenValue: hidden?.value,
+				hiddenAdfValue: hiddenAdf?.value,
+				plainReadOnly: plain?.readOnly,
 				plainPlaceholder: plain?.getAttribute('placeholder'),
 			};
 		};
@@ -115,6 +130,7 @@ describe('RichTextEditorView', () => {
 			surfaceExists: true,
 			plainExists: true,
 			hiddenExists: true,
+			hiddenAdfExists: true,
 			commandCount: 6,
 			commands: ['bold', 'italic', 'underline', 'link', 'bulletList', 'orderedList'],
 			toggleText: 'Wiki',
@@ -122,6 +138,8 @@ describe('RichTextEditorView', () => {
 			hiddenId: 'comment-input',
 			hiddenName: 'commentDraft',
 			hiddenValue: 'Comment value',
+			hiddenAdfValue: '{"type":"doc","version":1,"content":[]}',
+			plainReadOnly: true,
 			plainPlaceholder: 'Add a comment',
 		});
 		expect(collectContract(descriptionHost)).toEqual({
@@ -133,6 +151,7 @@ describe('RichTextEditorView', () => {
 			surfaceExists: true,
 			plainExists: true,
 			hiddenExists: true,
+			hiddenAdfExists: true,
 			commandCount: 6,
 			commands: ['bold', 'italic', 'underline', 'link', 'bulletList', 'orderedList'],
 			toggleText: 'Wiki',
@@ -140,6 +159,8 @@ describe('RichTextEditorView', () => {
 			hiddenId: 'issue-description-input',
 			hiddenName: 'description',
 			hiddenValue: 'Description value',
+			hiddenAdfValue: '{"type":"doc","version":1,"content":[]}',
+			plainReadOnly: true,
 			plainPlaceholder: 'Describe the issue',
 		});
 	});
@@ -150,6 +171,7 @@ describe('RichTextEditorView', () => {
 			fieldId: 'issue-description-input',
 			fieldName: 'description',
 			value: '<p>Existing description</p>',
+			adfValue: '{"type":"doc","version":1,"content":[]}',
 			plainValue: 'Existing description',
 			placeholder: 'Describe the issue',
 			disabled: true,

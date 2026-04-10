@@ -7,6 +7,7 @@ import {
 	CreateIssueFormValues,
 	FetchProjectIssuesOptions,
 	FetchProjectIssuesPage,
+	JiraAdfDocument,
 	IssueAssignableUser,
 	IssueStatusOption,
 	JiraAuthInfo,
@@ -120,7 +121,12 @@ export interface IJiraApiClient {
 	/**
 	 * Updates an issue description value.
 	 */
-	updateIssueDescription(authInfo: JiraAuthInfo, token: string, issueKey: string, description: string): Promise<void>;
+	updateIssueDescription(
+		authInfo: JiraAuthInfo,
+		token: string,
+		issueKey: string,
+		description: string | JiraAdfDocument | undefined
+	): Promise<void>;
 
 	/**
 	 * Updates or clears the parent issue relationship for an issue.
@@ -158,8 +164,8 @@ export interface IJiraApiClient {
 		authInfo: JiraAuthInfo,
 		token: string,
 		issueKey: string,
-		body: string,
-		format: JiraCommentFormat,
+		body: string | JiraAdfDocument,
+		format?: JiraCommentFormat | 'adf',
 		parentId?: string
 	): Promise<JiraIssueComment>;
 
@@ -176,8 +182,8 @@ export interface IJiraApiClient {
 		token: string,
 		issueKey: string,
 		commentId: string,
-		body: string,
-		format: JiraCommentFormat
+		body: string | JiraAdfDocument,
+		format?: JiraCommentFormat | 'adf'
 	): Promise<JiraIssueComment>;
 
 	/**

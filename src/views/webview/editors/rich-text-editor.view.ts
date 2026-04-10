@@ -20,6 +20,11 @@ export type RichTextEditorViewOptions = {
 	value: string;
 
 	/**
+	 * Carries the serialized canonical ADF document used as the editor source of truth.
+	 */
+	adfValue?: string;
+
+	/**
 	 * Carries the plain-text fallback value used by the wiki textarea.
 	 */
 	plainValue: string;
@@ -28,6 +33,16 @@ export type RichTextEditorViewOptions = {
 	 * Supplies the placeholder text shown in the editor surfaces.
 	 */
 	placeholder: string;
+
+	/**
+	 * Identifies the editor instance when the host needs to route editor-specific events.
+	 */
+	editorId?: string;
+
+	/**
+	 * Carries the serialized mention context consumed by later host-bridge behavior.
+	 */
+	mentionContextJson?: string;
 
 	/**
 	 * Indicates whether the host should render in a disabled state.
@@ -66,14 +81,17 @@ export class RichTextEditorView {
 		const toolbarStateAttr = HtmlHelper.escapeAttribute(mode);
 		const fieldId = HtmlHelper.escapeAttribute(options.fieldId);
 		const fieldName = HtmlHelper.escapeAttribute(options.fieldName);
+		const editorId = HtmlHelper.escapeAttribute(options.editorId ?? options.fieldId);
 		const placeholder = HtmlHelper.escapeAttribute(options.placeholder);
 		const value = HtmlHelper.escapeHtml(options.value);
+		const adfValue = HtmlHelper.escapeHtml(options.adfValue ?? '');
 		const plainValue = HtmlHelper.escapeHtml(options.plainValue);
+		const mentionContextJson = HtmlHelper.escapeHtml(options.mentionContextJson ?? '{}');
 		const ariaLabelledByAttr = options.ariaLabelledById
 			? ` aria-labelledby="${HtmlHelper.escapeAttribute(options.ariaLabelledById)}"`
 			: '';
 		const wikiAriaLabelAttr = options.ariaLabelledById ? '' : ' aria-label="Wiki markup fallback"';
-		return `<div class="jira-rich-editor-host" data-jira-rich-editor data-mode="${toolbarStateAttr}">
+		return `<div class="jira-rich-editor-host" data-jira-rich-editor data-mode="${toolbarStateAttr}" data-editor-id="${editorId}">
 	<div class="jira-rich-editor-toolbar" role="toolbar" aria-label="Rich text editor formatting">
 		<div class="jira-rich-editor-primary-actions">
 			${RichTextEditorView.renderToolbarButton('bold', 'B', 'Bold', disabledAttr)}
@@ -109,12 +127,16 @@ export class RichTextEditorView {
 			class="jira-rich-editor-plain"
 			id="${fieldId}-plain"
 			placeholder="${placeholder}"
+			readonly
+			aria-readonly="true"
 			${ariaLabelledByAttr}
 			${wikiAriaLabelAttr}
 			${disabledAttr}
 		>${plainValue}</textarea>
 	</div>
 	<textarea class="jira-rich-editor-value" id="${fieldId}" name="${fieldName}" hidden ${disabledAttr} aria-hidden="true">${value}</textarea>
+	<textarea class="jira-rich-editor-adf" id="${fieldId}-adf" hidden ${disabledAttr} aria-hidden="true">${adfValue}</textarea>
+	<script type="application/json" class="jira-rich-editor-mention-context">${mentionContextJson}</script>
 </div>`;
 	}
 
@@ -127,6 +149,7 @@ export class RichTextEditorView {
 			display: grid;
 			gap: 0;
 			min-width: 0;
+			position: relative;
 			color: var(--vscode-foreground);
 		}
 		.jira-rich-editor-toolbar {
@@ -256,6 +279,50 @@ export class RichTextEditorView {
 		}
 		.jira-rich-editor-value {
 			display: none;
+		}
+		.jira-rich-editor-mention {
+			display: inline-flex;
+			align-items: center;
+			border-radius: 999px;
+			padding: 0 4px;
+			background: color-mix(in srgb, var(--vscode-button-secondaryBackground, rgba(255, 255, 255, 0.14)) 78%, transparent 22%);
+			color: var(--vscode-foreground);
+			white-space: nowrap;
+		}
+		.jira-rich-editor-mention-popup {
+			position: absolute;
+			z-index: 20;
+			display: grid;
+			gap: 2px;
+			min-width: 180px;
+			max-width: 240px;
+			max-height: 220px;
+			padding: 6px;
+			overflow: auto;
+			border: 1px solid var(--vscode-widget-border, var(--vscode-input-border));
+			border-radius: 8px;
+			background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+			box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+		}
+		.jira-rich-editor-mention-option {
+			min-height: 28px;
+			padding: 6px 8px;
+			border: 1px solid transparent;
+			border-radius: 6px;
+			background: transparent;
+			color: var(--vscode-foreground);
+			cursor: pointer;
+			font: inherit;
+			text-align: left;
+		}
+		.jira-rich-editor-mention-option[data-highlighted] {
+			background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.1));
+			border-color: var(--vscode-focusBorder);
+		}
+		.jira-rich-editor-mention-empty {
+			padding: 6px 8px;
+			color: var(--vscode-descriptionForeground);
+			font-size: 12px;
 		}
 		@media (max-width: 720px) {
 			.jira-rich-editor-toolbar {

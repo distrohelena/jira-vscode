@@ -289,3 +289,132 @@ test('openParentPicker updates the issue parent, refetches details, and rerender
 		jiraApiClient.updateIssueParent = originalUpdateIssueParent;
 	}
 });
+
+test('issue controller responds to queryMentionCandidates with ranked participants and assignable users', async () => {
+	const { IssueControllerFactory, JiraWebviewPanel, jiraApiClient } = loadIssueControllerModules();
+	const postedMessages: any[] = [];
+	let panelMessageHandler: ((message: unknown) => Promise<void>) | undefined;
+
+	const originalShowIssueDetailsPanel = JiraWebviewPanel.showIssueDetailsPanel;
+	const originalRenderIssuePanelContent = JiraWebviewPanel.renderIssuePanelContent;
+	const originalFetchIssueDetails = jiraApiClient.fetchIssueDetails;
+	const originalFetchIssueTransitions = jiraApiClient.fetchIssueTransitions;
+	const originalFetchIssueComments = jiraApiClient.fetchIssueComments;
+	const originalFetchAssignableUsers = jiraApiClient.fetchAssignableUsers;
+
+	JiraWebviewPanel.showIssueDetailsPanel = ((issueKey, issue, options, onMessage) => {
+		panelMessageHandler = onMessage;
+		return {
+			webview: {
+				postMessage: async (message: unknown) => {
+					postedMessages.push(message);
+					return true;
+				},
+			},
+			reveal: () => undefined,
+			onDidDispose: () => ({ dispose() {} }),
+		} as any;
+	}) as typeof JiraWebviewPanel.showIssueDetailsPanel;
+	JiraWebviewPanel.renderIssuePanelContent = (() => undefined) as typeof JiraWebviewPanel.renderIssuePanelContent;
+	jiraApiClient.fetchIssueDetails = (async () =>
+		createIssueFixture({
+			reporterAccountId: 'acct-reporter',
+			reporterName: 'Reporter',
+			assigneeAccountId: 'acct-assignee',
+			assigneeName: 'Assignee',
+		})) as typeof jiraApiClient.fetchIssueDetails;
+	jiraApiClient.fetchIssueTransitions = (async () => []) as typeof jiraApiClient.fetchIssueTransitions;
+	jiraApiClient.fetchIssueComments = (async () => [
+		{
+			id: 'comment-1',
+			authorAccountId: 'acct-commenter',
+			authorName: 'Commenter',
+			updated: '2026-04-10T12:30:00.000Z',
+		} as any,
+	]) as typeof jiraApiClient.fetchIssueComments;
+	jiraApiClient.fetchAssignableUsers = (async () => [
+		{
+			accountId: 'acct-remote',
+			displayName: 'Remote User',
+		},
+	]) as typeof jiraApiClient.fetchAssignableUsers;
+
+	try {
+		const controller = IssueControllerFactory.create({
+			authManager: {
+				async getAuthInfo(): Promise<any> {
+					return {
+						baseUrl: 'https://example.atlassian.net',
+						username: 'helena@example.com',
+						displayName: 'Helena',
+						accountId: 'acct-current',
+						serverLabel: 'cloud',
+					};
+				},
+				async getToken(): Promise<string> {
+					return 'token-123';
+				},
+			} as any,
+			assigneePicker: {
+				pickAssignee: () => {
+					throw new Error('assignee picker should not be used in this test');
+				},
+			} as any,
+			parentIssuePicker: {
+				pickParentIssue: () => {
+					throw new Error('parent picker should not be used in this test');
+				},
+			} as any,
+			projectStatusStore: {
+				getIssueTypeStatuses: () => undefined,
+				get: () => undefined,
+				ensure: async () => [],
+				ensureAllIssueTypeStatuses: async () => [],
+			} as any,
+			transitionStore: {
+				get: () => undefined,
+				remember: () => undefined,
+			} as any,
+			transitionPrefetcher: {
+				prefetch: () => undefined,
+				prefetchIssues: () => undefined,
+			} as any,
+			webviewIconService: {
+				async createIssueWithResolvedIconSources(_webview: unknown, issue: import('../../src/model/jira.type').JiraIssue) {
+					return issue;
+				},
+				async createStatusOptionsWithResolvedIconSources(_webview: unknown, options?: unknown) {
+					return options as any;
+				},
+			} as any,
+			refreshAll: () => undefined,
+		});
+
+		await controller.openIssueDetails('PROJ-1');
+		await flushAsyncWork();
+
+		assert.equal(typeof panelMessageHandler, 'function');
+
+		await panelMessageHandler?.({
+			type: 'queryMentionCandidates',
+			editorId: 'comment-input',
+			requestId: 'req-1',
+			query: 're',
+		});
+		await flushAsyncWork();
+
+		assert.equal(postedMessages.at(-1)?.type, 'richTextMentionCandidatesLoaded');
+		assert.equal(postedMessages.at(-1)?.requestId, 'req-1');
+		assert.deepEqual(
+			postedMessages.at(-1)?.candidates.map((candidate: any) => candidate.accountId),
+			['acct-commenter', 'acct-reporter', 'acct-assignee', 'acct-current', 'acct-remote']
+		);
+	} finally {
+		JiraWebviewPanel.showIssueDetailsPanel = originalShowIssueDetailsPanel;
+		JiraWebviewPanel.renderIssuePanelContent = originalRenderIssuePanelContent;
+		jiraApiClient.fetchIssueDetails = originalFetchIssueDetails;
+		jiraApiClient.fetchIssueTransitions = originalFetchIssueTransitions;
+		jiraApiClient.fetchIssueComments = originalFetchIssueComments;
+		jiraApiClient.fetchAssignableUsers = originalFetchAssignableUsers;
+	}
+});

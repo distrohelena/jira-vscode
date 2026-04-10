@@ -67,6 +67,11 @@ export class RichTextEditorBehavior {
 	private editor: Editor | undefined;
 
 	/**
+	 * Stores the optional keydown delegate used by features such as the mention popup.
+	 */
+	private preemptiveKeyDownHandler: ((event: KeyboardEvent) => boolean) | undefined;
+
+	/**
 	 * Creates a behavior owner around one mounted rich text editor host.
 	 */
 	constructor(options: RichTextEditorBehaviorOptions) {
@@ -79,6 +84,13 @@ export class RichTextEditorBehavior {
 	attach(editor: Editor): void {
 		this.editor = editor;
 		this.options.mountedSurface.addEventListener('mousedown', this.handleMountedSurfaceMouseDown);
+	}
+
+	/**
+	 * Registers an optional keydown delegate that can consume editor keystrokes before the core behavior runs.
+	 */
+	setPreemptiveKeyDownHandler(handler: ((event: KeyboardEvent) => boolean) | undefined): void {
+		this.preemptiveKeyDownHandler = handler;
 	}
 
 	/**
@@ -668,6 +680,10 @@ export class RichTextEditorBehavior {
 	private handleKeyDown(event: KeyboardEvent): boolean {
 		if (!this.editor || !this.options.isVisualMode() || this.options.isDisabled()) {
 			return false;
+		}
+
+		if (this.preemptiveKeyDownHandler?.(event)) {
+			return true;
 		}
 
 		if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {

@@ -312,16 +312,37 @@ describe('Create issue panel', () => {
 			'#create-issue-form [data-jira-rich-editor]'
 		) as HTMLElement | null;
 		const hiddenValueField = descriptionEditor?.querySelector('.jira-rich-editor-value') as HTMLTextAreaElement | null;
+		const hiddenAdfField = descriptionEditor?.querySelector('.jira-rich-editor-adf') as HTMLTextAreaElement | null;
 		const visualSurface = descriptionEditor?.querySelector('.jira-rich-editor-surface') as HTMLElement | null;
 
 		expect(form).toBeTruthy();
 		expect(summaryInput).toBeTruthy();
 		expect(descriptionEditor).toBeTruthy();
 		expect(hiddenValueField).toBeTruthy();
+		expect(hiddenAdfField).toBeTruthy();
 		expect(visualSurface).toBeTruthy();
 
 		summaryInput!.value = 'Ticket with shared description';
 		hiddenValueField!.value = '*shared wiki description*';
+		hiddenAdfField!.value = JSON.stringify({
+			type: 'doc',
+			version: 1,
+			content: [
+				{
+					type: 'paragraph',
+					content: [
+						{
+							type: 'mention',
+							attrs: {
+								id: 'acct-123',
+								text: '@Helena',
+								userType: 'DEFAULT',
+							},
+						},
+					],
+				},
+			],
+		});
 		visualSurface!.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 		form!.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
 
@@ -329,6 +350,71 @@ describe('Create issue panel', () => {
 		expect(message).toBeTruthy();
 		expect(message.values.summary).toBe('Ticket with shared description');
 		expect(message.values.description).toBe('*shared wiki description*');
+		expect(message.values.descriptionDocument?.content?.[0]?.content?.[0]?.type).toBe('mention');
+	});
+
+	it('forwards mention queries from the create description editor and routes result messages back to that host', () => {
+		const { dom, messages, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const descriptionEditor = dom.window.document.querySelector(
+			'#create-issue-form [data-jira-rich-editor]'
+		) as HTMLElement | null;
+		const routedResults: any[] = [];
+		expect(descriptionEditor).toBeTruthy();
+
+		descriptionEditor!.addEventListener('jira-rich-editor-mention-results', ((event: Event) => {
+			routedResults.push((event as CustomEvent).detail);
+		}) as EventListener);
+
+		descriptionEditor!.dispatchEvent(
+			new dom.window.CustomEvent('jira-rich-editor-mention-query', {
+				bubbles: true,
+				detail: {
+					editorId: 'create-description-input',
+					query: 'he',
+					requestId: 'req-1',
+				},
+			})
+		);
+
+		const queryMessage = messages.find((entry) => entry?.type === 'queryMentionCandidates');
+		expect(queryMessage).toBeTruthy();
+		expect(queryMessage.editorId).toBe('create-description-input');
+		expect(queryMessage.query).toBe('he');
+		expect(queryMessage.requestId).toBe('req-1');
+
+		dom.window.dispatchEvent(
+			new dom.window.MessageEvent('message', {
+				data: {
+					type: 'richTextMentionCandidatesLoaded',
+					editorId: 'create-description-input',
+					requestId: 'req-1',
+					candidates: [
+						{
+							accountId: 'acct-123',
+							displayName: 'Helena',
+							mentionText: '@Helena',
+							source: 'assignable',
+						},
+					],
+				},
+			})
+		);
+
+		expect(routedResults).toEqual([
+			{
+				requestId: 'req-1',
+				candidates: [
+					{
+						accountId: 'acct-123',
+						displayName: 'Helena',
+						mentionText: '@Helena',
+						source: 'assignable',
+					},
+				],
+			},
+		]);
 	});
 
 	it('renders the shared parent ticket card when a parent issue is already selected', () => {

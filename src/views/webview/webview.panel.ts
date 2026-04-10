@@ -5,6 +5,7 @@ import {
 	CreateIssueFormValues,
 	CreateIssuePanelState,
 	IssueAssignableUser,
+	JiraAdfDocument,
 	IssueStatusCategory,
 	IssuePanelOptions,
 	IssueStatusOption,
@@ -1084,6 +1085,59 @@ export class JiraWebviewPanel {
 					${statusPickerBootstrapScript}
 					window.initializeJiraRichTextEditors?.(document);
 					initializeJiraStatusPickers(document, vscode);
+					const tryParseAdfDocument = (value) => {
+						if (typeof value !== 'string' || !value.trim()) {
+							return undefined;
+						}
+						try {
+							const parsed = JSON.parse(value);
+							if (
+								parsed &&
+								typeof parsed === 'object' &&
+								parsed.type === 'doc' &&
+								parsed.version === 1 &&
+								Array.isArray(parsed.content)
+							) {
+								return parsed;
+							}
+						} catch {
+							// Ignore invalid hidden editor payloads and fall back to preview text.
+						}
+						return undefined;
+					};
+					const forwardMentionQuery = (event) => {
+						const detail = event?.detail;
+						if (!detail || typeof detail.requestId !== 'string') {
+							return;
+						}
+						vscode.postMessage({
+							type: 'queryMentionCandidates',
+							editorId: typeof detail.editorId === 'string' ? detail.editorId : undefined,
+							query: typeof detail.query === 'string' ? detail.query : '',
+							requestId: detail.requestId,
+						});
+					};
+					const dispatchMentionResults = (message) => {
+						if (!message || message.type !== 'richTextMentionCandidatesLoaded') {
+							return;
+						}
+						const editorId = typeof message.editorId === 'string' ? message.editorId : '';
+						const hosts = Array.from(document.querySelectorAll('[data-jira-rich-editor]'));
+						const targetHost = hosts.find((host) => host.getAttribute('data-editor-id') === editorId);
+						if (!(targetHost instanceof HTMLElement)) {
+							return;
+						}
+						targetHost.dispatchEvent(new CustomEvent('jira-rich-editor-mention-results', {
+							detail: {
+								requestId: message.requestId,
+								candidates: Array.isArray(message.candidates) ? message.candidates : [],
+							},
+						}));
+					};
+					document.addEventListener('jira-rich-editor-mention-query', forwardMentionQuery);
+					window.addEventListener('message', (event) => {
+						dispatchMentionResults(event.data);
+					});
 					const applyIssueHeaderIconFallback = (image) => {
 						if (!(image instanceof HTMLImageElement)) {
 							return;
@@ -1217,10 +1271,12 @@ export class JiraWebviewPanel {
 					const descriptionEditor = descriptionBlock.querySelector('.jira-description-editor');
 					const descriptionHost = descriptionBlock.querySelector('.jira-description-editor [data-jira-rich-editor]');
 					const descriptionValue = descriptionBlock.querySelector('#issue-description-input');
+					const descriptionAdf = descriptionBlock.querySelector('#issue-description-input-adf');
 					const descriptionPlain = descriptionBlock.querySelector('.jira-description-editor .jira-rich-editor-plain');
 					const descriptionCancel = descriptionBlock.querySelector('.jira-description-cancel');
 					const issueKey = descriptionBlock.getAttribute('data-issue-key');
 					const originalDescription = descriptionBlock.getAttribute('data-description-plain') || '';
+					const originalDescriptionAdf = descriptionBlock.getAttribute('data-description-adf') || '';
 					const focusDescriptionEditor = () => {
 						const descriptionSurface = descriptionBlock.querySelector('.jira-description-editor .ProseMirror');
 						if (descriptionSurface instanceof HTMLElement) {
@@ -1228,7 +1284,11 @@ export class JiraWebviewPanel {
 						}
 					};
 					const resetDescriptionEditor = () => {
-						if (!(descriptionHost instanceof HTMLElement) || !(descriptionPlain instanceof HTMLTextAreaElement) || !(descriptionValue instanceof HTMLTextAreaElement)) {
+						if (
+							!(descriptionHost instanceof HTMLElement) ||
+							!(descriptionPlain instanceof HTMLTextAreaElement) ||
+							!(descriptionValue instanceof HTMLTextAreaElement)
+						) {
 							return;
 						}
 						const ensureMode = (targetMode) => {
@@ -1243,6 +1303,9 @@ export class JiraWebviewPanel {
 						ensureMode('wiki');
 						descriptionPlain.value = originalDescription;
 						descriptionValue.value = originalDescription;
+						if (descriptionAdf instanceof HTMLTextAreaElement) {
+							descriptionAdf.value = originalDescriptionAdf;
+						}
 						descriptionPlain.dispatchEvent(new Event('input', { bubbles: true }));
 						ensureMode('visual');
 					};
@@ -1299,6 +1362,10 @@ export class JiraWebviewPanel {
 								type: 'updateDescription',
 								issueKey,
 								description: nextDescription,
+								descriptionDocument:
+									descriptionAdf instanceof HTMLTextAreaElement
+										? tryParseAdfDocument(descriptionAdf.value)
+										: undefined,
 							});
 						});
 					}
@@ -1385,6 +1452,7 @@ export class JiraWebviewPanel {
 			if (commentForm) {
 				const editorHost = commentForm.querySelector('[data-jira-rich-editor]');
 				const valueEl = commentForm.querySelector('.jira-rich-editor-value');
+				const adfEl = commentForm.querySelector('.jira-rich-editor-adf');
 				const submitButton = commentForm.querySelector('.comment-submit');
 				const errorEl = commentForm.querySelector('.comment-error');
 				const cancelReplyButton = commentForm.querySelector('.comment-reply-cancel');
@@ -1398,7 +1466,14 @@ export class JiraWebviewPanel {
 				};
 				if (editorHost && valueEl) {
 					editorHost.addEventListener('input', () => {
-						vscode.postMessage({ type: 'commentDraftChanged', value: valueEl.value });
+						vscode.postMessage({
+							type: 'commentDraftChanged',
+							value: valueEl.value,
+							bodyDocument:
+								adfEl instanceof HTMLTextAreaElement
+									? tryParseAdfDocument(adfEl.value)
+									: undefined,
+						});
 						updateSubmitState();
 						if (errorEl) {
 							errorEl.classList.add('hidden');
@@ -1412,7 +1487,15 @@ export class JiraWebviewPanel {
 					}
 					const replyBanner = commentForm.querySelector('.comment-reply-banner');
 					const parentId = replyBanner ? replyBanner.getAttribute('data-parent-id') : undefined;
-					vscode.postMessage({ type: 'addComment', body: valueEl.value, format: 'wiki', parentId });
+					vscode.postMessage({
+						type: 'addComment',
+						body: valueEl.value,
+						bodyDocument:
+							adfEl instanceof HTMLTextAreaElement
+								? tryParseAdfDocument(adfEl.value)
+								: undefined,
+						parentId,
+					});
 				});
 				if (cancelReplyButton) {
 					cancelReplyButton.addEventListener('click', () => {
@@ -1474,13 +1557,22 @@ export class JiraWebviewPanel {
 						return;
 					}
 					const valueEl = form.querySelector('.jira-rich-editor-value');
+					const adfEl = form.querySelector('.jira-rich-editor-adf');
 					const body = valueEl?.value || '';
 					if (!body.trim()) {
 						return;
 					}
 					const saveButton = form.querySelector('.comment-edit-save');
 					if (saveButton) { saveButton.disabled = true; }
-					vscode.postMessage({ type: 'saveEditComment', commentId: editCommentId, body, format: 'wiki' });
+					vscode.postMessage({
+						type: 'saveEditComment',
+						commentId: editCommentId,
+						body,
+						bodyDocument:
+							adfEl instanceof HTMLTextAreaElement
+								? tryParseAdfDocument(adfEl.value)
+								: undefined,
+					});
 				});
 				const editorHost = form.querySelector('[data-jira-rich-editor]');
 				const valueEl = form.querySelector('.jira-rich-editor-value');
@@ -1911,9 +2003,11 @@ export class JiraWebviewPanel {
 							fieldId: 'create-description-input',
 							fieldName: 'description',
 							value: values.description,
+							adfValue: values.descriptionDocument ? JSON.stringify(values.descriptionDocument) : '',
 							plainValue: values.description,
 							placeholder: 'What needs to be done?',
 							disabled: !!state.submitting,
+							editorId: 'create-description-input',
 							ariaLabelledById: 'create-description-title',
 						})}
 \t\t\t\t\t</div>
@@ -1975,13 +2069,68 @@ export class JiraWebviewPanel {
 \t\t\tconst accountInput = form ? form.querySelector('input[name="assigneeAccountId"]') : null;
 \t\t\tconst displayInput = form ? form.querySelector('input[name="assigneeDisplayName"]') : null;
 \t\t\tconst avatarInput = form ? form.querySelector('input[name="assigneeAvatarUrl"]') : null;
+\t\t\tconst descriptionAdfField = form ? form.querySelector('#create-description-input-adf') : null;
 \t\t\tconst asString = (value, fallback = '') => (typeof value === 'string' ? value : fallback);
+\t\t\tconst tryParseAdfDocument = (value) => {
+\t\t\t\tif (typeof value !== 'string' || !value.trim()) {
+\t\t\t\t\treturn undefined;
+\t\t\t\t}
+\t\t\t\ttry {
+\t\t\t\t\tconst parsed = JSON.parse(value);
+\t\t\t\t\tif (
+\t\t\t\t\t\tparsed &&
+\t\t\t\t\t\ttypeof parsed === 'object' &&
+\t\t\t\t\t\tparsed.type === 'doc' &&
+\t\t\t\t\t\tparsed.version === 1 &&
+\t\t\t\t\t\tArray.isArray(parsed.content)
+\t\t\t\t\t) {
+\t\t\t\t\t\treturn parsed;
+\t\t\t\t\t}
+\t\t\t\t} catch {
+\t\t\t\t\t// Ignore invalid hidden editor payloads and fall back to preview text.
+\t\t\t\t}
+\t\t\t\treturn undefined;
+\t\t\t};
+\t\t\tconst forwardMentionQuery = (event) => {
+\t\t\t\tconst detail = event?.detail;
+\t\t\t\tif (!detail || typeof detail.requestId !== 'string') {
+\t\t\t\t\treturn;
+\t\t\t\t}
+\t\t\t\tvscode.postMessage({
+\t\t\t\t\ttype: 'queryMentionCandidates',
+\t\t\t\t\teditorId: typeof detail.editorId === 'string' ? detail.editorId : undefined,
+\t\t\t\t\tquery: typeof detail.query === 'string' ? detail.query : '',
+\t\t\t\t\trequestId: detail.requestId,
+\t\t\t\t});
+\t\t\t};
+\t\t\tconst dispatchMentionResults = (message) => {
+\t\t\t\tif (!message || message.type !== 'richTextMentionCandidatesLoaded') {
+\t\t\t\t\treturn;
+\t\t\t\t}
+\t\t\t\tconst editorId = typeof message.editorId === 'string' ? message.editorId : '';
+\t\t\t\tconst hosts = Array.from(document.querySelectorAll('[data-jira-rich-editor]'));
+\t\t\t\tconst targetHost = hosts.find((host) => host.getAttribute('data-editor-id') === editorId);
+\t\t\t\tif (!(targetHost instanceof HTMLElement)) {
+\t\t\t\t\treturn;
+\t\t\t\t}
+\t\t\t\ttargetHost.dispatchEvent(new CustomEvent('jira-rich-editor-mention-results', {
+\t\t\t\t\tdetail: {
+\t\t\t\t\t\trequestId: message.requestId,
+\t\t\t\t\t\tcandidates: Array.isArray(message.candidates) ? message.candidates : [],
+\t\t\t\t\t},
+\t\t\t\t}));
+\t\t\t};
+\t\t\tdocument.addEventListener('jira-rich-editor-mention-query', forwardMentionQuery);
+\t\t\twindow.addEventListener('message', (event) => {
+\t\t\t\tdispatchMentionResults(event.data);
+\t\t\t});
 
 \t\t\tconst buildFormPayload = () => {
 \t\t\t\tif (!form) {
 \t\t\t\t\treturn {
 \t\t\t\t\t\tsummary: '',
 \t\t\t\t\t\tdescription: '',
+\t\t\t\t\t\tdescriptionDocument: undefined,
 \t\t\t\t\t\tissueType: 'Task',
 \t\t\t\t\t\tstatus: '${defaultStatusAttr}',
 \t\t\t\t\t\tcustomFields: {},
@@ -2003,6 +2152,10 @@ export class JiraWebviewPanel {
 \t\t\t\treturn {
 \t\t\t\t\tsummary: asString(formData.get('summary')),
 \t\t\t\t\tdescription: asString(formData.get('description')),
+\t\t\t\t\tdescriptionDocument:
+\t\t\t\t\t\tdescriptionAdfField instanceof HTMLTextAreaElement
+\t\t\t\t\t\t\t? tryParseAdfDocument(descriptionAdfField.value)
+\t\t\t\t\t\t\t: undefined,
 \t\t\t\t\tissueType: asString(formData.get('issueType'), 'Task'),
 \t\t\t\t\tstatus: asString(formData.get('status'), '${defaultStatusAttr}'),
 \t\t\t\t\tcustomFields,
@@ -2109,7 +2262,10 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 		? `<p>${HtmlHelper.escapeHtml(issue.description).replace(/\r?\n/g, '<br />')}</p>`
 		: undefined;
 	const content = descriptionHtml ?? fallbackHtml;
-	const descriptionText = deriveEditableDescriptionText(issue, content);
+	const descriptionText = options?.descriptionEditDraft ?? deriveEditableDescriptionText(issue, content);
+	const descriptionDocument =
+		options?.descriptionEditDraftDocument ?? JiraWebviewPanel.tryGetAdfDocument(issue.descriptionDocument);
+	const descriptionDocumentValue = descriptionDocument ? JSON.stringify(descriptionDocument) : '';
 	const descriptionEditPending = options?.descriptionEditPending ?? false;
 	const descriptionEditError = options?.descriptionEditError;
 	const descriptionEditDisabled = descriptionEditPending;
@@ -2133,16 +2289,18 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 			issue.key
 		)}" data-description-edit-disabled="${descriptionEditDisabled ? 'true' : 'false'}" data-description-plain="${HtmlHelper.escapeAttribute(
 			descriptionText
-		)}">
+		)}" data-description-adf="${HtmlHelper.escapeAttribute(descriptionDocumentValue)}">
 			${body}
 			<form class="jira-description-editor">
 				${RichTextEditorView.render({
 					fieldId: 'issue-description-input',
 					fieldName: 'description',
 					value: descriptionText,
+					adfValue: descriptionDocument ? JSON.stringify(descriptionDocument) : '',
 					plainValue: descriptionText,
 					placeholder: 'Add description...',
 					disabled: descriptionEditDisabled,
+					editorId: 'issue-description-input',
 					ariaLabelledById: 'issue-description-title',
 				})}
 				<div class="jira-description-actions">
@@ -2165,6 +2323,22 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 	}
 	return htmlToPlainText(renderedContent);
 }
+
+	/**
+	 * Returns the provided value when it matches the shared Jira ADF document contract.
+	 */
+	static tryGetAdfDocument(value: unknown): JiraAdfDocument | undefined {
+		if (!value || typeof value !== 'object' || Array.isArray(value)) {
+			return undefined;
+		}
+
+		const record = value as { type?: unknown; version?: unknown; content?: unknown };
+		if (record.type !== 'doc' || record.version !== 1 || !Array.isArray(record.content)) {
+			return undefined;
+		}
+
+		return value as JiraAdfDocument;
+	}
 
 	static htmlToPlainText(html: string): string {
 	const withStructure = html
@@ -2408,6 +2582,7 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 	static renderCommentForm(options?: IssuePanelOptions): string {
 	const pending = options?.commentSubmitPending ?? false;
 	const draftValue = options?.commentDraft ?? '';
+	const draftDocument = options?.commentDraftDocument;
 	const replyContext = options?.commentReplyContext;
 	const hasText = draftValue.trim().length > 0;
 	const buttonDisabled = pending || !hasText;
@@ -2423,9 +2598,11 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 			fieldId: 'comment-input',
 			fieldName: 'commentDraft',
 			value: draftValue,
+			adfValue: draftDocument ? JSON.stringify(draftDocument) : '',
 			plainValue: draftValue,
 			placeholder,
 			disabled: pending,
+			editorId: 'comment-input',
 			ariaLabelledById: 'comment-form-title',
 		})}
 		<div class="comment-controls">
@@ -2441,6 +2618,8 @@ static renderCommentEditForm(comment: JiraIssueComment, options?: IssuePanelOpti
 	const pending = options?.commentSubmitPending ?? false;
 	const wikiBody = typeof comment.body === 'string' ? comment.body : undefined;
 	const draftValue = options?.commentEditDraft ?? wikiBody ?? comment.bodyText ?? '';
+	const draftDocument =
+		options?.commentEditDraftDocument ?? JiraWebviewPanel.tryGetAdfDocument(comment.bodyDocument);
 	const hasText = draftValue.trim().length > 0;
 	const buttonDisabled = pending || !hasText;
 	const errorMarkup = options?.commentSubmitError
@@ -2453,9 +2632,11 @@ static renderCommentEditForm(comment: JiraIssueComment, options?: IssuePanelOpti
 			fieldId: `edit-comment-${comment.id}`,
 			fieldName: 'commentEditDraft',
 			value: draftValue,
+			adfValue: draftDocument ? JSON.stringify(draftDocument) : '',
 			plainValue: draftValue,
 			placeholder: 'Edit your comment',
 			disabled: pending,
+			editorId: `edit-comment-${comment.id}`,
 			ariaLabelledById: editLabelId,
 		})}
 		<div class="comment-edit-controls">

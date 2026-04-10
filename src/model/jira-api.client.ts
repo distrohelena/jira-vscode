@@ -946,9 +946,11 @@ static async addIssueCommentInternal(
 		token: string,
 		issueKey: string,
 		commentId: string,
-		body: string,
-		format: JiraCommentFormat
+		body: string | JiraAdfDocument,
+		format: JiraCommentFormat | 'adf' = 'plain'
 	): Promise<JiraIssueComment> {
+		const trimmedBody = typeof body === 'string' ? body.trim() : undefined;
+		const isAdfBody = JiraApiTransport.isAdfDocumentInternal(body);
 		const trimmedId = commentId?.trim();
 		if (!trimmedId) {
 			throw new Error('Comment ID is required.');
@@ -957,7 +959,7 @@ static async addIssueCommentInternal(
 		if (!sanitizedKey) {
 			throw new Error('Issue key is required.');
 		}
-		if (!body?.trim()) {
+		if (!isAdfBody && !trimmedBody) {
 			throw new Error('Comment text is required.');
 		}
 
@@ -965,7 +967,11 @@ static async addIssueCommentInternal(
 		const resource = `issue/${encodeURIComponent(sanitizedKey)}/comment/${encodeURIComponent(trimmedId)}`;
 		const endpoints = buildRestApiEndpoints(urlRoot, authInfo.serverLabel, resource);
 
-		const bodyValue = format === 'wiki' ? body : body;
+		const bodyValue = isAdfBody
+			? body
+			: format === 'wiki'
+			? trimmedBody
+			: buildAdfDocumentFromPlainText(trimmedBody ?? '');
 
 		let lastError: unknown;
 		for (const endpoint of endpoints) {
@@ -1177,7 +1183,11 @@ static async addIssueCommentInternal(
 		fields: {
 			project: { key: projectKey },
 			summary: values.summary.trim(),
-			description: values.description?.trim() ? values.description : undefined,
+			description: JiraApiTransport.isAdfDocumentInternal(values.descriptionDocument)
+				? values.descriptionDocument
+				: values.description?.trim()
+				? values.description
+				: undefined,
 			issuetype: { name: values.issueType?.trim() || 'Task' },
 		},
 	};
@@ -2147,7 +2157,7 @@ static assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, acco
 		authInfo: JiraAuthInfo,
 		token: string,
 		issueKey: string,
-		description: string
+		description: string | JiraAdfDocument | undefined
 	): Promise<void> {
 		return updateIssueDescription(authInfo, token, issueKey, description);
 	}
@@ -2174,8 +2184,8 @@ static assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, acco
 		authInfo: JiraAuthInfo,
 		token: string,
 		issueKey: string,
-		body: string,
-		format: JiraCommentFormat,
+		body: string | JiraAdfDocument,
+		format: JiraCommentFormat | 'adf' = 'plain',
 		parentId?: string
 	): Promise<JiraIssueComment> {
 		return addIssueComment(authInfo, token, issueKey, body, format, parentId);
@@ -2195,8 +2205,8 @@ static assignIssue(authInfo: JiraAuthInfo, token: string, issueKey: string, acco
 		token: string,
 		issueKey: string,
 		commentId: string,
-		body: string,
-		format: JiraCommentFormat
+		body: string | JiraAdfDocument,
+		format: JiraCommentFormat | 'adf' = 'plain'
 	): Promise<JiraIssueComment> {
 		return updateIssueComment(authInfo, token, issueKey, commentId, body, format);
 	}
