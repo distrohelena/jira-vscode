@@ -192,6 +192,11 @@ export class RichTextEditorView {
 			cursor: pointer;
 			font: inherit;
 		}
+		.jira-rich-editor-button:hover:not(:disabled) {
+			background: var(--vscode-toolbar-hoverBackground, var(--vscode-button-secondaryHoverBackground, rgba(255, 255, 255, 0.08)));
+			border-color: var(--vscode-focusBorder, transparent);
+			color: var(--vscode-foreground);
+		}
 		.jira-rich-editor-button:focus-visible {
 			outline: 2px solid var(--vscode-focusBorder);
 			outline-offset: 1px;
@@ -215,6 +220,11 @@ export class RichTextEditorView {
 			font: inherit;
 			line-height: 1;
 			white-space: nowrap;
+		}
+		.jira-rich-editor-secondary-button:hover:not(:disabled) {
+			background: var(--vscode-toolbar-hoverBackground, var(--vscode-button-secondaryHoverBackground, rgba(255, 255, 255, 0.08)));
+			border-color: var(--vscode-focusBorder, transparent);
+			color: var(--vscode-foreground);
 		}
 		.jira-rich-editor-surface,
 		.jira-rich-editor-plain {

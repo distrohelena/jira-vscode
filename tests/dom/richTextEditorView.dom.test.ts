@@ -165,6 +165,26 @@ describe('RichTextEditorView', () => {
 		});
 	});
 
+	it('renders hover styling for both toolbar button types in the shared stylesheet', () => {
+		const styles = RichTextEditorView.renderStyles();
+
+		expect(styles).toMatch(
+			/\.jira-rich-editor-button:hover:not\(:disabled\)[\s\S]*background:\s*var\(--vscode-toolbar-hoverBackground,\s*var\(--vscode-button-secondaryHoverBackground,\s*rgba\(255,\s*255,\s*255,\s*0\.08\)\)\);/
+		);
+		expect(styles).toMatch(
+			/\.jira-rich-editor-button:hover:not\(:disabled\)[\s\S]*border-color:\s*var\(--vscode-focusBorder,\s*transparent\);/
+		);
+		expect(styles).toMatch(
+			/\.jira-rich-editor-secondary-button:hover:not\(:disabled\)[\s\S]*background:\s*var\(--vscode-toolbar-hoverBackground,\s*var\(--vscode-button-secondaryHoverBackground,\s*rgba\(255,\s*255,\s*255,\s*0\.08\)\)\);/
+		);
+		expect(styles).toMatch(
+			/\.jira-rich-editor-secondary-button:hover:not\(:disabled\)[\s\S]*border-color:\s*var\(--vscode-focusBorder,\s*transparent\);/
+		);
+		expect(styles).toMatch(
+			/\.jira-rich-editor-secondary-button:hover:not\(:disabled\)[\s\S]*color:\s*var\(--vscode-foreground\);/
+		);
+	});
+
 	it('disables the submitted field when the host is rendered disabled', () => {
 		const host = document.createElement('div');
 		host.innerHTML = RichTextEditorView.render({
