@@ -64,7 +64,9 @@
             },
             {
                 "command": "jira.refreshItemsView",
-                "title": "ðŸ—˜ Refresh"
+                "title": "Refresh Items",
+                "category": "Jira",
+                "icon": "$(refresh)"
             },
             {
                 "command": "jira.refreshProjectsView",
