@@ -684,6 +684,31 @@ describe('Issue panel editor interactions', () => {
 		expect(openMessage).toBeTruthy();
 	});
 
+	it('renders Assignee as the issue-details card title when the issue already has an assignee', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom(undefined, {
+			assigneeName: 'Helena',
+			assigneeAccountId: 'acct-123',
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const assigneeCardTitle = dom.window.document.querySelector(
+			'.issue-sidebar .assignee-picker-card-title'
+		) as HTMLSpanElement | null;
+
+		expect(assigneeCardTitle?.textContent?.trim()).toBe('Assignee');
+	});
+
+	it('keeps Choose an assignee as the issue-details card title when the issue is unassigned', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const assigneeCardTitle = dom.window.document.querySelector(
+			'.issue-sidebar .assignee-picker-card-title'
+		) as HTMLSpanElement | null;
+
+		expect(assigneeCardTitle?.textContent?.trim()).toBe('Choose an assignee');
+	});
+
 	it('renders the edit assignee action as the same shared assign-to-me button contract', () => {
 		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom({
 			currentUser: {

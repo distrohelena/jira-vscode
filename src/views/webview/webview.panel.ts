@@ -3873,6 +3873,13 @@ static renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
 		options?: IssuePanelOptions
 	): string {
 		const disabledAttr = options?.assigneePending ? 'disabled' : '';
+		const hasAssignedUser = Boolean(
+			issue.assigneeAccountId?.trim() ||
+			issue.assigneeName?.trim() ||
+			issue.assigneeUsername?.trim() ||
+			issue.assigneeKey?.trim()
+		);
+		const assigneeCardTitle = hasAssignedUser ? 'Assignee' : 'Choose an assignee';
 		const assignMeButton =
 			options?.currentUser?.accountId && options.currentUser.accountId.trim().length > 0
 			? renderAssignToMeButton({
@@ -3893,7 +3900,7 @@ static renderCreateAssigneeOptions(state: CreateIssuePanelState): string {
 		>
 			<span data-assignee-card-avatar>${renderAssigneeAvatar(issue)}</span>
 			<span style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0;">
-				<span class="assignee-picker-card-title">${HtmlHelper.escapeHtml('Choose an assignee')}</span>
+				<span class="assignee-picker-card-title">${HtmlHelper.escapeHtml(assigneeCardTitle)}</span>
 				<span class="assignee-picker-card-detail">${HtmlHelper.escapeHtml(currentAssigneeLabel || 'Unassigned')}</span>
 			</span>
 		</button>

@@ -645,6 +645,22 @@ describe('Create issue panel', () => {
 		expect(assignMeButton?.classList.contains('jira-shared-assign-me')).toBe(true);
 	});
 
+	it('keeps Choose an assignee as the create-issue card title', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom({
+			currentUser: {
+				accountId: 'acct-123',
+				displayName: 'Helena',
+			},
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const assigneeCardTitle = dom.window.document.querySelector(
+			'.issue-sidebar .assignee-picker-card-title'
+		) as HTMLSpanElement | null;
+
+		expect(assigneeCardTitle?.textContent?.trim()).toBe('Choose an assignee');
+	});
+
 	it('renders the parent picker overlay inside the existing webview', () => {
 		const { dom, scriptErrors } = renderCreateIssuePanelDom();
 		expect(scriptErrors).toEqual([]);
