@@ -76,16 +76,53 @@ export class JiraWikiDocumentCodec {
 	}
 
 	/**
+	 * Converts pasted plain text into editor-safe HTML while preserving readable soft breaks.
+	 */
+	static convertPlainTextToEditorHtml(text: string): string {
+		const normalized = text.replace(/\r\n?/g, '\n');
+		if (!normalized.trim()) {
+			return '<p></p>';
+		}
+
+		return normalized
+			.trim()
+			.split(/\n{2,}/)
+			.map((paragraph) => {
+				const escaped = JiraWikiDocumentCodec.escapeHtml(paragraph);
+				return `<p>${escaped.replace(/\n/g, '<br>')}</p>`;
+			})
+			.join('');
+	}
+
+	/**
 	 * Converts inline Jira wiki markers into the editor's HTML tags.
 	 */
 	private static convertInlineWikiToHtml(text: string): string {
+		const htmlParts: string[] = [];
+		const linkPattern = /\[([^|\]]+)\|([^\]]+)\]/g;
+		let currentIndex = 0;
+
+		for (let match = linkPattern.exec(text); match; match = linkPattern.exec(text)) {
+			htmlParts.push(JiraWikiDocumentCodec.convertNonLinkInlineWikiToHtml(text.slice(currentIndex, match.index)));
+			htmlParts.push(
+				`<a href="${JiraWikiDocumentCodec.escapeAttribute(match[2])}">${JiraWikiDocumentCodec.convertNonLinkInlineWikiToHtml(match[1])}</a>`
+			);
+			currentIndex = match.index + match[0].length;
+		}
+
+		htmlParts.push(JiraWikiDocumentCodec.convertNonLinkInlineWikiToHtml(text.slice(currentIndex)));
+		return htmlParts.join('');
+	}
+
+	/**
+	 * Converts inline wiki formatting outside link targets into safe editor HTML.
+	 */
+	private static convertNonLinkInlineWikiToHtml(text: string): string {
 		let html = JiraWikiDocumentCodec.escapeHtml(text);
+		html = html.replace(/\\\\/g, '<br>');
 		html = html.replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
 		html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
 		html = html.replace(/\+([^+]+)\+/g, '<u>$1</u>');
-		html = html.replace(/\[([^|\]]+)\|([^\]]+)\]/g, (_match: string, label: string, href: string) => {
-			return `<a href="${JiraWikiDocumentCodec.escapeAttribute(href)}">${label}</a>`;
-		});
 		return html;
 	}
 
@@ -233,7 +270,7 @@ export class JiraWikiDocumentCodec {
 	 */
 	private static serializeElement(node: HtmlElementNode): string {
 		if (node.tagName === 'br') {
-			return '\n';
+			return '\\\\';
 		}
 
 		if (node.tagName === 'blockquote') {
@@ -383,7 +420,7 @@ export class JiraWikiDocumentCodec {
 		}
 
 		if (node.tagName === 'br') {
-			return '\n';
+			return '\\\\';
 		}
 
 		if (JiraWikiDocumentCodec.isInlineWrapper(node.tagName)) {

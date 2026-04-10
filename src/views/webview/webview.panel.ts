@@ -420,6 +420,17 @@ export class JiraWebviewPanel {
 	.section {
 		margin-top: 24px;
 	}
+	.jira-visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
 	.comments-section {
 		border-top: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.15));
 		padding-top: 24px;
@@ -1584,7 +1595,8 @@ export class JiraWebviewPanel {
 \t\t.issue-sidebar {
 \t\t\tmin-width: 0;
 \t\t}
-\t\t.form-field label {
+\t\t.form-field label,
+\t\t.form-field-content {
 \t\t\tdisplay: flex;
 \t\t\tflex-direction: column;
 \t\t\tgap: 6px;
@@ -1893,8 +1905,8 @@ export class JiraWebviewPanel {
 \t\t\t\t\t</label>
 \t\t\t\t</div>
 \t\t\t\t<div class="form-field">
-\t\t\t\t\t<label>
-\t\t\t\t\t\t<span class="section-title">Description</span>
+\t\t\t\t\t<div class="form-field-content">
+\t\t\t\t\t\t<span class="section-title" id="create-description-title">Description</span>
 \t\t\t\t\t\t${RichTextEditorView.render({
 							fieldId: 'create-description-input',
 							fieldName: 'description',
@@ -1902,8 +1914,9 @@ export class JiraWebviewPanel {
 							plainValue: values.description,
 							placeholder: 'What needs to be done?',
 							disabled: !!state.submitting,
+							ariaLabelledById: 'create-description-title',
 						})}
-\t\t\t\t\t</label>
+\t\t\t\t\t</div>
 \t\t\t\t</div>
 \t\t\t\t${additionalFieldsSection}
 \t\t\t</div>
@@ -2115,7 +2128,7 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 		? `<div class="status-error issue-description-error">${HtmlHelper.escapeHtml(descriptionEditError)}</div>`
 		: '';
 	return `<div class="section description-card">
-		<div class="section-title">Description</div>
+		<div class="section-title" id="issue-description-title">Description</div>
 		<div class="${blockClasses.join(' ')}" data-issue-key="${HtmlHelper.escapeAttribute(
 			issue.key
 		)}" data-description-edit-disabled="${descriptionEditDisabled ? 'true' : 'false'}" data-description-plain="${HtmlHelper.escapeAttribute(
@@ -2130,6 +2143,7 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 					plainValue: descriptionText,
 					placeholder: 'Add description...',
 					disabled: descriptionEditDisabled,
+					ariaLabelledById: 'issue-description-title',
 				})}
 				<div class="jira-description-actions">
 					<button type="submit" class="jira-description-save" ${descriptionEditDisabledAttr}>Save</button>
@@ -2403,7 +2417,7 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 		? `<div class="comment-error">${HtmlHelper.escapeHtml(options.commentSubmitError)}</div>`
 		: '<div class="comment-error hidden"></div>';
 	return `<form class="comment-form" data-pending="${pending ? 'true' : 'false'}">
-		<label class="section-title" for="comment-input">${HtmlHelper.escapeHtml(formTitle)}</label>
+		<label class="section-title" id="comment-form-title" for="comment-input">${HtmlHelper.escapeHtml(formTitle)}</label>
 		${renderCommentReplyBanner(options)}
 		${RichTextEditorView.render({
 			fieldId: 'comment-input',
@@ -2412,6 +2426,7 @@ static renderChildrenSection(webview: vscode.Webview, issue: JiraIssue): string 
 			plainValue: draftValue,
 			placeholder,
 			disabled: pending,
+			ariaLabelledById: 'comment-form-title',
 		})}
 		<div class="comment-controls">
 			<button type="submit" class="comment-submit" ${buttonDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(
@@ -2431,7 +2446,9 @@ static renderCommentEditForm(comment: JiraIssueComment, options?: IssuePanelOpti
 	const errorMarkup = options?.commentSubmitError
 		? `<div class="comment-edit-error">${HtmlHelper.escapeHtml(options.commentSubmitError)}</div>`
 		: '<div class="comment-edit-error hidden"></div>';
+	const editLabelId = `edit-comment-${HtmlHelper.escapeAttribute(comment.id ?? '')}-label`;
 	return `<form class="comment-edit-form" data-edit-comment-id="${HtmlHelper.escapeAttribute(comment.id ?? '')}">
+		<span class="jira-visually-hidden comment-edit-label" id="${editLabelId}">Edit comment</span>
 		${RichTextEditorView.render({
 			fieldId: `edit-comment-${comment.id}`,
 			fieldName: 'commentEditDraft',
@@ -2439,6 +2456,7 @@ static renderCommentEditForm(comment: JiraIssueComment, options?: IssuePanelOpti
 			plainValue: draftValue,
 			placeholder: 'Edit your comment',
 			disabled: pending,
+			ariaLabelledById: editLabelId,
 		})}
 		<div class="comment-edit-controls">
 			<button type="submit" class="comment-edit-save" ${buttonDisabled ? 'disabled' : ''}>${HtmlHelper.escapeHtml(

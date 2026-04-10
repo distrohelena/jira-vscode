@@ -190,6 +190,30 @@ describe('Rich text editor WYSIWYG behavior', () => {
 		).toBeTruthy();
 	});
 
+	it('labels the mounted comment reply editor surface from the visible form label', () => {
+		const { dom, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
+			comments: [RichTextEditorHarness.createComment()],
+			commentReplyContext: {
+				commentId: 'comment-42',
+				authorName: 'Helena',
+				timestampLabel: '2/23/2026, 12:30:00 PM',
+				excerpt: 'Original comment body',
+			},
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const label = dom.window.document.querySelector('.comment-form > label.section-title') as HTMLLabelElement | null;
+		const mountedEditor = dom.window.document.querySelector(
+			'.comment-form .jira-rich-editor-prosemirror'
+		) as HTMLElement | null;
+
+		expect(label).toBeTruthy();
+		expect(label?.getAttribute('id')).toBe('comment-form-title');
+		expect(label?.textContent?.trim()).toBe('Reply to comment');
+		expect(mountedEditor).toBeTruthy();
+		expect(mountedEditor?.getAttribute('aria-labelledby')).toBe('comment-form-title');
+	});
+
 	it('posts comment draft changes and reply submits from the canonical shared editor field', () => {
 		const { dom, messages, scriptErrors } = RichTextEditorHarness.renderIssuePanelDom({
 			comments: [RichTextEditorHarness.createComment()],

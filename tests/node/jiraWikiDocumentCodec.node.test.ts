@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { JiraWikiDocumentCodec } from '../../src/views/webview/editors/jira-wiki-document-codec';
+import { JiraWikiDocumentCodec } from '../../src/views/webview/editors/jira-wiki-document-codec.ts';
 
 test('convertWikiToEditorHtml converts inline Jira wiki markup into editor HTML', () => {
 	assert.equal(
@@ -35,6 +35,33 @@ test('convertEditorHtmlToWiki degrades nested lists without merging nested text'
 	assert.equal(
 		JiraWikiDocumentCodec.convertEditorHtmlToWiki('<ul><li>Parent<ul><li>Child</li></ul></li></ul>'),
 		['* Parent', '* Child'].join('\n')
+	);
+});
+
+test('convertEditorHtmlToWiki round-trips hard breaks without turning them into paragraph boundaries', () => {
+	const wiki = JiraWikiDocumentCodec.convertEditorHtmlToWiki('<p>Line one<br>Line two</p>');
+
+	assert.equal(wiki, 'Line one\\\\Line two');
+	assert.equal(JiraWikiDocumentCodec.convertWikiToEditorHtml(wiki), '<p>Line one<br>Line two</p>');
+});
+
+test('convertPlainTextToEditorHtml preserves soft breaks inside plain text pastes', () => {
+	assert.equal(
+		JiraWikiDocumentCodec.convertPlainTextToEditorHtml('Line one\nLine two'),
+		'<p>Line one<br>Line two</p>'
+	);
+	assert.equal(
+		JiraWikiDocumentCodec.convertEditorHtmlToWiki(
+			JiraWikiDocumentCodec.convertPlainTextToEditorHtml('Line one\nLine two')
+		),
+		'Line one\\\\Line two'
+	);
+});
+
+test('convertWikiToEditorHtml preserves literal backslashes inside link targets', () => {
+	assert.equal(
+		JiraWikiDocumentCodec.convertWikiToEditorHtml('[Docs|https://example.test/a\\\\b]'),
+		'<p><a href="https://example.test/a\\\\b">Docs</a></p>'
 	);
 });
 

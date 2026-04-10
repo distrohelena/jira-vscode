@@ -126,6 +126,7 @@ export class RichTextEditorDomTestHarness {
 				'HTMLSpanElement',
 				'Element',
 				'Node',
+				'NodeFilter',
 				'Event',
 				'MouseEvent',
 				'KeyboardEvent',
@@ -158,6 +159,7 @@ export class RichTextEditorDomTestHarness {
 			HTMLSpanElement: window.HTMLSpanElement,
 			Element: window.Element,
 			Node: window.Node,
+			NodeFilter: window.NodeFilter,
 			Event: window.Event,
 			MouseEvent: window.MouseEvent,
 			KeyboardEvent: window.KeyboardEvent,
@@ -175,6 +177,35 @@ export class RichTextEditorDomTestHarness {
 		};
 		for (const [key, value] of Object.entries(assignments)) {
 			(globalThis as any)[key] = value;
+		}
+
+		RichTextEditorDomTestHarness.installLayoutMeasurementPolyfills(window);
+	}
+
+	/**
+	 * Installs the minimal DOM geometry methods that ProseMirror expects during jsdom selection updates.
+	 */
+	private static installLayoutMeasurementPolyfills(window: Window): void {
+		const zeroRect = () => new window.DOMRect(0, 0, 0, 0);
+		const zeroRects = () => [zeroRect()] as unknown as DOMRectList;
+		const patch = (prototype: object, key: 'getClientRects' | 'getBoundingClientRect'): void => {
+			if (typeof (prototype as any)[key] === 'function') {
+				return;
+			}
+
+			Object.defineProperty(prototype, key, {
+				configurable: true,
+				value: key === 'getClientRects' ? zeroRects : zeroRect,
+			});
+		};
+
+		patch(window.Node.prototype, 'getClientRects');
+		patch(window.Node.prototype, 'getBoundingClientRect');
+		patch(window.Range.prototype, 'getClientRects');
+		patch(window.Range.prototype, 'getBoundingClientRect');
+
+		if (typeof window.document.elementFromPoint !== 'function') {
+			window.document.elementFromPoint = () => window.document.querySelector('.ProseMirror');
 		}
 	}
 
@@ -224,11 +255,125 @@ export class RichTextEditorDomTestHarness {
 	}
 
 	/**
+	 * Dispatches a paste event against the mounted editor using the provided clipboard payload.
+	 */
+	paste(html: string, text: string): void {
+		const pasteEvent = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(pasteEvent, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return html;
+					}
+
+					if (type === 'text/plain') {
+						return text;
+					}
+
+					return '';
+				},
+			},
+		});
+		this.getMountedEditor().dispatchEvent(pasteEvent);
+	}
+
+	/**
+	 * Simulates the browser's full mouse interaction sequence on a mounted element.
+	 */
+	mouseDownUpClick(element: HTMLElement): void {
+		for (const type of ['mousedown', 'mouseup', 'click']) {
+			element.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true }));
+		}
+	}
+
+	/**
+	 * Forces the active element to move outside the editor host so blur-driven state can settle.
+	 */
+	blurToOutsideElement(): void {
+		const outsideButton = document.createElement('button');
+		document.body.appendChild(outsideButton);
+		outsideButton.focus();
+	}
+
+	/**
 	 * Updates the wiki textarea and emits the matching input event.
 	 */
 	setWikiValue(value: string): void {
 		this.plainTextarea.value = value;
 		this.plainTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+	}
+
+	/**
+	 * Places the caret at the end of the first text node containing the requested text.
+	 */
+	placeCaretAtText(searchText: string, offsetFromEnd = 0): void {
+		const editor = this.getMountedEditor();
+		const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+			if (!node.textContent?.includes(searchText)) {
+				continue;
+			}
+
+			if (!Number.isInteger(offsetFromEnd) || offsetFromEnd < 0 || offsetFromEnd > node.textContent.length) {
+				throw new Error(
+					`The caret offset ${offsetFromEnd} is outside the text node length ${node.textContent.length} for text: ${searchText}`
+				);
+			}
+
+			const offset = node.textContent.length - offsetFromEnd;
+			this.placeCaretAtNode(node, offset);
+			return;
+		}
+
+		throw new Error(`Could not place the caret for text: ${searchText}`);
+	}
+
+	/**
+	 * Places the caret at a specific DOM position inside the mounted editor.
+	 */
+	placeCaretAtNode(node: Node, offset: number): void {
+		const editorElement = this.getMountedEditor() as HTMLElement & { editor?: any };
+		const editor = editorElement.editor;
+		if (!editor || typeof editor.chain !== 'function' || typeof editor.view?.posAtDOM !== 'function') {
+			throw new Error('The mounted editor does not expose the Tiptap selection API required by the test harness.');
+		}
+
+		const position = editor.view.posAtDOM(node, offset);
+		const handled = editor.chain().focus().setTextSelection(position).run();
+		if (handled === false) {
+			throw new Error('The mounted editor rejected the caret placement request.');
+		}
+	}
+
+	/**
+	 * Places the caret at the start of a rendered element.
+	 */
+	placeCaretAtElement(element: Element, offset = 0): void {
+		this.placeCaretAtNode(element, offset);
+	}
+
+	/**
+	 * Dispatches a keyboard event against the mounted editor root.
+	 */
+	pressEditorKey(
+		key: string,
+		options?: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; isComposing?: boolean }
+	): KeyboardEvent {
+		const editor = this.getMountedEditor();
+		const event = new KeyboardEvent('keydown', {
+			key,
+			shiftKey: options?.shiftKey ?? false,
+			ctrlKey: options?.ctrlKey ?? false,
+			metaKey: options?.metaKey ?? false,
+			altKey: options?.altKey ?? false,
+			isComposing: options?.isComposing ?? false,
+			bubbles: true,
+			cancelable: true,
+		});
+		editor.dispatchEvent(event);
+		return event;
 	}
 
 	/**

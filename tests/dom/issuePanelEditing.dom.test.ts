@@ -264,10 +264,27 @@ describe('Issue panel editor interactions', () => {
 		const descriptionEditor = dom.window.document.querySelector('.jira-description-editor') as HTMLFormElement;
 		expect(descriptionDisplay).toBeTruthy();
 		expect(descriptionEditor).toBeTruthy();
+		expect(descriptionEditor.querySelector('.jira-rich-editor-surface')).toBeTruthy();
 
 		IssuePanelTestHarness.click(descriptionDisplay, dom.window);
 		expect(descriptionEditor.querySelector('[data-jira-rich-editor]')).toBeTruthy();
 		expect(descriptionEditor.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
+	});
+
+	it('labels the mounted issue description editor surface from the visible section title', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const sectionTitle = dom.window.document.querySelector('.description-card > .section-title') as HTMLElement | null;
+		const mountedEditor = dom.window.document.querySelector(
+			'.jira-description-editor .jira-rich-editor-prosemirror'
+		) as HTMLElement | null;
+
+		expect(sectionTitle).toBeTruthy();
+		expect(sectionTitle?.getAttribute('id')).toBe('issue-description-title');
+		expect(sectionTitle?.textContent?.trim()).toBe('Description');
+		expect(mountedEditor).toBeTruthy();
+		expect(mountedEditor?.getAttribute('aria-labelledby')).toBe('issue-description-title');
 	});
 
 	it('posts updateSummary on title submit', () => {
@@ -428,6 +445,7 @@ describe('Issue panel editor interactions', () => {
 		const visualSurface = editForm?.querySelector('.jira-rich-editor-surface') as HTMLElement | null;
 		expect(editForm).toBeTruthy();
 		expect(editEditor).toBeTruthy();
+		expect(editForm?.querySelector('.jira-rich-editor-surface')).toBeTruthy();
 		expect(editForm?.querySelector('.jira-rich-editor-raw')).toBeNull();
 		expect(editForm?.querySelector('.jira-rich-editor-button[data-command="bold"]')).toBeTruthy();
 		expect(editForm?.querySelector('.jira-rich-editor-button[data-command="orderedList"]')).toBeTruthy();
@@ -447,6 +465,27 @@ describe('Issue panel editor interactions', () => {
 		expect(saveMessage.commentId).toBe('comment-42');
 		expect(saveMessage.body).toBe('*Edited comment body*');
 		expect(saveMessage.format).toBe('wiki');
+	});
+
+	it('labels the mounted comment edit editor surface from a field-specific label', () => {
+		const { dom, scriptErrors } = IssuePanelTestHarness.renderIssuePanelDom({
+			comments: [IssuePanelTestHarness.createComment({ id: 'comment-42' })],
+			commentEditingId: 'comment-42',
+		});
+		expect(scriptErrors).toEqual([]);
+
+		const label = dom.window.document.querySelector(
+			'.comment-edit-form .comment-edit-label'
+		) as HTMLElement | null;
+		const mountedEditor = dom.window.document.querySelector(
+			'.comment-edit-form .jira-rich-editor-prosemirror'
+		) as HTMLElement | null;
+
+		expect(label).toBeTruthy();
+		expect(label?.getAttribute('id')).toBe('edit-comment-comment-42-label');
+		expect(label?.textContent?.trim()).toBe('Edit comment');
+		expect(mountedEditor).toBeTruthy();
+		expect(mountedEditor?.getAttribute('aria-labelledby')).toBe('edit-comment-comment-42-label');
 	});
 
 	it('opens the parent picker modal from the issue parent section', () => {

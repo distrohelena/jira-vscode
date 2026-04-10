@@ -3,6 +3,7 @@ import Link from '@tiptap/extension-link';
 import Underline from '@tiptap/extension-underline';
 import StarterKit from '@tiptap/starter-kit';
 
+import { RichTextEditorBehavior } from './rich-text-editor.behavior';
 import { JiraWikiDocumentCodec } from './jira-wiki-document-codec';
 import { RichTextToolbarController, type RichTextToolbarCommand } from './rich-text-toolbar.controller';
 import type { RichTextEditorViewMode } from './rich-text-editor.view';
@@ -37,6 +38,16 @@ export class RichTextEditorController {
 	private readonly hiddenValueField: HTMLTextAreaElement;
 
 	/**
+	 * Stores the bound plain-textarea input listener so the controller can tear it down safely.
+	 */
+	private readonly handlePlainTextareaInputListener: (event: Event) => void;
+
+	/**
+	 * Stores the shared interaction behavior owner that keeps focus and click state stable.
+	 */
+	private readonly behavior: RichTextEditorBehavior;
+
+	/**
 	 * Stores the active Tiptap editor instance bound to the visual surface.
 	 */
 	private readonly editor: Editor;
@@ -60,16 +71,24 @@ export class RichTextEditorController {
 		this.mountedSurface = this.resolveMountedSurface();
 		this.plainTextarea = this.resolvePlainTextarea();
 		this.hiddenValueField = this.resolveHiddenValueField();
+		this.handlePlainTextareaInputListener = this.handlePlainTextareaInput.bind(this);
 		this.currentMode = this.resolveInitialMode();
+		this.behavior = new RichTextEditorBehavior({
+			mountedSurface: this.mountedSurface,
+			isVisualMode: () => this.currentMode === 'visual',
+			isDisabled: () => this.hiddenValueField.disabled,
+			onInteractionStateChanged: this.handleInteractionStateChanged.bind(this),
+		});
 		this.applyMountedSurfaceState(this.resolveCanonicalWikiValue().trim().length === 0);
 		this.editor = this.createEditor();
+		this.behavior.attach(this.editor);
 		this.toolbarController = new RichTextToolbarController(this.toolbarElement, {
 			isCommandActive: this.isCommandActive.bind(this),
 			getCurrentMode: this.getCurrentMode.bind(this),
 			onCommandRequested: this.executeCommand.bind(this),
 			onModeToggleRequested: this.toggleMode.bind(this),
 		});
-		this.plainTextarea.addEventListener('input', this.handlePlainTextareaInput.bind(this));
+		this.plainTextarea.addEventListener('input', this.handlePlainTextareaInputListener);
 		this.synchronizeWikiFieldsFromEditor();
 		this.applyCurrentMode();
 	}
@@ -78,6 +97,9 @@ export class RichTextEditorController {
 	 * Destroys the underlying Tiptap editor when the host leaves the document.
 	 */
 	destroy(): void {
+		this.plainTextarea.removeEventListener('input', this.handlePlainTextareaInputListener);
+		this.toolbarController.destroy();
+		this.behavior.destroy();
 		this.editor.destroy();
 	}
 
@@ -85,7 +107,7 @@ export class RichTextEditorController {
 	 * Resolves whether a formatting command is active in the current editor state.
 	 */
 	private isCommandActive(command: RichTextToolbarCommand): boolean {
-		if (this.currentMode !== 'visual') {
+		if (this.currentMode !== 'visual' || !this.editor.isFocused) {
 			return false;
 		}
 
@@ -156,12 +178,17 @@ export class RichTextEditorController {
 
 		if (mode === 'wiki') {
 			this.synchronizeWikiFieldsFromEditor();
+			this.resolveMountedEditorElement()?.blur();
 		} else {
+			this.plainTextarea.blur();
 			this.applyWikiTextareaToEditor();
 		}
 
 		this.currentMode = mode;
 		this.applyCurrentMode();
+		if (mode === 'wiki') {
+			this.plainTextarea.focus();
+		}
 		this.toolbarController.refreshState();
 	}
 
@@ -217,10 +244,12 @@ export class RichTextEditorController {
 	 * Creates the mounted ProseMirror attributes needed by the shared surface contract.
 	 */
 	private createMountedEditorAttributes(): Record<string, string> {
+		const ariaLabelledById = this.mountedSurface.getAttribute('aria-labelledby');
 		return {
 			class: 'jira-rich-editor-prosemirror',
 			'data-placeholder': this.resolvePlaceholderText(),
 			'aria-disabled': this.hiddenValueField.disabled ? 'true' : 'false',
+			...(ariaLabelledById ? { 'aria-labelledby': ariaLabelledById } : {}),
 		};
 	}
 
@@ -236,6 +265,7 @@ export class RichTextEditorController {
 			content: JiraWikiDocumentCodec.convertWikiToEditorHtml(initialWiki),
 			editable: !this.hiddenValueField.disabled,
 			editorProps: {
+				...this.behavior.createEditorProps(),
 				attributes: this.createMountedEditorAttributes(),
 			},
 			extensions: [
@@ -245,7 +275,6 @@ export class RichTextEditorController {
 					codeBlock: false,
 					dropcursor: false,
 					gapcursor: false,
-					hardBreak: false,
 					heading: false,
 					horizontalRule: false,
 					link: false,
@@ -285,6 +314,13 @@ export class RichTextEditorController {
 	 */
 	private handleEditorUpdated(): void {
 		this.synchronizeWikiFieldsFromEditor();
+		this.toolbarController.refreshState();
+	}
+
+	/**
+	 * Refreshes the toolbar after focus or click interactions may have changed active formatting state.
+	 */
+	private handleInteractionStateChanged(): void {
 		this.toolbarController.refreshState();
 	}
 
@@ -345,6 +381,14 @@ export class RichTextEditorController {
 	}
 
 	/**
+	 * Resolves the mounted ProseMirror root when the visual editor has already been created.
+	 */
+	private resolveMountedEditorElement(): HTMLElement | undefined {
+		const element = this.mountedSurface.querySelector('.ProseMirror');
+		return element instanceof HTMLElement ? element : undefined;
+	}
+
+	/**
 	 * Resolves the wiki textarea required by the shared editor host.
 	 */
 	private resolvePlainTextarea(): HTMLTextAreaElement {
@@ -388,4 +432,5 @@ export class RichTextEditorController {
 	private resolvePlaceholderText(): string {
 		return this.mountedSurface.getAttribute('data-placeholder') ?? '';
 	}
+
 }

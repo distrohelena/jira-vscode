@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { RichTextEditorBehavior } from '../../src/views/webview/editors/rich-text-editor.behavior';
+import { RichTextEditorController } from '../../src/views/webview/editors/rich-text-editor.controller';
 import { RichTextEditorDomTestHarness } from './support/richTextEditorDomTestHarness';
 
 describe('RichTextEditorBrowserBootstrap', () => {
@@ -81,6 +83,42 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.hiddenValueField.value).toBe('*bold* _italic_');
 	});
 
+	it('moves focus to the wiki textarea when switching away from the visual editor', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.click(harness.getCommandButton('bold'));
+
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('true');
+
+		harness.click(harness.getModeToggleButton());
+
+		expect(harness.host.getAttribute('data-mode')).toBe('wiki');
+		expect(document.activeElement).toBe(harness.plainTextarea);
+	});
+
+	it('keeps toolbar state inactive after switching back to visual mode until the editor is re-entered', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.click(harness.getCommandButton('bold'));
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('true');
+
+		harness.click(harness.getModeToggleButton());
+		harness.click(harness.getModeToggleButton());
+
+		expect(harness.host.getAttribute('data-mode')).toBe('visual');
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+	});
+
 	it('boots against the compact shell without requiring the removed dual mode buttons', () => {
 		const harness = new RichTextEditorDomTestHarness({
 			value: '',
@@ -91,5 +129,1628 @@ describe('RichTextEditorBrowserBootstrap', () => {
 		expect(harness.host.getAttribute('data-mode')).toBe('visual');
 		expect(harness.getModeToggleButton().textContent?.trim()).toBe('Wiki');
 		expect(harness.getModeToggleButton().getAttribute('data-target-mode')).toBe('wiki');
+	});
+
+	it('prevents formatting button mousedown from stealing the editor selection before commands run', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Plain text value',
+			plainValue: 'Plain text value',
+		});
+
+		harness.initialize();
+		const commandMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		harness.getCommandButton('bold').dispatchEvent(commandMouseDown);
+		expect(commandMouseDown.defaultPrevented).toBe(true);
+
+		const modeMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		harness.getModeToggleButton().dispatchEvent(modeMouseDown);
+		expect(modeMouseDown.defaultPrevented).toBe(false);
+	});
+
+	it('leaves non-primary mounted-surface clicks unhandled and does not redirect focus', () => {
+		const mountedSurface = document.createElement('div');
+		const mountedEditor = document.createElement('div');
+		const mountedEditorFocus = vi.fn();
+		Object.defineProperty(mountedEditor, 'focus', {
+			value: mountedEditorFocus,
+		});
+		mountedEditor.className = 'ProseMirror';
+		mountedSurface.appendChild(mountedEditor);
+
+		const editorFocus = vi.fn();
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface,
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			commands: {
+				focus: editorFocus,
+			},
+		} as never);
+
+		const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2 });
+		mountedSurface.dispatchEvent(event);
+
+		expect(event.defaultPrevented).toBe(false);
+		expect(editorFocus).not.toHaveBeenCalled();
+		expect(mountedEditorFocus).not.toHaveBeenCalled();
+	});
+
+	it('focuses the ProseMirror editor when the outer surface is clicked', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Plain text value',
+			plainValue: 'Plain text value',
+		});
+
+		harness.initialize();
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+		expect(document.activeElement).toBe(harness.getMountedEditor());
+	});
+
+	it('keeps bold inactive when the empty placeholder surface is clicked', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+			placeholder: 'What needs to be done?',
+		});
+
+		harness.initialize();
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+		expect(document.activeElement).toBe(harness.getMountedEditor());
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+	});
+
+	it('clears stored formatting state from the toolbar after the editor loses focus', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+		harness.mountedSurface.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+		harness.click(harness.getCommandButton('bold'));
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('true');
+
+		const outsideButton = document.createElement('button');
+		document.body.appendChild(outsideButton);
+		outsideButton.focus();
+
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+	});
+
+	it('keeps bold inactive across repeated empty-surface clicks', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+			placeholder: 'What needs to be done?',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		expect(document.activeElement).toBe(harness.getMountedEditor());
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+
+		harness.blurToOutsideElement();
+		harness.mouseDownUpClick(harness.mountedSurface);
+
+		expect(document.activeElement).toBe(harness.getMountedEditor());
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
+	});
+
+	it('inserts a soft line break inside a paragraph when Shift+Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text', 4);
+		harness.pressEditorKey('Enter', { shiftKey: true });
+
+		expect(harness.mountedSurface.querySelectorAll('p')).toHaveLength(1);
+		expect(harness.mountedSurface.innerHTML).toContain('<br>');
+	});
+
+	it('inserts a soft line break at the end of a paragraph when Shift+Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text');
+		harness.pressEditorKey('Enter', { shiftKey: true });
+
+		expect(harness.hiddenValueField.value).toBe('Paragraph text\\\\');
+
+		harness.click(harness.getModeToggleButton());
+		expect(harness.plainTextarea.value).toBe('Paragraph text\\\\');
+
+		harness.click(harness.getModeToggleButton());
+		expect(harness.mountedSurface.innerHTML).toContain('<br>');
+		expect(harness.mountedSurface.innerHTML).toContain('Paragraph text');
+	});
+
+	it('splits a paragraph when Enter is pressed in visual mode', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text', 4);
+		harness.pressEditorKey('Enter');
+
+		expect(harness.mountedSurface.querySelectorAll('p')).toHaveLength(2);
+		expect(harness.mountedSurface.innerHTML).toContain('<p>Paragraph </p>');
+		expect(harness.mountedSurface.innerHTML).toContain('<p>text</p>');
+		expect(harness.hiddenValueField.value).toContain('\n\n');
+	});
+
+	it('rejects out-of-range caret offsets in the text helper', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+
+		expect(() => harness.placeCaretAtText('Paragraph text', 999)).toThrow(
+			'The caret offset 999 is outside the text node length 14 for text: Paragraph text'
+		);
+	});
+
+	it('throws when the Tiptap selection update is rejected', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+		const editorElement = document.createElement('div');
+		editorElement.editor = {
+			chain: () => ({
+				focus: () => ({
+					setTextSelection: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+			view: {
+				posAtDOM: () => 1,
+			},
+		};
+		harness.getMountedEditor = () => editorElement as never;
+
+		expect(() => harness.placeCaretAtNode(document.createTextNode('text'), 0)).toThrow(
+			'The mounted editor rejected the caret placement request.'
+		);
+	});
+
+	it('preserves a hard break through wiki mode after Shift+Enter', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'ParagraphText',
+			plainValue: 'ParagraphText',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('ParagraphText', 4);
+		harness.pressEditorKey('Enter', { shiftKey: true });
+
+		expect(harness.hiddenValueField.value).toBe('Paragraph\\\\Text');
+
+		harness.click(harness.getModeToggleButton());
+		expect(harness.plainTextarea.value).toBe('Paragraph\\\\Text');
+
+		harness.click(harness.getModeToggleButton());
+		expect(harness.mountedSurface.innerHTML).toContain('<br>');
+		expect(harness.mountedSurface.innerHTML).toContain('Paragraph');
+		expect(harness.mountedSurface.innerHTML).toContain('Text');
+	});
+
+	it('normalizes pasted HTML down to supported inline marks', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste(
+			'<p><span class="MsoNormal" style="color: red"><strong>Bold</strong> <em>Italic</em> <u>Underline</u> <a href="https://example.test">Docs</a></span></p>',
+			'Bold Italic Underline Docs'
+		);
+
+		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
+		expect(harness.getMountedEditor().innerHTML).toContain('<em>Italic</em>');
+		expect(harness.getMountedEditor().innerHTML).toContain('<u>Underline</u>');
+		expect(harness.getMountedEditor().innerHTML).toContain('<a');
+		expect(harness.getMountedEditor().innerHTML).toContain('href="https://example.test"');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<span');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('style=');
+		expect(harness.hiddenValueField.value).toBe('*Bold* _Italic_ +Underline+ [Docs|https://example.test]');
+	});
+
+	it('degrades noisy pasted markup into readable text', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste(
+			'<div class="MsoNormal" style="margin-left: 36pt"><span style="font-size: 18pt">Readable</span><span class="noise"> text</span></div>',
+			'Readable text'
+		);
+
+		expect(harness.getMountedEditor().innerHTML).toBe('<p>Readable text</p>');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<span');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('style=');
+		expect(harness.hiddenValueField.value).toBe('Readable text');
+	});
+
+	it('does not import pasted list HTML as real list structure', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<ul><li>One</li><li>Two</li></ul>', 'One\nTwo');
+
+		expect(harness.getMountedEditor().querySelector('ul')).toBeNull();
+		expect(harness.getMountedEditor().querySelector('li')).toBeNull();
+		expect(harness.hiddenValueField.value).toBe('One\\\\Two');
+	});
+
+	it('falls back to plain text when pasted HTML is layout heavy', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<table><tr><td>A</td><td>B</td></tr></table>', 'A\tB');
+
+		expect(harness.getMountedEditor().querySelector('table')).toBeNull();
+		expect(harness.getMountedEditor().innerHTML).toContain('A');
+		expect(harness.getMountedEditor().innerHTML).toContain('B');
+		expect(harness.hiddenValueField.value).toBe('A B');
+	});
+
+	it('falls back to readable text when layout-heavy HTML has no usable plain text', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<table><tr><td>A</td><td>B</td></tr></table>', '');
+
+		expect(harness.getMountedEditor().querySelector('table')).toBeNull();
+		expect(harness.hiddenValueField.value).toBe('A B');
+	});
+
+	it('keeps literal Jira markers plain when pasting HTML', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<p>*not bold*</p>', '*not bold*');
+
+		expect(harness.getMountedEditor().innerHTML).toContain('*not bold*');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<strong>not bold</strong>');
+		expect(harness.hiddenValueField.value).toBe('*not bold*');
+	});
+
+	it('keeps supported marks when mixed with unsupported inline HTML', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<p><strong>Bold</strong><sup>1</sup></p>', 'Bold1');
+
+		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
+		expect(harness.getMountedEditor().innerHTML).toContain('1');
+		expect(harness.hiddenValueField.value).toContain('*Bold*');
+		expect(harness.hiddenValueField.value).toContain('1');
+	});
+
+	it('does not let degraded block content inherit a surrounding link or reorder text', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste(
+			'<p><a href="https://example.test">Docs<table><tr><td>One</td></tr></table>Tail</a></p>',
+			'Docs One Tail'
+		);
+
+		expect(harness.getMountedEditor().querySelector('a')).toBeNull();
+		expect(harness.hiddenValueField.value.indexOf('Docs')).toBeGreaterThanOrEqual(0);
+		expect(harness.hiddenValueField.value.indexOf('One')).toBeGreaterThan(
+			harness.hiddenValueField.value.indexOf('Docs')
+		);
+		expect(harness.hiddenValueField.value.indexOf('Tail')).toBeGreaterThan(
+			harness.hiddenValueField.value.indexOf('One')
+		);
+	});
+
+	it('keeps supported paragraphs when mixed with unsupported block HTML', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<p><strong>Bold</strong></p><table><tr><td>A</td><td>B</td></tr></table>', '');
+
+		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
+		expect(harness.getMountedEditor().querySelector('table')).toBeNull();
+		expect(harness.hiddenValueField.value).toContain('*Bold*');
+		expect(harness.hiddenValueField.value).toContain('A');
+		expect(harness.hiddenValueField.value).toContain('B');
+	});
+
+	it('preserves supported marks inside unsupported blockquote content', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste(
+			'<blockquote><p><strong>Bold</strong> <a href="https://example.test">Docs</a></p></blockquote>',
+			'Bold Docs'
+		);
+
+		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
+		expect(harness.getMountedEditor().innerHTML).toContain('<a');
+		expect(harness.getMountedEditor().innerHTML).toContain('href="https://example.test"');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<blockquote');
+		expect(harness.hiddenValueField.value).toContain('*Bold*');
+		expect(harness.hiddenValueField.value).toContain('[Docs|https://example.test]');
+	});
+
+	it('fails closed when unsupported blockquote content cannot be inserted', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<blockquote><p>Docs</p></blockquote>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('consumes script-only unsafe HTML as a handled no-op paste', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<script>alert("blocked")</script>';
+					}
+
+					if (type === 'text/plain') {
+						return '';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('preserves supported marks inside a layout section wrapper', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste(
+			'<section><p><strong>Bold</strong> <a href="https://example.test">Docs</a></p></section>',
+			'Bold Docs'
+		);
+
+		expect(harness.getMountedEditor().querySelector('section')).toBeNull();
+		expect(harness.getMountedEditor().innerHTML).toContain('<strong>Bold</strong>');
+		expect(harness.getMountedEditor().innerHTML).toContain('href="https://example.test"');
+		expect(harness.hiddenValueField.value).toContain('*Bold*');
+		expect(harness.hiddenValueField.value).toContain('[Docs|https://example.test]');
+	});
+
+	it('fails closed when a layout wrapper rewrite cannot be inserted', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<section><p>Docs</p></section>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('preserves readable block boundaries for headings and paragraphs', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<h1>Title</h1><p>Body</p>', '');
+
+		expect(harness.getMountedEditor().querySelectorAll('p')).toHaveLength(2);
+		expect(harness.hiddenValueField.value).toBe('Title\n\nBody');
+	});
+
+	it('flattens nested div containers without creating nested paragraphs', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+		});
+
+		harness.initialize();
+		harness.mouseDownUpClick(harness.mountedSurface);
+		harness.paste('<div><div>One</div><div>Two</div></div>', '');
+
+		expect(harness.getMountedEditor().querySelectorAll('p')).toHaveLength(2);
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<p><p>');
+		expect(harness.getMountedEditor().innerHTML).not.toContain('<p></p>');
+		expect(harness.hiddenValueField.value).toBe('One\n\nTwo');
+	});
+
+	it('fails closed when a link with unsupported attributes cannot be inserted', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<a href="https://example.test" title="Docs">Docs</a>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('leaves empty clipboard pastes unhandled', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text', 4);
+
+		const beforeHtml = harness.getMountedEditor().innerHTML;
+		const beforeHiddenValue = harness.hiddenValueField.value;
+
+		harness.paste('', '');
+
+		expect(harness.getMountedEditor().innerHTML).toBe(beforeHtml);
+		expect(harness.hiddenValueField.value).toBe(beforeHiddenValue);
+	});
+
+	it('splits a non-empty list item when Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '* Item one',
+			plainValue: '* Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one');
+		harness.pressEditorKey('Enter');
+
+		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(2);
+	});
+
+	it('splits a non-empty ordered list item when Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '# Item one',
+			plainValue: '# Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one');
+		harness.pressEditorKey('Enter');
+
+		expect(harness.mountedSurface.querySelectorAll('ol li')).toHaveLength(2);
+	});
+
+	it('exits an empty list item when Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '* Item one',
+			plainValue: '* Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one');
+		harness.pressEditorKey('Enter');
+		const emptyParagraph = harness.getMountedEditor().querySelectorAll('li p')[1];
+		if (!(emptyParagraph instanceof HTMLElement)) {
+			throw new Error('The empty list item paragraph was not rendered.');
+		}
+
+		harness.placeCaretAtElement(emptyParagraph, 1);
+		harness.pressEditorKey('Enter');
+
+		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
+		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
+	});
+
+	it('lifts an empty list item when Backspace is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '* Item one',
+			plainValue: '* Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one');
+		harness.pressEditorKey('Enter');
+		const emptyParagraph = harness.getMountedEditor().querySelectorAll('li p')[1];
+		if (!(emptyParagraph instanceof HTMLElement)) {
+			throw new Error('The empty list item paragraph was not rendered.');
+		}
+
+		harness.placeCaretAtElement(emptyParagraph, 1);
+		harness.pressEditorKey('Backspace');
+
+		expect(harness.mountedSurface.querySelectorAll('li')).toHaveLength(1);
+		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
+	});
+
+	it('exits an empty ordered list item when Enter is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '# Item one',
+			plainValue: '# Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one');
+		harness.pressEditorKey('Enter');
+		const emptyParagraph = harness.getMountedEditor().querySelectorAll('li p')[1];
+		if (!(emptyParagraph instanceof HTMLElement)) {
+			throw new Error('The empty ordered list item paragraph was not rendered.');
+		}
+
+		harness.placeCaretAtElement(emptyParagraph, 1);
+		harness.pressEditorKey('Enter');
+
+		expect(harness.mountedSurface.querySelectorAll('ol li')).toHaveLength(1);
+		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
+	});
+
+	it('lifts an empty ordered list item when Backspace is pressed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '# Item one',
+			plainValue: '# Item one',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Item one');
+		harness.pressEditorKey('Enter');
+		const emptyParagraph = harness.getMountedEditor().querySelectorAll('li p')[1];
+		if (!(emptyParagraph instanceof HTMLElement)) {
+			throw new Error('The empty ordered list item paragraph was not rendered.');
+		}
+
+		harness.placeCaretAtElement(emptyParagraph, 1);
+		harness.pressEditorKey('Backspace');
+
+		expect(harness.mountedSurface.querySelectorAll('ol li')).toHaveLength(1);
+		expect(harness.getMountedEditor().lastElementChild?.tagName).toBe('P');
+	});
+
+	it('does not swallow Shift+Enter when a hard break command cannot run', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let hardBreakCalls = 0;
+		behavior.attach({
+			state: {
+				selection: {
+					$from: {
+						depth: 0,
+						node: () => ({
+							type: { name: 'paragraph' },
+							isTextblock: true,
+							content: { size: 1 },
+						}),
+					},
+				},
+			},
+			commands: {
+				setHardBreak: () => {
+					hardBreakCalls += 1;
+					return false;
+				},
+			},
+		} as never);
+
+		const handleKeyDown = behavior.createEditorProps()?.handleKeyDown;
+		if (!handleKeyDown) {
+			throw new Error('The keyboard handler was not created.');
+		}
+
+		const event = new KeyboardEvent('keydown', {
+			key: 'Enter',
+			shiftKey: true,
+			bubbles: true,
+			cancelable: true,
+		});
+
+		expect(handleKeyDown({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(hardBreakCalls).toBe(1);
+	});
+
+	it('does not swallow Backspace when lifting an empty list item cannot run', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let liftCalls = 0;
+		behavior.attach({
+			state: {
+				selection: {
+					$from: {
+						depth: 1,
+						node: (depth: number) =>
+							depth === 1
+								? {
+										type: { name: 'listItem' },
+										isTextblock: false,
+										content: { size: 1 },
+									}
+								: {
+										type: { name: 'paragraph' },
+										isTextblock: true,
+										content: { size: 0 },
+									},
+					},
+				},
+			},
+			commands: {
+				liftListItem: () => {
+					liftCalls += 1;
+					return false;
+				},
+			},
+		} as never);
+
+		const handleKeyDown = behavior.createEditorProps()?.handleKeyDown;
+		if (!handleKeyDown) {
+			throw new Error('The keyboard handler was not created.');
+		}
+
+		const event = new KeyboardEvent('keydown', {
+			key: 'Backspace',
+			bubbles: true,
+			cancelable: true,
+		});
+
+		expect(handleKeyDown({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(liftCalls).toBe(1);
+	});
+
+	it('falls back without preventing Enter during composition', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let hardBreakCalls = 0;
+		behavior.attach({
+			state: {
+				selection: {
+					$from: {
+						depth: 0,
+						node: () => ({
+							type: { name: 'paragraph' },
+							isTextblock: true,
+							content: { size: 1 },
+						}),
+					},
+				},
+			},
+			commands: {
+				setHardBreak: () => {
+					hardBreakCalls += 1;
+					return true;
+				},
+			},
+		} as never);
+
+		const handleKeyDown = behavior.createEditorProps()?.handleKeyDown;
+		if (!handleKeyDown) {
+			throw new Error('The keyboard handler was not created.');
+		}
+
+		const event = new KeyboardEvent('keydown', {
+			key: 'Enter',
+			bubbles: true,
+			cancelable: true,
+			isComposing: true,
+		});
+
+		expect(handleKeyDown({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(hardBreakCalls).toBe(0);
+	});
+
+	it('falls back without preventing modified Backspace inside a list item', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		let liftCalls = 0;
+		behavior.attach({
+			state: {
+				selection: {
+					$from: {
+						depth: 1,
+						node: (depth: number) =>
+							depth === 1
+								? {
+										type: { name: 'listItem' },
+										isTextblock: false,
+										content: { size: 1 },
+									}
+								: {
+										type: { name: 'paragraph' },
+										isTextblock: true,
+										content: { size: 0 },
+									},
+					},
+				},
+			},
+			commands: {
+				liftListItem: () => {
+					liftCalls += 1;
+					return true;
+				},
+			},
+		} as never);
+
+		const handleKeyDown = behavior.createEditorProps()?.handleKeyDown;
+		if (!handleKeyDown) {
+			throw new Error('The keyboard handler was not created.');
+		}
+
+		const event = new KeyboardEvent('keydown', {
+			key: 'Backspace',
+			ctrlKey: true,
+			bubbles: true,
+			cancelable: true,
+		});
+
+		expect(handleKeyDown({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(liftCalls).toBe(0);
+	});
+
+	it('does not surface script or style text during fallback collection', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		const insertedContent: string[] = [];
+		let plainTextContent: string | undefined;
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: (content: string) => {
+						insertedContent.push(content);
+						return {
+							run: () => false,
+						};
+					},
+					command: (fn: (args: { tr: { insertText: (content: string) => void } }) => boolean) => ({
+						run: () => {
+							fn({
+								tr: {
+									insertText: (content: string) => {
+										plainTextContent = content;
+									},
+								},
+							});
+							return false;
+						},
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<section><p>Safe<script>alert(1)</script><style>.x{color:red}</style>Text</p></section>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Safe Text';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+		expect(insertedContent.join('')).not.toContain('alert(1)');
+		expect(insertedContent.join('')).not.toContain('color:red');
+		expect(plainTextContent).toBe('Safe Text');
+	});
+
+	it('fails open for safe HTML before lossy fallback inserts when the sanitized insert rejects', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		const insertedContent: string[] = [];
+		let plainTextContent: string | undefined;
+		let insertAttempt = 0;
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: (content: string) => {
+						insertedContent.push(content);
+						insertAttempt += 1;
+						return {
+							run: () => insertAttempt !== 1,
+						};
+					},
+					command: (fn: (args: { tr: { insertText: (content: string) => void } }) => boolean) => ({
+						run: () => {
+							fn({
+								tr: {
+									insertText: (content: string) => {
+										plainTextContent = content;
+									},
+								},
+							});
+							return false;
+						},
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<p><strong>Bold</strong></p>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Bold';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(insertedContent).toEqual(['<p><strong>Bold</strong></p>']);
+		expect(plainTextContent).toBeUndefined();
+	});
+
+	it('returns false for plain-text-only paste when custom insert paths reject it', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		const insertedContent: string[] = [];
+		let plainTextContent: string | undefined;
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: (content: string) => {
+						insertedContent.push(content);
+						return {
+							run: () => false,
+						};
+					},
+					command: (fn: (args: { tr: { insertText: (content: string) => void } }) => boolean) => ({
+						run: () => {
+							fn({
+								tr: {
+									insertText: (content: string) => {
+										plainTextContent = content;
+									},
+								},
+							});
+							return false;
+						},
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '';
+					}
+
+					if (type === 'text/plain') {
+						return 'Plain text';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(insertedContent).toEqual(['<p>Plain text</p>', '<p>Plain text</p>']);
+		expect(plainTextContent).toBe('Plain text');
+	});
+
+	it.each([
+		{
+			name: 'preserves harmless canonicalization on links with uppercase tags and href only',
+			html: '<P><A HREF="https://example.test">Docs</A></P>',
+			text: 'Docs',
+		},
+		{
+			name: 'preserves harmless canonicalization on a shape-preserving paragraph',
+			html: '<P><STRONG>Bold</STRONG></P>',
+			text: 'Bold',
+		},
+	])('$name', ({ html, text }) => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return html;
+					}
+
+					if (type === 'text/plain') {
+						return text;
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+	});
+
+	it('fails closed for div wrapper rewrites when every insert path fails', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<div>Docs</div>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('fails closed for bold canonicalization when every insert path fails', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<p><b>Bold</b></p>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Bold';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('fails closed for italic canonicalization when every insert path fails', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<p><i>Italic</i></p>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Italic';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('fails closed for span unwrapping when every insert path fails', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: () => ({
+						run: () => false,
+					}),
+					command: () => ({
+						run: () => false,
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<p><span>Docs</span></p>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Docs';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+	});
+
+	it('does not fail open for rewritten HTML when every insert path fails', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		const insertedContent: string[] = [];
+		let plainTextContent: string | undefined;
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: (content: string) => {
+						insertedContent.push(content);
+						return {
+							run: () => false,
+						};
+					},
+					command: (fn: (args: { tr: { insertText: (content: string) => void } }) => boolean) => ({
+						run: () => {
+							fn({
+								tr: {
+									insertText: (content: string) => {
+										plainTextContent = content;
+									},
+								},
+							});
+							return false;
+						},
+					}),
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<div class="MsoNormal" style="margin-left: 36pt"><span style="font-size: 18pt">Readable</span></div>';
+					}
+
+					if (type === 'text/plain') {
+						return 'Readable';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(true);
+		expect(event.defaultPrevented).toBe(true);
+		expect(insertedContent).toEqual(['<p>Readable</p>', '<p>Readable</p>']);
+		expect(plainTextContent).toBe('Readable');
+	});
+
+	it('consumes handled script-only HTML as a safe no-op', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text', 4);
+
+		const beforeHtml = harness.getMountedEditor().innerHTML;
+		const beforeHiddenValue = harness.hiddenValueField.value;
+		const pasteEvent = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(pasteEvent, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					if (type === 'text/html') {
+						return '<script>alert(1)</script>';
+					}
+
+					if (type === 'text/plain') {
+						return '';
+					}
+
+					return '';
+				},
+			},
+		});
+
+		expect(harness.getMountedEditor().dispatchEvent(pasteEvent)).toBe(false);
+		expect(pasteEvent.defaultPrevented).toBe(true);
+		expect(harness.getMountedEditor().innerHTML).toBe(beforeHtml);
+		expect(harness.hiddenValueField.value).toBe(beforeHiddenValue);
+	});
+
+	it('returns false for empty clipboard payloads', () => {
+		const behavior = new RichTextEditorBehavior({
+			mountedSurface: document.createElement('div'),
+			isVisualMode: () => true,
+			isDisabled: () => false,
+			onInteractionStateChanged: () => undefined,
+		});
+		const insertedContent: string[] = [];
+		behavior.attach({
+			chain: () => ({
+				focus: () => ({
+					insertContent: (content: string) => {
+						insertedContent.push(content);
+						return {
+							run: () => false,
+						};
+					},
+				}),
+			}),
+		} as never);
+
+		const handlePaste = behavior.createEditorProps()?.handlePaste;
+		if (!handlePaste) {
+			throw new Error('The paste handler was not created.');
+		}
+
+		const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & {
+			clipboardData: { getData: (type: string) => string };
+		};
+		Object.defineProperty(event, 'clipboardData', {
+			value: {
+				getData: (type: string) => {
+					return '';
+				},
+			},
+		});
+
+		expect(handlePaste({} as never, event)).toBe(false);
+		expect(event.defaultPrevented).toBe(false);
+		expect(insertedContent).toHaveLength(0);
+	});
+
+	it('lets Ctrl+Enter reach the editor fallback', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text', 4);
+
+		harness.pressEditorKey('Enter', { ctrlKey: true });
+
+		expect(harness.getMountedEditor().querySelector('br')).toBeTruthy();
+		expect(harness.mountedSurface.innerHTML).toContain('<br>');
+	});
+
+	it('lets Enter during composition reach the editor fallback', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: 'Paragraph text',
+			plainValue: 'Paragraph text',
+		});
+
+		harness.initialize();
+		harness.placeCaretAtText('Paragraph text', 4);
+
+		harness.pressEditorKey('Enter', { isComposing: true });
+
+		expect(harness.getMountedEditor().querySelectorAll('p')).toHaveLength(2);
+		expect(harness.mountedSurface.innerHTML).toContain('<p>Paragraph </p>');
+		expect(harness.mountedSurface.innerHTML).toContain('<p>text</p>');
+	});
+
+	it('stops redirecting mounted-surface clicks after the controller is destroyed', () => {
+		const harness = new RichTextEditorDomTestHarness({
+			value: '',
+			plainValue: '',
+			placeholder: 'What needs to be done?',
+		});
+		const controller = new RichTextEditorController(harness.host);
+
+		const beforeDestroyMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		harness.mountedSurface.dispatchEvent(beforeDestroyMouseDown);
+		expect(beforeDestroyMouseDown.defaultPrevented).toBe(true);
+		expect(document.activeElement).toBe(harness.getMountedEditor());
+
+		controller.destroy();
+
+		const outsideButton = document.createElement('button');
+		document.body.appendChild(outsideButton);
+		outsideButton.focus();
+
+		const afterDestroyMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		harness.mountedSurface.dispatchEvent(afterDestroyMouseDown);
+		const toolbarMouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		harness.getCommandButton('bold').dispatchEvent(toolbarMouseDown);
+		harness.plainTextarea.value = '*after destroy*';
+		harness.plainTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+
+		expect(document.activeElement).toBe(outsideButton);
+		expect(afterDestroyMouseDown.defaultPrevented).toBe(false);
+		expect(toolbarMouseDown.defaultPrevented).toBe(false);
+		expect(harness.hiddenValueField.value).toBe('');
+		expect(harness.getCommandButton('bold').getAttribute('aria-pressed')).toBe('false');
 	});
 });

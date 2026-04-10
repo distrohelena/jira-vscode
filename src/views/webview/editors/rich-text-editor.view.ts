@@ -38,6 +38,11 @@ export type RichTextEditorViewOptions = {
 	 * Supplies the initial visible mode for the host shell.
 	 */
 	mode?: RichTextEditorViewMode;
+
+	/**
+	 * References the visible label element that should name both editor surfaces.
+	 */
+	ariaLabelledById?: string;
 };
 
 /**
@@ -64,6 +69,10 @@ export class RichTextEditorView {
 		const placeholder = HtmlHelper.escapeAttribute(options.placeholder);
 		const value = HtmlHelper.escapeHtml(options.value);
 		const plainValue = HtmlHelper.escapeHtml(options.plainValue);
+		const ariaLabelledByAttr = options.ariaLabelledById
+			? ` aria-labelledby="${HtmlHelper.escapeAttribute(options.ariaLabelledById)}"`
+			: '';
+		const wikiAriaLabelAttr = options.ariaLabelledById ? '' : ' aria-label="Wiki markup fallback"';
 		return `<div class="jira-rich-editor-host" data-jira-rich-editor data-mode="${toolbarStateAttr}">
 	<div class="jira-rich-editor-toolbar" role="toolbar" aria-label="Rich text editor formatting">
 		<div class="jira-rich-editor-primary-actions">
@@ -94,12 +103,14 @@ export class RichTextEditorView {
 			id="${fieldId}-visual"
 			role="textbox"
 			aria-multiline="true"
+			${ariaLabelledByAttr}
 		></div>
 		<textarea
 			class="jira-rich-editor-plain"
 			id="${fieldId}-plain"
 			placeholder="${placeholder}"
-			aria-label="Wiki markup fallback"
+			${ariaLabelledByAttr}
+			${wikiAriaLabelAttr}
 			${disabledAttr}
 		>${plainValue}</textarea>
 	</div>

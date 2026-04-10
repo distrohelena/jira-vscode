@@ -55,6 +55,16 @@ export class RichTextToolbarController {
 	private readonly modeToggleButton: HTMLButtonElement;
 
 	/**
+	 * Stores the bound click listener so the controller can tear down safely.
+	 */
+	private readonly handleToolbarClickListener: (event: Event) => void;
+
+	/**
+	 * Stores the bound mouse-down listener so the controller can tear down safely.
+	 */
+	private readonly handleToolbarMouseDownListener: (event: MouseEvent) => void;
+
+	/**
 	 * Creates a toolbar controller around one rendered toolbar host.
 	 */
 	constructor(toolbarElement: HTMLElement, options: RichTextToolbarControllerOptions) {
@@ -64,8 +74,19 @@ export class RichTextToolbarController {
 		this.modeToggleButton = this.resolveButton(
 			'.jira-rich-editor-secondary-button[data-secondary-action="toggleMode"]'
 		);
-		this.toolbarElement.addEventListener('click', this.handleToolbarClick.bind(this));
+		this.handleToolbarMouseDownListener = this.handleToolbarMouseDown.bind(this);
+		this.handleToolbarClickListener = this.handleToolbarClick.bind(this);
+		this.toolbarElement.addEventListener('mousedown', this.handleToolbarMouseDownListener);
+		this.toolbarElement.addEventListener('click', this.handleToolbarClickListener);
 		this.refreshState();
+	}
+
+	/**
+	 * Removes the toolbar event listeners when the surrounding editor host is destroyed.
+	 */
+	destroy(): void {
+		this.toolbarElement.removeEventListener('mousedown', this.handleToolbarMouseDownListener);
+		this.toolbarElement.removeEventListener('click', this.handleToolbarClickListener);
 	}
 
 	/**
@@ -120,6 +141,25 @@ export class RichTextToolbarController {
 
 		if (button.getAttribute('data-secondary-action') === 'toggleMode') {
 			this.options.onModeToggleRequested();
+		}
+	}
+
+	/**
+	 * Prevents toolbar buttons from stealing focus away from the editor selection before click handlers run.
+	 */
+	private handleToolbarMouseDown(event: MouseEvent): void {
+		const target = event.target;
+		if (!(target instanceof Element)) {
+			return;
+		}
+
+		const button = target.closest('button');
+		if (!(button instanceof HTMLButtonElement) || button.disabled) {
+			return;
+		}
+
+		if (this.isToolbarCommand(button.getAttribute('data-command'))) {
+			event.preventDefault();
 		}
 	}
 

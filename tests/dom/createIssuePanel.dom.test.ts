@@ -264,6 +264,44 @@ describe('Create issue panel', () => {
 		expect(rawTextarea).toBeNull();
 	});
 
+	it('renders the create issue description editor outside of label wrappers', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const descriptionEditor = dom.window.document.querySelector(
+			'#create-issue-form [data-jira-rich-editor]'
+		) as HTMLElement | null;
+		const descriptionTitle = dom.window.document.querySelector(
+			'#create-issue-form .form-field-content .section-title'
+		) as HTMLElement | null;
+		const visualSurface = descriptionEditor?.querySelector('.jira-rich-editor-surface') as HTMLElement | null;
+		const plainTextarea = descriptionEditor?.querySelector('.jira-rich-editor-plain') as HTMLTextAreaElement | null;
+
+		expect(descriptionEditor).toBeTruthy();
+		expect(descriptionEditor?.closest('label')).toBeNull();
+		expect(descriptionTitle).toBeTruthy();
+		expect(descriptionTitle?.id).toBeTruthy();
+		expect(visualSurface?.getAttribute('aria-labelledby')).toBe(descriptionTitle?.id);
+		expect(plainTextarea?.getAttribute('aria-labelledby')).toBe(descriptionTitle?.id);
+	});
+
+	it('labels the mounted create issue description editor after bootstrap', () => {
+		const { dom, scriptErrors } = renderCreateIssuePanelDom();
+		expect(scriptErrors).toEqual([]);
+
+		const descriptionTitle = dom.window.document.querySelector(
+			'#create-issue-form .form-field-content .section-title'
+		) as HTMLElement | null;
+		const mountedEditor = dom.window.document.querySelector(
+			'#create-issue-form .jira-rich-editor-surface .ProseMirror'
+		) as HTMLElement | null;
+
+		expect(descriptionTitle).toBeTruthy();
+		expect(descriptionTitle?.id).toBeTruthy();
+		expect(mountedEditor).toBeTruthy();
+		expect(mountedEditor?.getAttribute('aria-labelledby')).toBe(descriptionTitle?.id);
+	});
+
 	it('posts create issue descriptions from the shared editor hidden value field', () => {
 		const { dom, messages, scriptErrors } = renderCreateIssuePanelDom();
 		expect(scriptErrors).toEqual([]);
