@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { EnvironmentRuntime } from '../../src/environment.runtime';
 import { CreateIssuePanelState } from '../../src/model/jira.type';
-import { ParentIssuePickerOverlay } from '../../src/views/webview/parent-issue-picker.overlay';
+import {
+	ParentIssuePickerNoneSelectionKey,
+	ParentIssuePickerOverlay,
+} from '../../src/views/webview/parent-issue-picker.overlay';
 import { SharedParentPicker } from '../../src/views/webview/shared-parent-picker';
 import { JiraWebviewPanel } from '../../src/views/webview/webview.panel';
 import { RichTextEditorDomTestHarness } from './support/richTextEditorDomTestHarness';
@@ -657,13 +660,38 @@ describe('Create issue panel', () => {
 			new dom.window.MessageEvent('message', {
 				data: {
 					type: 'parentPickerRender',
-					html: '<div class="parent-picker-shell"><div class="parent-picker-title">Select Parent Ticket</div></div>',
+					html: '<div class="parent-picker-shell"><div class="parent-picker-title">Select Parent Epic</div></div>',
 				},
 			})
 		);
 
 		expect(host?.classList.contains('active')).toBe(true);
-		expect(host?.innerHTML).toContain('Select Parent Ticket');
+		expect(host?.innerHTML).toContain('Select Parent Epic');
+	});
+
+	it('renders the inline parent picker overlay as an Epic-only modal contract', () => {
+		const html = ParentIssuePickerOverlay.renderOverlayHtml({
+			projectKey: 'PROJ',
+			projectLabel: 'Project',
+			searchQuery: '',
+			issueTypeName: '',
+			statusName: '',
+			loading: false,
+			loadingMore: false,
+			issues: [],
+			hasMore: false,
+			selectedIssueKey: ParentIssuePickerNoneSelectionKey,
+		});
+		const overlayDom = new JSDOM(html);
+		const title = overlayDom.window.document.querySelector('.parent-picker-title');
+		const issueTypeInput = overlayDom.window.document.querySelector('[name="issueTypeName"]');
+		const statusSelect = overlayDom.window.document.querySelector('select[name="statusName"]');
+
+		expect(title?.textContent?.trim()).toBe('Select Parent Epic');
+		expect(html).toContain('Search the current project to choose a parent epic.');
+		expect(issueTypeInput).toBeNull();
+		expect(statusSelect).toBeTruthy();
+		expect(html).toContain('No Parent Epic');
 	});
 
 	it('does not include the issue-details-only cursor rule in the create stylesheet', () => {
@@ -719,7 +747,7 @@ describe('Create issue panel', () => {
 
 		const selectedText = parentButton?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 		expect(parentInput?.value).toBe('PROJ-123');
-		expect(selectedText).toContain('Choose a parent ticket');
+		expect(selectedText).toContain('Choose a parent epic');
 		expect(selectedText).toContain('PROJ-123 - Selected parent ticket');
 
 		dom.window.dispatchEvent(
@@ -732,8 +760,8 @@ describe('Create issue panel', () => {
 
 		const clearedText = parentButton?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 		expect(parentInput?.value).toBe('');
-		expect(clearedText).toContain('Choose a parent ticket');
-		expect(clearedText).toContain('No parent selected');
+		expect(clearedText).toContain('Choose a parent epic');
+		expect(clearedText).toContain('No parent epic selected');
 		expect(clearedText).toContain('Unassigned');
 	});
 
